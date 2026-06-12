@@ -1,0 +1,388 @@
+/* ========== ESTILOS PARA RECIBO DE NÓMINA ========== */
+
+.payroll-receipt {
+  width: 100%;
+  max-width: 64rem;
+  margin-left: auto;
+  margin-right: auto;
+  background-color: white;
+  padding: 2rem;
+  font-family: sans-serif;
+  font-size: 0.875rem;
+}
+
+.payroll-receipt .border-b-2 {
+  border-bottom-width: 2px;
+  border-bottom-style: solid;
+}
+
+.payroll-receipt .border-emerald-600 {
+  border-color: #059669 !important;
+}
+
+.payroll-receipt .pb-4 {
+  padding-bottom: 1rem;
+}
+
+.payroll-receipt .mb-6 {
+  margin-bottom: 1.5rem;
+}
+
+.payroll-receipt .flex {
+  display: flex;
+}
+
+.payroll-receipt .justify-between {
+  justify-content: space-between;
+}
+
+.payroll-receipt .items-center {
+  align-items: center;
+}
+
+.payroll-receipt .text-2xl {
+  font-size: 1.5rem;
+}
+
+.payroll-receipt .font-bold {
+  font-weight: 700;
+}
+
+.payroll-receipt .text-gray-800 {
+  color: #1f2937 !important;
+}
+
+.payroll-receipt .mb-1 {
+  margin-bottom: 0.25rem;
+}
+
+.payroll-receipt .text-gray-600 {
+  color: #4b5563 !important;
+}
+
+.payroll-receipt .text-sm {
+  font-size: 0.875rem;
+}
+
+.payroll-receipt .text-right {
+  text-align: right;
+}
+
+.payroll-receipt .text-xl {
+  font-size: 1.25rem;
+}
+
+.payroll-receipt .font-semibold {
+  font-weight: 600;
+}
+
+.payroll-receipt .text-emerald-700 {
+  color: #047857 !important;
+}
+
+.payroll-receipt .grid {
+  display: grid;
+}
+
+.payroll-receipt .grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.payroll-receipt .gap-8 {
+  gap: 2rem;
+}
+
+.payroll-receipt .space-y-3 > * + * {
+  margin-top: 0.75rem;
+}
+
+.payroll-receipt .w-32 {
+  width: 8rem;
+}
+
+.payroll-receipt .border-b {
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+}
+
+.payroll-receipt .border-gray-300 {
+  border-color: #d1d5db !important;
+}
+
+.payroll-receipt .flex-1 {
+  flex: 1 1 0%;
+}
+
+.payroll-receipt .pb-1 {
+  padding-bottom: 0.25rem;
+}
+
+.payroll-receipt table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.payroll-receipt th,
+.payroll-receipt td {
+  border: 1px solid #d1d5db;
+  padding: 0.5rem 1rem;
+  text-align: left;
+}
+
+.payroll-receipt th {
+  font-weight: 600;
+  color: #374151 !important;
+}
+
+.payroll-receipt .bg-emerald-50 {
+  background-color: #ecfdf5 !important;
+}
+
+.payroll-receipt .text-left {
+  text-align: left;
+}
+
+.payroll-receipt .bg-gray-50 {
+  background-color: #f9fafb !important;
+}
+
+.payroll-receipt .text-lg {
+  font-size: 1.125rem;
+}
+
+.payroll-receipt .px-4 {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.payroll-receipt .py-2 {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.payroll-receipt .py-3 {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.payroll-receipt .bg-emerald-100 {
+  background-color: #d1fae5 !important;
+}
+
+.payroll-receipt .col-span-2 {
+  grid-column: span 2 / span 2;
+}
+
+.payroll-receipt .gap-16 {
+  gap: 4rem;
+}
+
+.payroll-receipt .mt-12 {
+  margin-top: 3rem;
+}
+
+.payroll-receipt .text-center {
+  text-align: center;
+}
+
+.payroll-receipt .border-t {
+  border-top-width: 1px;
+  border-top-style: solid;
+}
+
+.payroll-receipt .border-gray-400 {
+  border-color: #9ca3af !important;
+}
+
+.payroll-receipt .pt-2 {
+  padding-top: 0.5rem;
+}
+
+.payroll-receipt .mt-16 {
+  margin-top: 4rem;
+}
+
+.payroll-receipt .mt-8 {
+  margin-top: 2rem;
+}
+
+.payroll-receipt .pt-4 {
+  padding-top: 1rem;
+}
+
+.payroll-receipt .border-gray-200 {
+  border-color: #e5e7eb !important;
+}
+
+.payroll-receipt .text-xs {
+  font-size: 0.75rem;
+}
+
+.payroll-receipt .bg-gray-50 {
+  background-color: #f9fafb !important;
+}
+
+.payroll-receipt .p-4 {
+  padding: 1rem;
+}
+
+.payroll-receipt .rounded-lg {
+  border-radius: 0.5rem;
+}
+
+.payroll-receipt .border {
+  border-width: 1px;
+  border-style: solid;
+}
+
+.payroll-receipt .border-slate-200 {
+  border-color: #e2e8f0 !important;
+}
+
+.payroll-receipt .overflow-hidden {
+  overflow: hidden;
+}
+
+.payroll-receipt .divide-y > :not([hidden]) ~ :not([hidden]) {
+  border-top-width: 1px;
+  border-top-style: solid;
+  border-top-color: #e5e7eb;
+}
+
+.payroll-receipt .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-top-color: #e2e8f0 !important;
+}
+
+/* Estilos para impresión */
+@media print {
+  body {
+    background: white !important;
+  }
+
+  .print-p-6 {
+    padding: 1.5rem !important;
+  }
+
+  .print-max-w-none {
+    max-width: none !important;
+  }
+
+  /* Hide everything except the receipt when printing */
+  body > * {
+    visibility: hidden;
+  }
+
+  .payroll-receipt,
+  .payroll-receipt * {
+    visibility: visible;
+  }
+
+  .payroll-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0 !important;
+    padding: 1.5rem !important;
+  }
+}
+
+/* ========== ESTILOS DE CARTA/BORDE ========== */
+.recibo-container {
+  border: 2px solid #e5e7eb !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+  overflow: hidden !important;
+  background: white !important;
+}
+
+/* Para el modal de vista previa */
+.vista-previa-modal .recibo-container {
+  margin: 1rem auto;
+  max-width: 64rem;
+}
+
+/* Para impresión, quitamos los estilos de carta */
+@media print {
+  .recibo-container {
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+/* ========== ESTILOS DE IMPRESIÓN MEJORADOS ========== */
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+  
+  body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+  
+  .recibo-container {
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    page-break-inside: avoid;
+  }
+  
+  .payroll-receipt {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 15mm !important;
+    transform: none !important;
+    font-size: 12pt !important;
+  }
+  
+  /* Forzar colores en impresión */
+  .bg-emerald-50,
+  .bg-emerald-100,
+  .bg-gray-50 {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  .text-emerald-700,
+  .text-gray-800,
+  .text-gray-600 {
+    color: inherit !important;
+  }
+  
+  /* Ocultar todo excepto el recibo */
+  body > *:not(.recibo-container) {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  
+  .recibo-container,
+  .recibo-container * {
+    display: block !important;
+    visibility: visible !important;
+    overflow: visible !important;
+  }
+  
+  /* Mejorar legibilidad en impresión */
+  .payroll-receipt table {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  
+  .payroll-receipt tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
