@@ -122,9 +122,11 @@ const LoginPage = () => {
                     <div className="p-5">
                         <Toast ref={toast} />
                         <div className="text-center mb-4">
-                                            {/* <div className="text-900 text-2xl font-medium mb-2">
-                                                {isRegistering ? 'Crear cuenta' : 'admin'}
-                                            </div> */}
+                            <img src="/demo/images/blocks/logos/hyper.svg" alt="hyper" height={50} className="mb-3" />
+                            <p className="text-900 text-2xl font-medium mb-2">Bienvenido</p>
+                            {/* <div className="text-900 text-2xl font-medium mb-2">
+                                {isRegistering ? 'Crear cuenta' : 'admin'}
+                            </div> */}
                             <div className="text-600 text-sm">
                                 {isRegistering ? 'Complete los datos para registrarse' : 'Inicie sesión para continuar'}
                             </div>

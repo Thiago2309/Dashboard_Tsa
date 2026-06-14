@@ -25,7 +25,7 @@ const AppMenu = () => {
         {
             label: 'Gestion',
             items: [
-                { label: 'Rastreo GPS', icon: 'pi pi-fw pi-map-marker', url: 'https://primeflex.org/', target: '_blank' },
+                { label: 'Rastreo GPS', icon: 'pi pi-fw pi-map-marker', url: '', target: '_blank' },
                 { label: 'Notas', icon: 'pi pi-book', to: '/utilities/icons' },
             ]
         },
@@ -34,8 +34,8 @@ const AppMenu = () => {
                     {
                         label: 'Almacen',
                         items: [
-                            { label: 'Free Blocks', icon: 'pi pi-fw pi-eye', to: '/blocks', badge: "NEW" as "NEW" },
-                            { label: 'All Blocks', icon: 'pi pi-fw pi-globe', url: 'https://blocks.primereact.org', target: '_blank' }
+                            { label: 'Inventario', icon: 'pi pi-fw pi-box', to: '/inventario' },
+                            // { label: 'All Blocks', icon: 'pi pi-fw pi-globe', url: 'https://blocks.primereact.org', target: '_blank' }
                         ]
                     },
                 ]
