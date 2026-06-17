@@ -21,16 +21,16 @@ import {
     Camion
 } from '../../../../Services/BD/inventario/camion/camionService';
 
-const CamionesCrud = () => {
+const M3Crud = () => {
     const emptyCamion: Camion = {
-        numero_economico: '',
+        nombre: '',
         placa: '',
         tipo: 'Camión',
         marca: '',
         modelo: '',
         año: null,
         serie: '',
-        capacidad_toneladas: null,
+        metros_cubicos: null,
         numero_motor: '',
         numero_cilindros: null,
         color: '',
@@ -117,8 +117,8 @@ const CamionesCrud = () => {
     const saveCamion = async () => {
         setSubmitted(true);
 
-        if (!camion.numero_economico?.trim() || !camion.placa?.trim()) {
-            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Número económico y placa son requeridos', life: 3000 });
+        if (!camion.nombre?.trim() || !camion.placa?.trim()) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Nombre y placa son requeridos', life: 3000 });
             return;
         }
 
@@ -281,13 +281,13 @@ const CamionesCrud = () => {
                     >
                         <Column selectionMode="multiple" headerStyle={{ width: '3rem' }} exportable={false} />
                         <Column field="id" header="ID" sortable style={{ width: '80px' }} />
-                        <Column field="numero_economico" header="N° Camion" sortable style={{ width: '130px' }} />
+                        <Column field="nombre" header="N° Camion" sortable style={{ width: '130px' }} />
                         <Column field="placa" header="Placa" sortable style={{ width: '120px' }} />
                         <Column field="tipo" header="Tipo" body={tipoBodyTemplate} sortable style={{ width: '120px' }} />
                         <Column field="marca" header="Marca" sortable style={{ width: '120px' }} />
                         <Column field="modelo" header="Modelo" sortable style={{ width: '100px' }} />
                         <Column field="año" header="Año" sortable style={{ width: '80px' }} />
-                        <Column field="capacidad_toneladas" header="Capacidad (Ton)" sortable style={{ width: '130px' }} />
+                        <Column field="metros_cubicos" header="Capacidad (m³)" sortable style={{ width: '130px' }} />
                         <Column field="color" header="Color" sortable style={{ width: '100px' }} />
                         <Column field="estatus" header="Estatus" body={estatusBodyTemplate} sortable style={{ width: '130px' }} />
                         <Column header="Acciones" body={actionBodyTemplate} style={{ width: '120px' }} exportable={false} />
@@ -297,9 +297,9 @@ const CamionesCrud = () => {
                         <div className="grid">
                             <div className="col-6">
                                 <div className="field">
-                                    <label htmlFor="numero_economico">N° Camion <span style={{ color: 'red' }}>*</span></label>
-                                    <InputText id="numero_economico" value={camion.numero_economico} onChange={(e) => setCamion({ ...camion, numero_economico: e.target.value })} required autoFocus className={submitted && !camion.numero_economico ? 'p-invalid' : ''} />
-                                    {submitted && !camion.numero_economico && <small className="p-error">Requerido</small>}
+                                    <label htmlFor="nombre">Nombre <span style={{ color: 'red' }}>*</span></label>
+                                    <InputText id="nombre" value={camion.nombre} onChange={(e) => setCamion({ ...camion, nombre: e.target.value })} required autoFocus className={submitted && !camion.nombre ? 'p-invalid' : ''} />
+                                    {submitted && !camion.nombre && <small className="p-error">Requerido</small>}
                                 </div>
                             </div>
                             <div className="col-6">
@@ -347,8 +347,8 @@ const CamionesCrud = () => {
                             </div>
                             <div className="col-3">
                                 <div className="field">
-                                    <label htmlFor="capacidad_toneladas">Capacidad (Ton)</label>
-                                    <InputNumber id="capacidad_toneladas" value={camion.capacidad_toneladas} onValueChange={(e) => setCamion({ ...camion, capacidad_toneladas: e.value || null })} min={0} mode="decimal" minFractionDigits={2} maxFractionDigits={2} className="w-full" />
+                                    <label htmlFor="metros_cubicos">Capacidad (m³)</label>
+                                    <InputNumber id="metros_cubicos" value={camion.metros_cubicos} onValueChange={(e) => setCamion({ ...camion, metros_cubicos: e.value || null })} min={0} mode="decimal" minFractionDigits={2} maxFractionDigits={2} className="w-full" />
                                 </div>
                             </div>
                             <div className="col-3">
@@ -411,7 +411,7 @@ const CamionesCrud = () => {
                     <Dialog visible={deleteCamionDialog} style={{ width: '450px' }} header="Confirmar Eliminación" modal footer={deleteCamionDialogFooter} onHide={hideDeleteCamionDialog}>
                         <div className="flex align-items-center justify-content-center">
                             <i className="pi pi-exclamation-triangle mr-3" style={{ fontSize: '2rem', color: '#f44336' }} />
-                            <span>¿Está seguro de eliminar el camión <b>{camion.numero_economico}</b>?</span>
+                            <span>¿Está seguro de eliminar el camión <b>{camion.nombre}</b>?</span>
                         </div>
                     </Dialog>
 
@@ -427,4 +427,4 @@ const CamionesCrud = () => {
     );
 };
 
-export default CamionesCrud;
+export default M3Crud;
