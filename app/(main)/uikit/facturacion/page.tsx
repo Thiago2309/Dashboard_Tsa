@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import NuevaFactura from './NuevaFactura';
-import ListaFacturas from './ListaFacturas';
+// import ListaFacturas from './ListaFacturas';
 import ConfiguracionFiscal from './ConfiguracionFiscal';
 
 const FacturacionPage = () => {
@@ -21,8 +21,8 @@ const FacturacionPage = () => {
         switch (activeModule) {
             case 'Nueva Factura':
                 return <NuevaFactura />;
-            case 'Mis Facturas':
-                return <ListaFacturas />;
+            // case 'Mis Facturas':
+            //     return <ListaFacturas />;
             case 'Configuración Fiscal':
                 return <ConfiguracionFiscal />;
             default:
