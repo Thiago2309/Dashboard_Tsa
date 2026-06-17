@@ -41,7 +41,7 @@ export const fetchCamionesActivos = async (): Promise<Camion[]> => {
     const { data, error } = await supabase
         .from('m3')
         .select('*')
-        .eq('estatus', 'Activo')
+        // .eq('estatus', 'Activo')
         .order('nombre', { ascending: true });
 
     if (error) {

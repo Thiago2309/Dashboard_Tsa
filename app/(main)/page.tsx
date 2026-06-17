@@ -89,6 +89,7 @@ const Dashboard = () => {
     // Cargar todos los datos para el dashboard
     useEffect(() => {
         loadDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadDashboardData = async () => {
