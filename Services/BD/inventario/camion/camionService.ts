@@ -2,14 +2,14 @@ import { supabase } from '../../../superbase.service';
 
 export interface Camion {
     id?: number;
-    numero_economico: string;
+    nombre: string;
     placa: string;
     tipo: 'Camión' | 'Tractor' | 'Remolque' | 'Otro';
     marca: string | null;
     modelo: string | null;
     año: number | null;
     serie: string | null;
-    capacidad_toneladas: number | null;
+    metros_cubicos: number | null;
     numero_motor: string | null;
     numero_cilindros: number | null;
     color: string | null;
@@ -25,7 +25,7 @@ export interface Camion {
 // Obtener todos los camiones
 export const fetchCamiones = async (): Promise<Camion[]> => {
     const { data, error } = await supabase
-        .from('camiones')
+        .from('m3')
         .select('*')
         .order('id', { ascending: true });
 
@@ -39,10 +39,10 @@ export const fetchCamiones = async (): Promise<Camion[]> => {
 // Obtener camiones activos
 export const fetchCamionesActivos = async (): Promise<Camion[]> => {
     const { data, error } = await supabase
-        .from('camiones')
+        .from('m3')
         .select('*')
-        .eq('estatus', 'Activo')
-        .order('numero_economico', { ascending: true });
+        // .eq('estatus', 'Activo')
+        .order('nombre', { ascending: true });
 
     if (error) {
         console.error('Error al obtener camiones activos:', error);
@@ -54,7 +54,7 @@ export const fetchCamionesActivos = async (): Promise<Camion[]> => {
 // Obtener un camión por ID
 export const fetchCamionById = async (id: number): Promise<Camion | null> => {
     const { data, error } = await supabase
-        .from('camiones')
+        .from('m3')
         .select('*')
         .eq('id', id)
         .single();
@@ -69,7 +69,7 @@ export const fetchCamionById = async (id: number): Promise<Camion | null> => {
 // Crear nuevo camión
 export const createCamion = async (camion: Omit<Camion, 'id' | 'created_at' | 'updated_at'>): Promise<Camion> => {
     const { data, error } = await supabase
-        .from('camiones')
+        .from('m3')
         .insert([camion])
         .select()
         .single();
@@ -84,7 +84,7 @@ export const createCamion = async (camion: Omit<Camion, 'id' | 'created_at' | 'u
 // Actualizar camión
 export const updateCamion = async (id: number, camion: Partial<Camion>): Promise<Camion> => {
     const { data, error } = await supabase
-        .from('camiones')
+        .from('m3')
         .update(camion)
         .eq('id', id)
         .select()
@@ -100,7 +100,7 @@ export const updateCamion = async (id: number, camion: Partial<Camion>): Promise
 // Eliminar camión
 export const deleteCamion = async (id: number): Promise<void> => {
     const { error } = await supabase
-        .from('camiones')
+        .from('m3')
         .delete()
         .eq('id', id);
 

@@ -1,5 +1,5 @@
     import React from 'react';
-    import CamionesCrud from '../../../../../(main)/inventario/camion/camionesCrud';
+    import CamionesCrud from '../../../../inventario/camion/M3Crud';
 
     const camionesModule = () => {
 

@@ -29,7 +29,7 @@ export interface MovimientoInventario {
 
 export interface Camion {
     id: number;
-    numero_economico: string;
+    nombre: string;
     placa: string;
     tipo: string;
     marca: string | null;
@@ -76,10 +76,10 @@ export const buscarProductos = async (termino: string): Promise<Inventario[]> =>
 // Obtener camiones activos para dropdown
 export const getCamionesActivos = async (): Promise<Camion[]> => {
     const { data, error } = await supabase
-        .from('camiones')
-        .select('id, numero_economico, placa, tipo, marca, modelo, estatus')
-        .eq('estatus', 'Mantenimiento') // Solo mostrar camiones en mantenimiento para asignar salidas
-        .order('numero_economico', { ascending: true });
+        .from('m3')
+        .select('id, nombre, placa, tipo, marca, modelo, estatus')
+        // .eq('estatus', 'Mantenimiento') // Solo mostrar camiones en mantenimiento para asignar salidas
+        .order('nombre', { ascending: true });
 
     if (error) {
         console.error('Error al obtener camiones:', error);

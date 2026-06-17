@@ -119,13 +119,13 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
                             value={camionSeleccionadoId}
                             onChange={(e) => setCamionSeleccionadoId(e.value)}
                             options={camiones}
-                            optionLabel="numero_economico"
+                            optionLabel="nombre"
                             optionValue="id"
                             placeholder="Seleccionar camión"
                             className="w-full"
                             showClear
                         />
-                        <small className="text-gray-500">Nota: La unidad debe estar en Mantenimiento</small>
+                        {/* <small className="text-gray-500">Nota: La unidad debe estar en Mantenimiento</small> */}
                     </div>
 
                     <div className="field">

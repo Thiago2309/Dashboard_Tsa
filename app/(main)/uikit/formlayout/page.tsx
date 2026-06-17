@@ -12,7 +12,7 @@ import OperadoresCrud from './operador';
 import InvitadosCrud from './invitados';
 import ProvedoresCrud from './provedores';
 import MaterialCrud from './material';
-import M3Crud from '../../pages/crud/M3Crud';
+// import M3Crud from '../../pages/crud/M3Crud';
 
 import { useSearchParams } from 'next/navigation';
 
@@ -50,8 +50,8 @@ const TableModule = () => {
                     return <MaterialCrud />;
             case 'Invitados':
                 return <InvitadosCrud />;
-            case 'Metros Cúbicos':
-                return <M3Crud />;
+            // case 'Metros Cúbicos':
+            //     return <M3Crud />;
             default:
                 return <div>Selecciona un módulo</div>;
         }
@@ -123,12 +123,12 @@ const TableModule = () => {
                         >
                             Invitados
                         </div>
-                        <div
+                        {/* <div
                             style={activeModule === 'Metros Cúbicos' ? styles.activeMenuItem : styles.menuItem}
                             onClick={() => setActiveModule('Metros Cúbicos')}
                         >
                             Metros Cúbicos
-                        </div>
+                        </div> */}
                     </div>
                     <div style={styles.tableContainer}>
                         {renderModule()}

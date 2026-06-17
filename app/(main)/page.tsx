@@ -15,6 +15,7 @@ import { Viaje, fetchViajes } from '../../Services/BD/viajeService';
 import { Gasto, fetchGastos } from '../../Services/BD/gastoService';
 import { CajaChica, fetchCajaChica } from '../../Services/BD/cajaChicaService';
 import { fetchTodosClientesConCuentas } from '../../Services/BD/cuentasPorCobrarService';
+import { getUserRoleIdFromLocalStorage } from '@/Services/BD/userService';
 
 const lineData: ChartData = {
     labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
@@ -79,10 +80,16 @@ const Dashboard = () => {
     const menu2 = useRef<Menu>(null);
     const [lineOptions, setLineOptions] = useState<ChartOptions>({});
     const { layoutConfig } = useContext(LayoutContext);
+    const userRoleId = getUserRoleIdFromLocalStorage();
+    console.log('userRoleId', userRoleId);
+    const isAdmin = userRoleId === 1;
+    const isAlmacen = userRoleId === 4;
+    console.log('isAdmin', isAdmin);
 
     // Cargar todos los datos para el dashboard
     useEffect(() => {
         loadDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadDashboardData = async () => {
@@ -204,7 +211,9 @@ const Dashboard = () => {
             </div>
             
             {/* Card 1: Sub Total - Gestión de Notas de Viajes */}
-            <div className="col-12 lg:col-6 xl:col-3">
+            {!isAlmacen && (
+                <>
+                    <div className="col-12 lg:col-6 xl:col-3">
                 <Link href="/uikit/formlayout?module=Viajes" className="no-underline">
                     <div className="card mb-0 cursor-pointer hover:shadow-2 transition-all transition-duration-300">
                         <div className="flex justify-content-between mb-3">
@@ -340,6 +349,8 @@ const Dashboard = () => {
                     </div>
                 </Link>
             </div>
+            </>
+        )}
         </div>
     );
 };

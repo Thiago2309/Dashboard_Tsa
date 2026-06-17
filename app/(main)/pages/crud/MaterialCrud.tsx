@@ -33,6 +33,7 @@ const MaterialCrud = () => {
     // Cargar materiales al iniciar
     useEffect(() => {
         loadMateriales();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadMateriales = async () => {
