@@ -399,13 +399,13 @@ const ClientesCrud = () => {
                         </div>
 
                         <div className="field">
-                            <label htmlFor="direccion">Dirección</label><span style={{ color: 'red' }}> *</span>
+                            <label htmlFor="direccion">Dirección</label>
                             <InputText
                                 id="direccion"
                                 value={cliente.direccion || ''}
                                 onChange={(e) => setCliente({ ...cliente, direccion: e.target.value })}
                             />
-                            {submitted && !cliente.direccion && <small className="p-invalid">Direccion es requerido.</small>}
+                            {/* {submitted && !cliente.direccion && <small className="p-invalid">Direccion es requerido.</small>} */}
                         </div>
 
                         <div className="field">
@@ -414,9 +414,11 @@ const ClientesCrud = () => {
                                 id="tipo_cliente"
                                 value={cliente.tipo_cliente}
                                 options={TipoCliente}
+                                required
                                 onChange={(e) => setCliente({ ...cliente, tipo_cliente: e.value })}
                                 placeholder="Seleccione método"
                             />
+                            {submitted && !cliente.tipo_cliente && <small className="p-invalid">Tipo cliente es requerido.</small>}
                         </div>
 
                         <div className="field">
@@ -425,9 +427,11 @@ const ClientesCrud = () => {
                                 id="metodo_pago"
                                 value={cliente.metodo_pago}
                                 options={metodosPago}
+                                required
                                 onChange={(e) => setCliente({ ...cliente, metodo_pago: e.value })}
                                 placeholder="Seleccione método"
                             />
+                            {submitted && !cliente.metodo_pago && <small className="p-invalid">Método de pago es requerido.</small>}
                         </div>
 
                         {cliente.tipo_cliente === 'Facturado' && (

@@ -26,7 +26,7 @@ const OperadoresCrud = () => {
     const [deleteOperadoresDialog, setDeleteOperadoresDialog] = useState(false);
     const [operador, setOperador] = useState<Operador>({ 
       nombre: '', 
-      puesto: 'Operador', 
+      puesto: 'Operador Góndola', 
       salario_base: 0, 
       estatus: true,
       descripcion: ''
@@ -38,8 +38,13 @@ const OperadoresCrud = () => {
     const dt = useRef<DataTable<any>>(null);
 
     const puestos = [
-      'Operador',
-      'Operador Senior',
+      'Operador Góndola',
+      'Operador Volquete',
+      'Operador Maquinaria',
+      'Mecánico',
+      'Soldador',
+      'Vigilante',
+      'Encargado de Obra',
       'Supervisor',
       'Gerente de Operaciones',
       'Ayudante'
@@ -52,7 +57,7 @@ const OperadoresCrud = () => {
     const openNew = () => {
         setOperador({ 
           nombre: '', 
-          puesto: 'Operador', 
+          puesto: '', 
           salario_base: 0, 
           estatus: true,
           descripcion: '',
@@ -351,11 +356,27 @@ const OperadoresCrud = () => {
                             <label htmlFor="fecha_contratacion">Fecha de contratación</label>
                             <Calendar
                                 id="fecha_contratacion"
-                                value={operador.fecha_contratacion ? new Date(operador.fecha_contratacion) : null}
-                                onChange={(e) => setOperador({ ...operador, fecha_contratacion: e.value ? e.value.toISOString().split('T')[0] : '' })}
-                                dateFormat="dd/mm/yy"
+                                value={
+                                operador.fecha_contratacion
+                                    ? (() => {
+                                        const [year, month, day] = operador.fecha_contratacion.split('-').map(Number);
+                                        return new Date(year, month - 1, day);
+                                    })()
+                                    : null
+                                }
+                                onChange={(e) =>
+                                setOperador({
+                                    ...operador,
+                                    fecha_contratacion: e.value
+                                        ? `${e.value.getFullYear()}-${String(e.value.getMonth() + 1).padStart(2, '0')}-${String(e.value.getDate()).padStart(2, '0')}`
+                                        : ''
+                                })
+                                }
+                                dateFormat="yy-mm-dd"
                                 showIcon
-                            />
+                                required
+                                className={submitted && !operador.fecha_contratacion ? 'p-invalid' : ''}
+                                />
                         </div>
 
                         <div className="field">
