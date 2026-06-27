@@ -13,6 +13,15 @@ import { fetchViajes, createViaje, updateViaje, deleteViaje, Viaje, fetchCliente
 import { DataTableFilterMeta } from 'primereact/datatable';
 import { InputNumber } from 'primereact/inputnumber';
 import { Checkbox } from 'primereact/checkbox';
+import { 
+  fetchClientesConViajesUltraRapido as fetchClientesConViajes, 
+  fetchViajesConFiltrosOptimizado as fetchViajesConFiltros,
+  exportarEstimacionExcel, 
+  fetchOpcionesFiltros, 
+  EstimacionCliente, 
+  ViajeEstimacion, 
+  FiltrosEstimacion 
+} from '../../../../Services/BD/estimacionesService';
 
 const Crud = () => {
     let emptyViaje: Viaje = {
@@ -45,15 +54,51 @@ const Crud = () => {
     const dt = useRef<DataTable<any>>(null);
 
     // State for dropdown options
-    const [clientes, setClientes] = useState<{ id: number; empresa: string }[]>([]);
+    const [clientes2, setClientes2] = useState<{ id: number; empresa: string }[]>([]);
     const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; precio_unidad: number }[]>([]);
     const [m3Options, setM3Options] = useState<{ id: number; nombre: string; metros_cubicos: number }[]>([]);
     const [materiales, setMateriales] = useState<{ id: number; nombre: string }[]>([]);
     const [operadores, setOperadores] = useState<{id: number; nombre: string}[]>([]);
     const [folioError, setFolioError] = useState(false);
     const [invitados, setInvitados] = useState<{ id: number; empresa: string }[]>([]);
+    const [clientes, setClientes] = useState<EstimacionCliente[]>([]); 
 
+    const [filtros, setFiltros] = useState<FiltrosEstimacion>({
+        fechaInicio: null,
+        fechaFin: null,
+        clienteId: null,
+        operador: null,
+        material: null,
+        origen: null,
+        destino: null
+    });
+    const [opcionesFiltros, setOpcionesFiltros] = useState<{operadores: string[], materiales: string[], origenes: string[], destinos: string[]}>({
+        operadores: [],
+        materiales: [],
+        origenes: [],
+        destinos: []
+        });
+    const [showFiltros, setShowFiltros] = useState(false);
+    const [loading, setLoading] = useState({ viajes: false });
 
+    const aplicarFiltros = () => {
+    setLoading({ ...loading, viajes: true });
+    // Aquí iría la lógica para filtrar los viajes
+    setShowFiltros(false);
+    setLoading({ ...loading, viajes: false });
+    };
+
+    const limpiarFiltros = () => {
+        setFiltros({
+            fechaInicio: null,
+            fechaFin: null,
+            clienteId: null,
+            operador: null,
+            material: null,
+            origen: null,
+            destino: null
+        });
+    };
     /------------------------------------------------------------------------------------------------------------/
 
     // Función para calcular el total de horas de viaje
@@ -69,6 +114,13 @@ const Crud = () => {
         return viajes.length;
     };
 
+    const isMobile = () => {
+        if (typeof window !== 'undefined') {
+            return window.innerWidth < 768;
+        }
+        return false;
+    };
+
     // Opciones para horario (Día/Noche)        
     const horarioOptions = [
         { label: 'Día', value: 'D' },
@@ -78,7 +130,7 @@ const Crud = () => {
     // useEffect principal:
     useEffect(() => {
         fetchViajes().then(setViajes);
-        fetchClientes().then(setClientes);
+        fetchClientes().then(setClientes2);
         fetchPreciosOrigenDestino().then(setPreciosOrigenDestino);
         fetchMateriales().then(setMateriales);
         fetchM3().then(setM3Options);
@@ -86,11 +138,34 @@ const Crud = () => {
         fetchInvitados().then(setInvitados);
     }, []);
 
+    const mostrarError = (mensaje: string) => { 
+        toast.current?.show({ severity: 'error', summary: 'Error', detail: mensaje, life: 5000 }); 
+    };
+
     useEffect(() => {
         const totalHoras = calcularTotalHorasViajes(viajes);
         const totalViajes = calcularTotalViajes(viajes);
         // Guardar los valores en el estado o mostrarlos directamente
     }, [viajes]);
+
+      useEffect(() => { 
+        const cargarDatosIniciales = async () => { 
+        setLoading(prev => ({...prev, clientes: true, opciones: true})); 
+        try { 
+            const [clientesData, opcionesData] = await Promise.all([
+            fetchClientesConViajes(),
+            fetchOpcionesFiltros()
+            ]);
+            setClientes(clientesData); 
+            setOpcionesFiltros(opcionesData);
+        } catch (error) { 
+            mostrarError('Error al cargar datos iniciales'); 
+        } finally { 
+            setLoading(prev => ({...prev, clientes: false, opciones: false})); 
+        } 
+        }; 
+        cargarDatosIniciales(); 
+    }, []); 
 
     const openNew = () => {
         setViaje({
@@ -247,7 +322,8 @@ const Crud = () => {
             <React.Fragment>
                 <div className="my-2">
                     <Button label="Nuevo" icon="pi pi-plus" severity="info" className="mr-2" onClick={openNew} />
-                    <Button label="Eliminar" icon="pi pi-trash" severity="danger" onClick={confirmDeleteSelected} disabled={!selectedViajes || !selectedViajes.length} />
+                    <Button label="Eliminar" icon="pi pi-trash" severity="danger" className="mr-2" onClick={confirmDeleteSelected} disabled={!selectedViajes || !selectedViajes.length} />
+                    <Button label="Filtros" icon="pi pi-filter" className="p-button-outlined" onClick={() => setShowFiltros(true)} />
                 </div>
             </React.Fragment>
         );
@@ -606,7 +682,7 @@ const Crud = () => {
                             <Dropdown
                                 id="id_cliente"
                                 value={viaje.id_cliente}
-                                options={clientes.map(c => ({ label: c.empresa, value: c.id }))}
+                                options={clientes2.map(c => ({ label: c.empresa, value: c.id }))}
                                 onChange={(e) => setViaje({ ...viaje, id_cliente: e.value })}
                                 placeholder="Selecciona un cliente"
                                 required
@@ -751,6 +827,110 @@ const Crud = () => {
                             )}
                         </div>
                     </Dialog>
+
+                {/* Diálogo de Filtros */}
+                <Dialog 
+                    visible={showFiltros} 
+                    onHide={() => setShowFiltros(false)} 
+                    header="Filtrar Viajes" 
+                    style={{ width: '500px' }}
+                    >
+                    <div className="p-fluid">
+                        <div className="field">
+                        <label>Rango de Fechas</label>
+                        <div className="flex gap-2">
+                            <Calendar 
+                            value={filtros.fechaInicio} 
+                            onChange={(e) => setFiltros({...filtros, fechaInicio: e.value ?? null})}
+                            dateFormat="yy-mm-dd"
+                            placeholder="Fecha inicio"
+                            showIcon
+                            readOnlyInput
+                            />
+                            <Calendar 
+                            value={filtros.fechaFin} 
+                            onChange={(e) => setFiltros({...filtros, fechaFin: e.value ?? null})}
+                            dateFormat="yy-mm-dd"
+                            placeholder="Fecha fin"
+                            showIcon
+                            readOnlyInput
+                            />
+                        </div>
+                        </div>
+                        
+                        <div className="field">
+                        <label>Operador</label>
+                        <Dropdown 
+                            value={filtros.operador} 
+                            onChange={(e) => setFiltros({...filtros, operador: e.value})}
+                            options={opcionesFiltros.operadores}
+                            placeholder="Seleccionar operador"
+                            showClear
+                            filter
+                        />
+                        </div>
+                        
+                        <div className="field">
+                        <label>Material</label>
+                        <Dropdown 
+                            value={filtros.material} 
+                            onChange={(e) => setFiltros({...filtros, material: e.value})}
+                            options={opcionesFiltros.materiales}
+                            placeholder="Seleccionar material"
+                            showClear
+                            filter
+                        />
+                        </div>
+                        <div className="field">
+                        <label>Origen</label>
+                        <Dropdown 
+                            value={filtros.origen} 
+                            onChange={(e) => setFiltros({...filtros, origen: e.value})}
+                            options={opcionesFiltros.origenes}
+                            placeholder="Seleccionar origen"
+                            showClear
+                            filter
+                        />
+                        </div>
+
+                        <div className="field">
+                        <label>Destino</label>
+                        <Dropdown 
+                            value={filtros.destino} 
+                            onChange={(e) => setFiltros({...filtros, destino: e.value})}
+                            options={opcionesFiltros.destinos}
+                            placeholder="Seleccionar destino"
+                            showClear
+                            filter
+                        />
+                        </div>
+                    </div>
+                    
+                    <div className="flex justify-content-between gap-2 mt-4">
+                        <Button 
+                        label="Limpiar Filtros" 
+                        icon="pi pi-times" 
+                        className="p-button-text" 
+                        onClick={limpiarFiltros}
+                        disabled={loading.viajes}
+                        />
+                        <div className="flex gap-2">
+                        <Button 
+                            label="Cancelar" 
+                            icon="pi pi-times" 
+                            className="p-button-text" 
+                            onClick={() => setShowFiltros(false)}
+                            disabled={loading.viajes}
+                        />
+                        <Button 
+                            label="Aplicar Filtros" 
+                            icon="pi pi-check" 
+                            onClick={aplicarFiltros}
+                            loading={loading.viajes}
+                        />
+                        </div>
+                    </div>
+                </Dialog>
 
                     <Dialog visible={deleteViajeDialog} style={{ width: '450px' }} header="Confirm" modal footer={deleteViajeDialogFooter} onHide={hideDeleteViajeDialog}>
                         <div className="flex align-items-center justify-content-center">

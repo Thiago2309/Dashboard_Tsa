@@ -373,64 +373,68 @@ const CxcCrud = () => {
                     </div>
                 ) : (
                     <>
-                        <div className="grid">
-                            {resumenClientes.map(cliente => (
-                                <div className="col-12 md:col-6 lg:col-4" key={cliente.id_cliente}>
-                                    <Card 
-                                        className={`cursor-pointer transition-all transition-duration-200 ${clienteSeleccionado?.id_cliente === cliente.id_cliente ? 'border-left-3 border-primary' : 'border-left-3 border-white'}`}
-                                        onClick={() => handleClienteClick(cliente)}
-                                        >
-                                        <div className="flex flex-column gap-3">
-                                            {/* Header con nombre y estado */}
-                                            <div className="flex justify-content-between align-items-start">
-                                                <span className="font-medium text-900" style={{ fontSize: '1.1rem' }}>
-                                                    {cliente.cliente_nombre}
-                                                </span>
-
-                                                <Tag 
-                                                    value={Math.abs(cliente.total_horas_viaje - cliente.total_monto_pagado) < 0.01 ? "Pagado" : "Por cobrar"} 
-                                                    severity={Math.abs(cliente.total_horas_viaje - cliente.total_monto_pagado) < 0.01 ? 'success' : 'warning'}
-                                                    className="scale-90"
-                                                    rounded
-                                                />
-                                            </div>
-
-                                            {/* Línea divisoria sutil */}
-                                            <Divider className="my-1 mx-0" />
-
-                                            {/* Detalles financieros */}
-                                            <div className="grid">
-                                            {/* Total a Cobrar */}
-                                            <div className="col-6 flex flex-column">
-                                                <span className="text-sm text-600 mb-1">Total de la Deuda</span>
-                                                <span className="font-medium text-900">
-                                                {formatCurrency(cliente.total_horas_viaje || 0)}
-                                                </span>
-                                            </div>
-
-                                            {/* Abonado */}
-                                            <div className="col-6 flex flex-column">
-                                                <span className="text-sm text-600 mb-1">Total Abonado</span>
-                                                <span className="font-medium text-green-600">
-                                                {formatCurrency(cliente.total_monto_pagado || 0)}
-                                                </span>
-                                            </div>
-
-                                            {/* Saldo Pendiente */}
-                                            <div className="col-12 mt-2">
-                                                <div className="flex justify-content-between align-items-center surface-100 p-2 border-round">
-                                                <span className="text-sm text-600">Saldo Restante por Cobrar</span>
-                                                <span className={`font-semibold ${Math.max(0, (cliente.total_horas_viaje || 0) - (cliente.total_monto_pagado || 0)) > 0 ? 'text-orange-500' : 'text-green-500'}`}>
-                                                    {formatCurrency(Math.max(0, (cliente.total_horas_viaje || 0) - (cliente.total_monto_pagado || 0)))}
-                                                </span>
-                                                </div>
-                                            </div>
-                                            </div>
-                                        </div>
-                                    </Card>
-                                </div>
-                            ))}
-                        </div>
+                        <DataTable 
+                            value={resumenClientes} 
+                            selectionMode="single"
+                            selection={clienteSeleccionado}
+                            onSelectionChange={(e) => handleClienteClick(e.value as ResumenCliente)}
+                            dataKey="id_cliente"
+                            className="p-datatable-sm mb-4"
+                            emptyMessage="No se encontraron clientes con cuentas"
+                            paginator
+                            rows={5}
+                            rowsPerPageOptions={[5, 10, 25]}
+                        >
+                            <Column 
+                                field="id" 
+                                header="ID Cliente" 
+                                body={(row) => (
+                                    <span className="font-medium">{row.id_cliente}</span>
+                                )}
+                            />
+                            <Column 
+                                field="cliente_nombre" 
+                                header="Cliente" 
+                                body={(row) => (
+                                    <span className="font-medium">{row.cliente_nombre}</span>
+                                )}
+                            />
+                            <Column 
+                                field="total_horas_viaje" 
+                                header="Total de Deuda" 
+                                body={(row) => formatCurrency(row.total_horas_viaje || 0)}
+                            />
+                            <Column 
+                                field="total_monto_pagado" 
+                                header="Total Abonado" 
+                                body={(row) => formatCurrency(row.total_monto_pagado || 0)}
+                            />
+                            <Column 
+                                header="Saldo Restante" 
+                                body={(row) => {
+                                    const saldo = (row.total_horas_viaje || 0) - (row.total_monto_pagado || 0);
+                                    return (
+                                        <span className={`font-semibold ${saldo > 0 ? 'text-orange-500' : 'text-green-500'}`}>
+                                            {formatCurrency(Math.max(0, saldo))}
+                                        </span>
+                                    );
+                                }}
+                            />
+                            <Column 
+                                header="Estatus" 
+                                body={(row) => {
+                                    const saldo = (row.total_horas_viaje || 0) - (row.total_monto_pagado || 0);
+                                    const pagado = Math.abs(saldo) < 0.01;
+                                    return (
+                                        <Tag 
+                                            value={pagado ? "Pagado" : "Por cobrar"} 
+                                            severity={pagado ? 'success' : 'warning'}
+                                            rounded
+                                        />
+                                    );
+                                }}
+                            />
+                        </DataTable>
 
                         {clienteSeleccionado && (
                             <div className="mt-5">

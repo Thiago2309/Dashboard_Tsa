@@ -11,6 +11,7 @@ import { fetchOrigenDestino, createOrigenDestino, updateOrigenDestino, deleteOri
 import { InputNumber } from 'primereact/inputnumber';
 import { Tag } from 'primereact/tag';
 import { Checkbox } from 'primereact/checkbox';
+import { DataTableFilterMeta } from 'primereact/datatable';
 
 const OrigenDestinoCrud = () => {
     let emptyOrigenDestino: OrigenDestino = {
@@ -30,6 +31,9 @@ const OrigenDestinoCrud = () => {
     const [globalFilter, setGlobalFilter] = useState('');
     const toast = useRef<Toast>(null);
     const dt = useRef<DataTable<any>>(null);
+    const [filters, setFilters] = useState<DataTableFilterMeta>({
+        global: { value: null, matchMode: 'contains' as const }
+    });
 
     useEffect(() => {
         fetchOrigenDestino().then(setOrigenDestinoList);
@@ -278,10 +282,15 @@ const OrigenDestinoCrud = () => {
             <h5 className="m-0">Gestión de Origen-Destino</h5>
             <span className="block mt-2 md:mt-0 p-input-icon-left">
                 <i className="pi pi-search" />
-                <InputText 
-                    type="search" 
-                    onInput={(e) => setGlobalFilter(e.currentTarget.value)} 
-                    placeholder="Buscar..." 
+                <InputText
+                    type="search"
+                    onInput={(e) =>
+                        setFilters({
+                            ...filters,
+                            global: { value: e.currentTarget.value, matchMode: 'contains' }
+                        })
+                    }
+                    placeholder="Buscar..."
                 />
             </span>
         </div>
@@ -327,7 +336,8 @@ const OrigenDestinoCrud = () => {
                         className="datatable-responsive"
                         paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                         currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} registros"
-                        globalFilter={globalFilter}
+                        filters={filters} // PARA EL DE BUSQUEDA
+                        filterDisplay="menu"
                         emptyMessage="No se encontraron registros."
                         header={header}
                         responsiveLayout="scroll"

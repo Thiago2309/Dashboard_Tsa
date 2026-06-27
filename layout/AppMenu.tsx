@@ -25,7 +25,7 @@ const AppMenu = () => {
         {
             label: 'Gestion',
             items: [
-                { label: 'Rastreo GPS', icon: 'pi pi-fw pi-map-marker', url: '', target: '_blank' },
+                { label: 'Rastreo GPS', icon: 'pi pi-fw pi-map-marker', to: '/utilities/gps' },
                 { label: 'Notas', icon: 'pi pi-book', to: '/utilities/icons' },
             ]
         },

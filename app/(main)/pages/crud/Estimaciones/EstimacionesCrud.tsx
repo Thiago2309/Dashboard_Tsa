@@ -27,6 +27,7 @@ const EstimacionesCrud = () => {
   const [clientes, setClientes] = useState<EstimacionCliente[]>([]); 
   const [clienteSeleccionado, setClienteSeleccionado] = useState<EstimacionCliente | null>(null); 
   const [viajesFiltrados, setViajesFiltrados] = useState<ViajeEstimacion[]>([]); 
+  const [viajeSeleccionado, setViajeSeleccionado] = useState<ViajeEstimacion | null>(null);
   const [loading, setLoading] = useState({ clientes: true, viajes: false, opciones: false }); 
   const [filtros, setFiltros] = useState<FiltrosEstimacion>({
     fechaInicio: null,
@@ -131,13 +132,23 @@ const EstimacionesCrud = () => {
     if (clienteSeleccionado?.id_cliente === cliente.id_cliente) { 
       setClienteSeleccionado(null); 
       setViajesFiltrados([]); 
-      limpiarFiltros();
+      setViajeSeleccionado(null);
       return; 
     } 
     
     setClienteSeleccionado(cliente); 
+    setViajeSeleccionado(null);
     await cargarViajesCliente(cliente);
-  }; 
+  };
+
+  const handleViajeClick = (viaje: ViajeEstimacion) => {
+    if (viajeSeleccionado?.id === viaje.id) {
+      setViajeSeleccionado(null);
+      return;
+    }
+    setViajeSeleccionado(viaje);
+    // Aquí puedes agregar más lógica si necesitas mostrar detalles del viaje
+  };
 
   const mostrarError = (mensaje: string) => { 
     toast.current?.show({ severity: 'error', summary: 'Error', detail: mensaje, life: 5000 }); 
@@ -253,58 +264,48 @@ const EstimacionesCrud = () => {
             <ProgressSpinner /> 
           </div> 
         ) : ( 
-          <> 
-            <div className="grid"> 
-              {clientes.map(cliente => ( 
-                <div className="col-12 md:col-6 lg:col-4" key={cliente.id_cliente}> 
-                  <Card 
-                    className={`cursor-pointer transition-all transition-duration-200 ${
-                      clienteSeleccionado?.id_cliente === cliente.id_cliente 
-                        ? 'border-left-3 border-primary shadow-2' 
-                        : 'border-left-3 border-white shadow-1'
-                    }`} 
-                    onClick={() => handleClienteClick(cliente)} 
-                  > 
-                    <div className="flex flex-column gap-3"> 
-                      <div className="flex justify-content-between align-items-start"> 
-                        <span className="font-medium text-900" style={{ fontSize: '1.1rem' }}> 
-                          {cliente.cliente_nombre} 
-                        </span> 
-                        <Tag 
-                          value={`${cliente.total_viajes} viajes`} 
-                          severity="info" 
-                          className="scale-90" 
-                          rounded 
-                        /> 
-                      </div> 
-                      
-                      <Divider className="my-1 mx-0" /> 
-                      
-                      <div className="grid"> 
-                        {/* <div className="col-6 flex flex-column"> 
-                          <span className="text-sm text-600 mb-1">Total M3</span> 
-                          <span className="font-medium text-900"> 
-                            {cliente.total_m3.toFixed(2)} m³
-                          </span> 
-                        </div>  */}
-                        <div className="col-6 flex flex-column"> 
-                          <span className="text-sm text-600 mb-1">Total a Cobrar</span> 
-                          <span className="font-medium text-green-600"> 
-                            {formatCurrency(cliente.total_cobrar)} 
-                          </span> 
-                        </div> 
-                        {cliente.obra && (
-                          <div className="col-12 mt-2">
-                            <span className="text-sm text-600">Obra: </span>
-                            <span className="text-sm font-medium">{cliente.obra}</span>
-                          </div>
-                        )}
-                      </div> 
-                    </div> 
-                  </Card> 
-                </div> 
-              ))} 
-            </div> 
+          <>
+            {/* Tabla de Clientes */}
+            <DataTable 
+              value={clientes} 
+              selectionMode="single"
+              selection={clienteSeleccionado}
+              onSelectionChange={(e) => handleClienteClick(e.value as EstimacionCliente)}
+              dataKey="id_cliente"
+              className="p-datatable-sm mb-4"
+              emptyMessage="No se encontraron clientes con estimaciones"
+              paginator
+              rows={5}
+              rowsPerPageOptions={[5, 10, 25]}
+              showGridlines
+            >
+              <Column 
+                field="cliente_nombre" 
+                header="Cliente" 
+                body={(row) => (
+                  <span className="font-medium">{row.cliente_nombre}</span>
+                )}
+              />
+              <Column 
+                field="total_viajes" 
+                header="Total Viajes" 
+              />
+              <Column 
+                field="total_m3" 
+                header="Total M3" 
+                body={(row) => row.total_m3.toFixed(2)}
+              />
+              <Column 
+                field="total_cobrar" 
+                header="Total a Cobrar" 
+                body={(row) => formatCurrency(row.total_cobrar)}
+              />
+              <Column 
+                field="obra" 
+                header="Obra" 
+                body={(row) => row.obra || 'No especificada'}
+              />
+            </DataTable>
 
             {clienteSeleccionado && ( 
               <div className="mt-5"> 
@@ -380,7 +381,12 @@ const EstimacionesCrud = () => {
                       emptyMessage="No se encontraron viajes con los filtros aplicados" 
                       className="p-datatable-sm" 
                       showGridlines
+                      selectionMode="single"
+                      selection={viajeSeleccionado}
+                      onSelectionChange={(e) => handleViajeClick(e.value as ViajeEstimacion)}
+                      dataKey="id"
                     > 
+                      <Column selectionMode="single" headerStyle={{ width: '3rem' }} />
                       <Column field="numero_viaje" header="No. Viaje" style={{ width: '80px' }} /> 
                       <Column field="fecha" header="Fecha" body={fechaBodyTemplate} style={{ width: '120px' }} /> 
                       <Column field="folio" header="Folio" style={{ width: '120px' }} /> 
@@ -400,12 +406,12 @@ const EstimacionesCrud = () => {
                         )} 
                         style={{ width: '130px' }}
                       /> 
-                    </DataTable> 
+                    </DataTable>
                   )} 
                 </Card> 
               </div> 
             )} 
-          </> 
+          </>
         )} 
 
         {/* Diálogo de Filtros */}

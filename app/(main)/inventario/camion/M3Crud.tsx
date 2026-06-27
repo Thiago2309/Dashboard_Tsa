@@ -207,6 +207,26 @@ const M3Crud = () => {
         );
     };
 
+    const marcaBodyTemplate = (rowData: Camion) => {
+        const marca = rowData.marca;
+        return <span>{marca && marca.toString().trim() !== '' ? marca : '-'}</span>;
+    };
+
+    const modeloBodyTemplate = (rowData: Camion) => {
+        const modelo = rowData.modelo;
+        return <span>{modelo && modelo.toString().trim() !== '' ? modelo : '-'}</span>;
+    }
+
+    const añoBodyTemplate = (rowData: Camion) => {
+        const año = rowData.año;
+        return <span>{año ? año : '-'}</span>;
+    }
+
+    const colorBodyTemplate = (rowData: Camion) => {
+        const color = rowData.color;
+        return <span>{color && color.toString().trim() !== '' ? color : '-'}</span>;
+    }
+
     const actionBodyTemplate = (rowData: Camion) => (
         <div className="flex gap-2">
             <Button icon="pi pi-pencil" rounded severity="info" onClick={() => editCamion(rowData)} tooltip="Editar" />
@@ -284,11 +304,11 @@ const M3Crud = () => {
                         <Column field="nombre" header="N° Camion" sortable style={{ width: '130px' }} />
                         <Column field="placa" header="Placa" sortable style={{ width: '120px' }} />
                         <Column field="tipo" header="Tipo" body={tipoBodyTemplate} sortable style={{ width: '120px' }} />
-                        <Column field="marca" header="Marca" sortable style={{ width: '120px' }} />
-                        <Column field="modelo" header="Modelo" sortable style={{ width: '100px' }} />
-                        <Column field="año" header="Año" sortable style={{ width: '80px' }} />
+                        <Column field="marca" header="Marca" body={marcaBodyTemplate} sortable style={{ width: '120px' }} />
+                        <Column field="modelo" header="Modelo" body={modeloBodyTemplate} sortable style={{ width: '100px' }} />
+                        <Column field="año" header="Año" body={añoBodyTemplate} sortable style={{ width: '80px' }} />
                         <Column field="metros_cubicos" header="Capacidad (m³)" sortable style={{ width: '130px' }} />
-                        <Column field="color" header="Color" sortable style={{ width: '100px' }} />
+                        <Column field="color" header="Color" body={colorBodyTemplate} sortable style={{ width: '100px' }} />
                         <Column field="estatus" header="Estatus" body={estatusBodyTemplate} sortable style={{ width: '130px' }} />
                         <Column header="Acciones" body={actionBodyTemplate} style={{ width: '120px' }} exportable={false} />
                     </DataTable>
