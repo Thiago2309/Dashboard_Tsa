@@ -12,7 +12,6 @@ import OperadoresCrud from './operador';
 import InvitadosCrud from './invitados';
 import ProvedoresCrud from './provedores';
 import MaterialCrud from './material';
-// import M3Crud from '../../pages/crud/M3Crud';
 
 import { useSearchParams } from 'next/navigation';
 
@@ -21,7 +20,6 @@ const TableModule = () => {
     const searchParams = useSearchParams();
 
     useEffect(() => {
-        // Leer el parámetro 'module' de la URL
         const moduleParam = searchParams.get('module');
         if (moduleParam) {
             setActiveModule(moduleParam);
@@ -41,17 +39,15 @@ const TableModule = () => {
             case 'Precio Origen - Destino':
                 return <OrigenDestino />;
             case 'Clientes':
-                    return <ClientesCrud />;
+                return <ClientesCrud />;
             case 'Operadores':
-                    return <OperadoresCrud />;
+                return <OperadoresCrud />;
             case 'Provedores':
-                    return <ProvedoresCrud />;
+                return <ProvedoresCrud />;
             case 'Material':
-                    return <MaterialCrud />;
+                return <MaterialCrud />;
             case 'Invitados':
                 return <InvitadosCrud />;
-            // case 'Metros Cúbicos':
-            //     return <M3Crud />;
             default:
                 return <div>Selecciona un módulo</div>;
         }
@@ -59,128 +55,136 @@ const TableModule = () => {
 
     return (
         <div className="grid">
-            <div className='col-12'>
-            {/* <h1 style={styles.title}>Tables</h1> */}
+            <div className="col-12">
                 <div className="card">
-                    <div style={styles.menu}>
-                        <div
-                            style={activeModule === 'Viajes' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Viajes')}
-                        >
-                            Viajes
+                    {/* Menú con scroll horizontal en móvil */}
+                    <div className="menu-container">
+                        <div className="menu-scroll">
+                            <div className="menu">
+                                <div
+                                    className={`menu-item ${activeModule === 'Viajes' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Viajes')}
+                                >
+                                    Viajes
+                                </div>
+                                <div
+                                    className={`menu-item ${activeModule === 'Gastos' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Gastos')}
+                                >
+                                    Gastos
+                                </div>
+                                <div
+                                    className={`menu-item ${activeModule === 'Combustible' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Combustible')}
+                                >
+                                    Combustible
+                                </div>
+                                <div
+                                    className={`menu-item ${activeModule === 'Caja Negra' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Caja Negra')}
+                                >
+                                    Caja Chica
+                                </div>
+                                <div
+                                    className={`menu-item ${activeModule === 'Precio Origen - Destino' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Precio Origen - Destino')}
+                                >
+                                    Precio Origen - Destino
+                                </div>
+                                <div
+                                    className={`menu-item ${activeModule === 'Clientes' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Clientes')}
+                                >
+                                    Clientes
+                                </div>
+                                <div
+                                    className={`menu-item ${activeModule === 'Operadores' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Operadores')}
+                                >
+                                    Operadores
+                                </div>
+                                <div
+                                    className={`menu-item ${activeModule === 'Provedores' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Provedores')}
+                                >
+                                    Provedores
+                                </div>
+                                <div
+                                    className={`menu-item ${activeModule === 'Material' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Material')}
+                                >
+                                    Material
+                                </div>
+                                <div
+                                    className={`menu-item ${activeModule === 'Invitados' ? 'active' : ''}`}
+                                    onClick={() => setActiveModule('Invitados')}
+                                >
+                                    Invitados
+                                </div>
+                            </div>
                         </div>
-                        <div
-                            style={activeModule === 'Gastos' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Gastos')}
-                        >
-                            Gastos
-                        </div>
-                        <div
-                            style={activeModule === 'Combustible' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Combustible')}
-                        >
-                            Combustible
-                        </div>
-                        <div
-                            style={activeModule === 'Caja Negra' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Caja Negra')}
-                        >
-                            Caja Chica
-                        </div>
-                        <div
-                            style={activeModule === 'Precio Origen - Destino' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Precio Origen - Destino')}
-                        >
-                            Precio Origen - Destino
-                        </div>
-                        <div
-                            style={activeModule === 'Clientes' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Clientes')}
-                        >
-                            Clientes
-                        </div>
-                        <div
-                            style={activeModule === 'Operadores' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Operadores')}
-                        >
-                            Operadores
-                        </div>
-                        <div
-                            style={activeModule === 'Provedores' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Provedores')}
-                        >
-                            Provedores
-                        </div>
-                        <div
-                            style={activeModule === 'Material' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Material')}
-                        >
-                            Material
-                        </div>
-                        <div
-                            style={activeModule === 'Invitados' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Invitados')}
-                        >
-                            Invitados
-                        </div>
-                        {/* <div
-                            style={activeModule === 'Metros Cúbicos' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Metros Cúbicos')}
-                        >
-                            Metros Cúbicos
-                        </div> */}
                     </div>
-                    <div style={styles.tableContainer}>
+                    <div className="table-container">
                         {renderModule()}
                     </div>
                 </div>
             </div>
+
+            {/* Estilos CSS */}
+            <style jsx>{`
+                .menu-container {
+                    width: 100%;
+                    position: relative;
+                    margin-bottom: 20px;
+                }
+
+                .menu-scroll {
+                    width: 100%;
+                    overflow-x: auto;
+                    overflow-y: hidden;
+                    -webkit-overflow-scrolling: touch;
+                    scrollbar-width: none; /* Firefox */
+                    -ms-overflow-style: none; /* IE/Edge */
+                    padding-bottom: 5px;
+                }
+
+                /* Ocultar scrollbar en Chrome/Safari/Edge */
+                .menu-scroll::-webkit-scrollbar {
+                    display: none;
+                }
+
+                .menu {
+                    display: flex;
+                    border-bottom: 2px solid #ccc;
+                    min-width: max-content;
+                    padding-bottom: 2px;
+                }
+
+                .menu-item {
+                    padding: 10px 20px;
+                    cursor: pointer;
+                    border-bottom: 2px solid transparent;
+                    white-space: nowrap;
+                    font-size: 14px;
+                    flex-shrink: 0;
+                    transition: all 0.2s ease;
+                }
+
+                .menu-item:hover {
+                    background-color: #f5f5f5;
+                }
+
+                .menu-item.active {
+                    border-bottom: 2px solid red;
+                    font-weight: bold;
+                }
+
+                .table-container {
+                    margin-top: 20px;
+                }
+            `}</style>
         </div>
     );
-};
-
-const styles = {
-    container: {
-        backgroundColor: '#f9f9f9',
-    },
-    title: {
-        marginBottom: '20px',
-        fontSize: '24px',
-        fontWeight: 'bold',
-    },
-    whiteContainer: {
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-        padding: '20px',
-    },
-    menu: {
-        display: 'flex',
-        marginBottom: '20px',
-        borderBottom: '2px solid #ccc',
-    },
-    menuItem: {
-        padding: '10px 20px',
-        cursor: 'pointer',
-        borderBottom: '2px solid transparent',
-    },
-    activeMenuItem: {
-        padding: '10px 20px',
-        cursor: 'pointer',
-        borderBottom: '2px solid red',
-        fontWeight: 'bold',
-    },
-    actions: {
-        display: 'flex',
-        justifyContent: 'flex-end',
-        marginBottom: '20px',
-    },
-    button: {
-        marginLeft: '10px',
-    },
-    tableContainer: {
-        marginTop: '20px',
-    },
 };
 
 export default TableModule;

@@ -291,6 +291,8 @@ const FormularioNotaViaje = () => {
                         onChange={(e) => setViaje({ ...viaje, id_cliente: e.value })}
                         placeholder="Selecciona un cliente"
                         required
+                        filter
+                        filterBy="label"
                         className={submitted && !viaje.id_cliente ? 'p-invalid' : ''}
                     />
                     {submitted && !viaje.id_cliente && <small className="p-invalid">Cliente es requerido.</small>}
@@ -303,6 +305,8 @@ const FormularioNotaViaje = () => {
                             options={invitados.map(i => ({ label: i.empresa, value: i.id }))}
                             onChange={(e) => setViaje({ ...viaje, id_invitado: e.value })}
                             placeholder="Selecciona un invitado (opcional)"
+                            filter
+                            filterBy="label"
                         />
                     </div>
                     <div className="field">
@@ -332,6 +336,8 @@ const FormularioNotaViaje = () => {
                         onChange={(e) => setViaje({ ...viaje, id_precio_origen_destino: e.value })}
                         placeholder="Selecciona un origen-destino"
                         required
+                        filter
+                        filterBy="label"
                         className={submitted && !viaje.id_precio_origen_destino ? 'p-invalid' : ''}
                         itemTemplate={(option) => (
                         <div>
@@ -350,6 +356,8 @@ const FormularioNotaViaje = () => {
                         onChange={(e) => setViaje({ ...viaje, id_material: e.value })}
                         placeholder="Selecciona un material"
                         required
+                        filter
+                        filterBy="label"
                         className={submitted && !viaje.id_material ? 'p-invalid' : ''}
                     />
                     {submitted && !viaje.id_material && <small className="p-invalid">Material es requerido.</small>}
@@ -359,10 +367,15 @@ const FormularioNotaViaje = () => {
                     <Dropdown
                         id="id_m3"
                         value={viaje.id_m3}
-                        options={m3.map(m => ({ label: m.nombre, value: m.id }))}
+                        options={m3.map(m => ({ 
+                            label: `${m.nombre} - (${m.metros_cubicos}m³)`, 
+                            value: m.id 
+                        }))}
                         onChange={(e) => setViaje({ ...viaje, id_m3: e.value })}
                         placeholder="Selecciona m³"
                         required
+                        filter
+                        filterBy="label"
                         className={submitted && !viaje.id_m3 ? 'p-invalid' : ''}
                     />
                     {submitted && !viaje.id_m3 && <small className="p-invalid">Metros Cúbicos es requerido.</small>}
@@ -376,6 +389,8 @@ const FormularioNotaViaje = () => {
                         onChange={(e) => setViaje({ ...viaje, id_operador: e.value })}
                         placeholder="Selecciona un operador"
                         required
+                        filter
+                        filterBy="label"
                         className={submitted && !viaje.id_operador ? 'p-invalid' : ''}
                     />
                     {submitted && !viaje.id_operador && <small className="p-invalid">Operador es requerido.</small>}
