@@ -80,12 +80,65 @@ const Crud = () => {
         });
     const [showFiltros, setShowFiltros] = useState(false);
     const [loading, setLoading] = useState({ viajes: false });
+    const [filteredViajes, setFilteredViajes] = useState<Viaje[]>([]);
 
     const aplicarFiltros = () => {
     setLoading({ ...loading, viajes: true });
-    // Aquí iría la lógica para filtrar los viajes
-    setShowFiltros(false);
-    setLoading({ ...loading, viajes: false });
+    console.log('Aplicando filtros:', filtros);
+    console.log('Viajes totales:', viajes.length, 'primeros 3:', viajes.slice(0,3));
+
+    try {
+        let resultados = viajes.slice();
+
+        // Filtrar por rango de fechas
+        if (filtros.fechaInicio) {
+            const inicio = new Date(filtros.fechaInicio);
+            resultados = resultados.filter(v => new Date(v.fecha) >= inicio);
+        }
+        if (filtros.fechaFin) {
+            const fin = new Date(filtros.fechaFin);
+            resultados = resultados.filter(v => new Date(v.fecha) <= fin);
+        }
+
+        // Filtrar por cliente: algunos objetos `viajes` no contienen `id_cliente`, por eso
+        // resolvemos el nombre del cliente desde `clientes2` y comparamos por `cliente_nombre`.
+        if (filtros.clienteId) {
+            const clienteSeleccionado = clientes2.find(c => c.id === filtros.clienteId);
+            if (clienteSeleccionado) {
+                const nombreCliente = (clienteSeleccionado.empresa || '').toLowerCase();
+                resultados = resultados.filter(v => (v.cliente_nombre || '').toLowerCase() === nombreCliente);
+            }
+        }
+
+        // Filtrar por operador (coincidencia parcial)
+        if (filtros.operador) {
+            resultados = resultados.filter(v => (v.operador_nombre || '').toLowerCase().includes(filtros.operador!.toLowerCase()));
+        }
+
+        // Filtrar por material
+        if (filtros.material) {
+            resultados = resultados.filter(v => (v.material_nombre || '').toLowerCase().includes(filtros.material!.toLowerCase()));
+        }
+
+        // Filtrar por origen
+        if (filtros.origen) {
+            resultados = resultados.filter(v => (v.origen || '').toLowerCase().includes(filtros.origen!.toLowerCase()));
+        }
+
+        // Filtrar por destino
+        if (filtros.destino) {
+            resultados = resultados.filter(v => (v.destino || '').toLowerCase().includes(filtros.destino!.toLowerCase()));
+        }
+
+        console.log('Resultados filtrados:', resultados.length);
+        setFilteredViajes(resultados);
+        setShowFiltros(false);
+    } catch (error) {
+        console.error('Error aplicando filtros:', error);
+        mostrarError('Error aplicando filtros');
+    } finally {
+        setLoading({ ...loading, viajes: false });
+    }
     };
 
     const limpiarFiltros = () => {
@@ -98,6 +151,7 @@ const Crud = () => {
             origen: null,
             destino: null
         });
+        setFilteredViajes([]);
     };
     /------------------------------------------------------------------------------------------------------------/
 
@@ -579,7 +633,7 @@ const Crud = () => {
 
                     <DataTable
                         ref={dt}
-                        value={viajes}
+                        value={filteredViajes.length ? filteredViajes : viajes}
                         selection={selectedViajes}
                         onSelectionChange={(e) => setSelectedViajes(e.value)}
                         dataKey="id"
@@ -883,6 +937,17 @@ const Crud = () => {
                         </div>
                         
                         <div className="field">
+                        <label>Cliente</label>
+                        <Dropdown
+                            value={filtros.clienteId}
+                            onChange={(e) => setFiltros({...filtros, clienteId: e.value})}
+                            options={clientes2.map(c => ({ label: c.empresa, value: c.id }))}
+                            placeholder="Seleccionar cliente"
+                            showClear
+                            filter
+                        />
+                        </div>
+                        <div className="field">
                         <label>Operador</label>
                         <Dropdown 
                             value={filtros.operador} 
@@ -980,3 +1045,7 @@ const Crud = () => {
 };
 
 export default Crud;
+
+function setViajesFiltrados(value: ViajeEstimacion[]): ViajeEstimacion[] | PromiseLike<ViajeEstimacion[]> {
+    throw new Error('Function not implemented.');
+}
