@@ -29,13 +29,19 @@ const AppMenu = () => {
                 { label: 'Notas', icon: 'pi pi-book', to: '/utilities/icons' },
             ]
         },
+        {
+            label: 'RRHH',
+            items: [
+                { label: 'Empleados', icon: 'pi pi-users', to: '/pages/empty' },
+            ]
+        },
         ...(isAlmacen || isAdmin
             ? [
                     {
-                        label: 'Almacen',
+                        label: 'Mantenimiento',
                         items: [
                             { label: 'Inventario', icon: 'pi pi-fw pi-box', to: '/inventario' },
-                            // { label: 'All Blocks', icon: 'pi pi-fw pi-globe', url: 'https://blocks.primereact.org', target: '_blank' }
+                            { label: 'Taller', icon: 'pi pi-fw pi-wrench', to: '/pages/empty' }
                         ]
                     },
                 ]
@@ -46,11 +52,18 @@ const AppMenu = () => {
                   {
                       label: 'Administración',
                       items: [
-                          { label: 'Viajes', icon: 'pi pi-fw pi-truck', to: '/uikit/formlayout' },
-                          { label: 'Resumen', icon: 'pi pi-fw pi-file', to: '/uikit/input' },
-                          { label: 'Nomina', icon: 'pi pi-fw pi-user', to: '/uikit/floatlabel' },
-                          { label: 'Facturación', icon: 'pi pi-fw pi-mobile', to: '/uikit/facturacion', class: 'rotated-icon' },
-                          { label: 'Estimaciones', icon: 'pi pi-fw pi-calculator', to: '/uikit/formlayout/estimaciones' },
+                        {
+                            label: 'Admin. de Viajes',
+                            icon: 'pi pi-fw pi-truck',
+                            items: [
+                                { label: 'Viajes', icon: 'pi pi-fw pi-truck', to: '/uikit/formlayout' },
+                                { label: 'Resumen', icon: 'pi pi-fw pi-file', to: '/uikit/input' },
+                                { label: 'Nomina', icon: 'pi pi-fw pi-user', to: '/uikit/floatlabel' },
+                                { label: 'Facturación', icon: 'pi pi-fw pi-mobile', to: '/uikit/facturacion', class: 'rotated-icon' },
+                                { label: 'Estimaciones', icon: 'pi pi-fw pi-calculator', to: '/uikit/formlayout/estimaciones' },
+                            ]
+                        },
+                            { label: 'Logistica de Viajes', icon: 'pi pi-fw pi-pencil', to: '/pages/empty' },
                           // { label: 'Table', icon: 'pi pi-fw pi-table', to: '/uikit/table' },
                           // { label: 'List', icon: 'pi pi-fw pi-list', to: '/uikit/list' },
                           // { label: 'Tree', icon: 'pi pi-fw pi-share-alt', to: '/uikit/tree' },
