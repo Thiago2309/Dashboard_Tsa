@@ -194,6 +194,7 @@ const GPSModule: React.FC = () => {
                 mapRef.current = null;
             }
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Actualizar marcadores cuando cambian los vehículos

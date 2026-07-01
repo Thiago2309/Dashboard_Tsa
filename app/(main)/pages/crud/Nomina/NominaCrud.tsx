@@ -23,6 +23,7 @@ import { Checkbox } from 'primereact/checkbox';
 import { InputNumber } from 'primereact/inputnumber';
 import { fetchClientes } from '../../../../../Services/BD/clientesService';
 import { fetchDescuentos } from '../../../../../Services/BD/Nomina/descuentoService';
+import { Descuento } from '../../../../../Services/BD/Nomina/descuentoService';
 
 const NominaModule = () => {
     const [empleados, setEmpleados] = useState<Empleado[]>([]);
@@ -72,6 +73,7 @@ const NominaModule = () => {
 
     useEffect(() => {
         verificarNominaExistente();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fechaSeleccionada]);
 
     // ************************************** FUNCIONES PARA CAMBIAR LA FECHA DE RANGO DE NOMINA *************************************
@@ -458,26 +460,26 @@ const NominaModule = () => {
                     }
                     
                     // Obtener descuentos del empleado desde el mapa
-                    const descuentosEmpleado = descuentosPorOperador.get(empleado.id) || [];
+                    const descuentosEmpleado = (descuentosPorOperador.get(empleado.id) || []) as Descuento[];
                     const today = new Date().toISOString().split('T')[0];
                     const descuentosVigentes = descuentosEmpleado.filter(d => 
                         d.activo === true &&
                         d.fecha_inicio <= today && 
                         (!d.fecha_fin || d.fecha_fin >= today)
                     );
-                    
+
                     const descuento_infonavit = descuentosVigentes
                         .filter(d => d.tipo === 'infonavit')
                         .reduce((sum, d) => sum + d.monto, 0);
-                    
+
                     const descuento_fonacot = descuentosVigentes
                         .filter(d => d.tipo === 'fonacot')
                         .reduce((sum, d) => sum + d.monto, 0);
-                    
+
                     const descuento_prestamos = descuentosVigentes
                         .filter(d => d.tipo === 'viaticos' || d.tipo === 'prestamo')
                         .reduce((sum, d) => sum + d.monto, 0);
-                    
+
                     const otros_descuentos = descuentosVigentes
                         .filter(d => d.tipo === 'otros')
                         .reduce((sum, d) => sum + d.monto, 0);
