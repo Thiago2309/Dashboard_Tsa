@@ -84,7 +84,8 @@ const FormularioNotaViaje = () => {
         id_invitado: null,
         en_renta: false,
         horas_renta: null,
-        horario: 'D'
+        horario: 'D',
+        numero_viaje: null
     });
     const [clientes, setClientes] = useState<{ id?: number; empresa: string }[]>([]);
     const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; precio_unidad: number }[]>([]);
@@ -192,7 +193,8 @@ const FormularioNotaViaje = () => {
                 id_invitado: null,
                 en_renta: false,
                 horas_renta: null,
-                horario: 'D'
+                horario: 'D',
+                numero_viaje: null
             });
             setSubmitted(false);
             } else {
@@ -281,6 +283,19 @@ const FormularioNotaViaje = () => {
                         className={submitted && !viaje.folio_bco ? 'p-invalid' : ''}
                     />
                     {submitted && !viaje.folio_bco && <small className="p-invalid">Folio Banco es requerido.</small>}
+                    </div>
+                    <div className="field">
+                    <label htmlFor="numero_viaje">No Viaje</label><span style={{ color: 'red' }}> *</span>
+                    <InputNumber
+                        id="numero_viaje"
+                        value={viaje.numero_viaje}
+                        onValueChange={(e) => setViaje({ ...viaje, numero_viaje: e.value })}
+                        useGrouping={false}
+                        required
+                        autoFocus
+                        className={submitted && !viaje.numero_viaje ? 'p-invalid' : ''}
+                    />
+                    {submitted && !viaje.numero_viaje && <small className="p-invalid">No Viaje es requerido.</small>}
                     </div>
                     <div className="field">
                     <label htmlFor="id_cliente">Cliente</label><span style={{ color: 'red' }}> *</span>

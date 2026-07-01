@@ -5,6 +5,7 @@ import { Button } from 'primereact/button';
 import NominaModule from './nomina';
 import BonoModule from './bono';
 import PrestamoModule from './prestamo';
+import DescuentoModule from './descuento';
 
 const TableModule = () => {
     const [activeModule, setActiveModule] = useState('Nomina'); // El que renderiza al cargar la pagina
@@ -17,6 +18,8 @@ const TableModule = () => {
                 return <BonoModule />;
             case 'prestamo':
                 return <PrestamoModule />;
+            case 'descuento':
+                return <DescuentoModule />;
             default:
                 return <div>Selecciona un módulo</div>;
         }
@@ -32,21 +35,27 @@ const TableModule = () => {
                             style={activeModule === 'Nomina' ? styles.activeMenuItem : styles.menuItem}
                             onClick={() => setActiveModule('Nomina')}
                         >
-                            Nomina - Operador
+                            Nomina
                         </div>
                         <div
                             style={activeModule === 'bono' ? styles.activeMenuItem : styles.menuItem}
                             onClick={() => setActiveModule('bono')}
                         >
-                            Bono - Operador
+                            Bono
                         </div>
                         <div
                             style={activeModule === 'prestamo' ? styles.activeMenuItem : styles.menuItem}
                             onClick={() => setActiveModule('prestamo')}
                         >
-                            Prestamo - Operador
+                            Prestamo
                         </div>
-                    </div>
+                        <div
+                            style={activeModule === 'descuento' ? styles.activeMenuItem : styles.menuItem}
+                            onClick={() => setActiveModule('descuento')}
+                        >
+                            Descuento
+                        </div>        
+                    </div>  
                     <div style={styles.tableContainer}>
                         {renderModule()}
                     </div>

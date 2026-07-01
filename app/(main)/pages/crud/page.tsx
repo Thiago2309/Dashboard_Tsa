@@ -373,6 +373,15 @@ const Crud = () => {
         );
     };
 
+    const folioNo_ViajeBodyTemplate = (rowData: Viaje) => {
+        return (
+            <>
+                <span className="p-column-title">No. Viaje</span>
+                {rowData.numero_viaje ?? '-'}
+            </>
+        );
+    };
+
     const clienteBodyTemplate = (rowData: Viaje) => {
         return (
             <>
@@ -591,6 +600,7 @@ const Crud = () => {
                         <Column field="fecha" header="Fecha" sortable body={fechaBodyTemplate}></Column>
                         <Column field="folio_bco" header="Folio Banco" sortable body={folioBcoBodyTemplate}></Column>
                         <Column field="folio" header="Folio" sortable body={folioBodyTemplate}></Column>
+                        <Column field="numero_viaje" header="No. Viaje" sortable body={folioNo_ViajeBodyTemplate}></Column>
                         <Column field="cliente_nombre" header="Cliente" sortable body={clienteBodyTemplate}></Column>
                         <Column field="operador_nombre" header="Operador" sortable body={operadorBodyTemplate}></Column>
                         <Column field="origen" header="Origen" sortable body={origenBodyTemplate}></Column>
@@ -678,6 +688,19 @@ const Crud = () => {
                             {submitted && !viaje.folio && <small className="p-invalid">Folio es requerido.</small>}
                         </div>
                         <div className="field">
+                            <label htmlFor="numero_viaje">No. Viaje</label>
+                            <InputNumber
+                                id="numero_viaje"
+                                value={viaje.numero_viaje}
+                                onValueChange={(e) => setViaje({ ...viaje, numero_viaje: e.value })}
+                                useGrouping={false}
+                                required
+                                autoFocus
+                                className={submitted && !viaje.numero_viaje ? 'p-invalid' : ''}
+                            />
+                            {submitted && !viaje.numero_viaje && <small className="p-invalid">No. Viaje es requerido.</small>}
+                        </div>
+                        <div className="field">
                             <label htmlFor="id_cliente">Cliente</label>
                             <Dropdown
                                 id="id_cliente"
@@ -750,6 +773,7 @@ const Crud = () => {
                             />
                             {submitted && !viaje.id_operador && <small className="p-invalid">Operador es requerido.</small>}
                         </div>
+                        <br />
                         <div className="field">
                             <label htmlFor="id_invitado">Invitado</label>
                             <Dropdown
