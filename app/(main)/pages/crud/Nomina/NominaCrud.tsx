@@ -22,6 +22,7 @@ import { ModalVistaPrevia } from './recibo/ModalVistaPrevia';
 import { Checkbox } from 'primereact/checkbox';
 import { InputNumber } from 'primereact/inputnumber';
 import { fetchClientes } from '../../../../../Services/BD/clientesService';
+import { fetchDescuentos } from '../../../../../Services/BD/Nomina/descuentoService';
 
 const NominaModule = () => {
     const [empleados, setEmpleados] = useState<Empleado[]>([]);
@@ -45,6 +46,7 @@ const NominaModule = () => {
     const [showVistaPrevia, setShowVistaPrevia] = useState(false);
     const [nominaParaVistaPrevia, setNominaParaVistaPrevia] = useState<any>(null);
     const [clientes, setClientes] = useState<any[]>([]);
+    const [filtroBusqueda, setFiltroBusqueda] = useState('');
 
     // Prestamo
     const [showPrestamoDialog, setShowPrestamoDialog] = useState(false);
@@ -135,6 +137,12 @@ const NominaModule = () => {
         }).format(amount);
     };
 
+    const calcularTotalViajesSemana = (viajes: any[]) => {
+        return viajes.reduce((sum, viaje) => {
+            return sum + (viaje.caphrsviajes || 0);
+        }, 0);
+    };
+
     const goToPreviousWeek = () => {
         const newDate = new Date(fechaSeleccionada);
         newDate.setDate(newDate.getDate() - 7);
@@ -155,7 +163,39 @@ const NominaModule = () => {
         setShowResults(false);
         setNominasCalculadas([]);
         setViajesSemana([]);
+        setFiltroBusqueda('');
     };
+
+    // Crear una variable con los datos filtrados
+    const datosFiltrados = React.useMemo(() => {
+        if (!filtroBusqueda) return nominasCalculadas;
+        
+        return nominasCalculadas.filter(nomina => 
+            nomina.empleado_nombre?.toLowerCase().includes(filtroBusqueda.toLowerCase()) ||
+            nomina.id_operador?.toString().includes(filtroBusqueda) ||
+            nomina.estatus?.toLowerCase().includes(filtroBusqueda.toLowerCase())
+        );
+    }, [nominasCalculadas, filtroBusqueda]);
+
+    // Filtro para los viajes basado en el operador seleccionado
+    const viajesFiltrados = React.useMemo(() => {
+        if (!filtroBusqueda) return viajesSemana;
+        
+        // Obtener los nombres de los operadores que coinciden con la búsqueda
+        const operadoresFiltrados = nominasCalculadas
+            .filter(nomina => 
+                nomina.empleado_nombre?.toLowerCase().includes(filtroBusqueda.toLowerCase()) ||
+                nomina.id_operador?.toString().includes(filtroBusqueda)
+            )
+            .map(nomina => nomina.empleado_nombre);
+        
+        // Filtrar viajes por los operadores encontrados
+        return viajesSemana.filter(viaje => 
+            operadoresFiltrados.some(nombre => 
+                viaje.operador_nombre?.toLowerCase().includes(nombre?.toLowerCase() || '')
+            )
+        );
+    }, [viajesSemana, filtroBusqueda, nominasCalculadas]);
 
     const cargarDatos = async () => {
         try {
@@ -367,9 +407,21 @@ const NominaModule = () => {
             // Obtener préstamos activos (Pendientes)
             const prestamosActivos = await fetchPrestamosActivos();
 
-            const nominas = empleados
+            // OBTENER TODOS LOS DESCUENTOS DE UNA SOLA VEZ (UNA SOLA CONSULTA)
+            const todosDescuentos = await fetchDescuentos();
+
+            // Crear un mapa de descuentos por operador para acceso rápido
+            const descuentosPorOperador = new Map();
+            todosDescuentos.forEach(d => {
+                if (!descuentosPorOperador.has(d.id_operador)) {
+                    descuentosPorOperador.set(d.id_operador, []);
+                }
+                descuentosPorOperador.get(d.id_operador).push(d);
+            });
+
+            const nominasPromises = empleados
                 .filter(empleado => empleado.estatus)
-                .map(empleado => {
+                .map(async (empleado) => {
                     const viajesEmpleado = viajes.filter(viaje => {
                         const perteneceAlOperador = viaje.operador_nombre === empleado.nombre;
                         const estaEnRango = viaje.fecha >= fechaInicioStr && viaje.fecha <= fechaFinStr;
@@ -405,24 +457,49 @@ const NominaModule = () => {
                         rebaso = false;
                     }
                     
-                    // Calcular bonos del empleado (bonos activos)
+                    // Obtener descuentos del empleado desde el mapa
+                    const descuentosEmpleado = descuentosPorOperador.get(empleado.id) || [];
+                    const today = new Date().toISOString().split('T')[0];
+                    const descuentosVigentes = descuentosEmpleado.filter(d => 
+                        d.activo === true &&
+                        d.fecha_inicio <= today && 
+                        (!d.fecha_fin || d.fecha_fin >= today)
+                    );
+                    
+                    const descuento_infonavit = descuentosVigentes
+                        .filter(d => d.tipo === 'infonavit')
+                        .reduce((sum, d) => sum + d.monto, 0);
+                    
+                    const descuento_fonacot = descuentosVigentes
+                        .filter(d => d.tipo === 'fonacot')
+                        .reduce((sum, d) => sum + d.monto, 0);
+                    
+                    const descuento_prestamos = descuentosVigentes
+                        .filter(d => d.tipo === 'viaticos' || d.tipo === 'prestamo')
+                        .reduce((sum, d) => sum + d.monto, 0);
+                    
+                    const otros_descuentos = descuentosVigentes
+                        .filter(d => d.tipo === 'otros')
+                        .reduce((sum, d) => sum + d.monto, 0);
+                    
                     const bonosEmpleado = bonosActivos.filter(bono => 
                         bono.id_operador === empleado.id
                     );
-                    const totalBonos = bonosEmpleado.reduce((sum, bono) => sum + bono.monto, 0);
-                    
-                    // Pago bruto = Pago por alcance de meta + Bonos activos
+                    const totalBonos = bonosEmpleado.reduce((sum, bono) => sum + (bono.monto || 0), 0);
                     const pagoBruto = pagoAlcanceMeta + totalBonos;
                     
-                    // Calcular préstamos del empleado (solo préstamos pendientes)
                     const prestamosEmpleado = prestamosActivos.filter(p => p.id_operador === empleado.id);
-                    const totalPrestamos = prestamosEmpleado.reduce((sum, p) => sum + p.saldo_pendiente, 0);
+                    const totalPrestamos = prestamosEmpleado.reduce((sum, p) => sum + (p.saldo_pendiente || 0), 0);
                     
-                    // En lugar de calcular automáticamente, inicializar en 0
-                    const descuentoPrestamoManual = 0; // Inicialmente 0
-                    const aplicarDescuentoPrestamo = false; // Checkbox para aplicar
+                    const descuentoPrestamoManual = 0;
+                    const aplicarDescuentoPrestamo = false;
 
-                    const pagoNeto = pagoBruto - descuentoPrestamoManual;
+                    const totalDescuentosAutomaticos = descuento_infonavit + 
+                                                        descuento_fonacot + 
+                                                        descuento_prestamos + 
+                                                        otros_descuentos;
+
+                    const pagoNeto = pagoBruto - totalDescuentosAutomaticos - descuentoPrestamoManual;
 
                     return {
                         id_operador: empleado.id,
@@ -432,28 +509,31 @@ const NominaModule = () => {
                         fecha_inicio: fechaInicioStr,
                         fecha_fin: fechaFinStr,
                         total_viajes: totalViajes,
-                        total_viajes_sin_descuento: totalViajesSinDescuento, // Nuevo campo
-                        descuento_administrativo: descuentoTotal, // Nuevo campo
+                        total_viajes_sin_descuento: totalViajesSinDescuento,
+                        descuento_administrativo: descuentoTotal,
                         cantidad_viajes: viajesEmpleado.length,
                         salario_base: salarioBase,
                         pago_alcance_meta: pagoAlcanceMeta,
                         bono: totalBonos,
                         pago_bruto: pagoBruto,
                         rebaso: rebaso,
-                        
-                        // PRÉSTAMOS - AGREGAR CAMPOS MANUALES
-                        prestamos_disponibles: totalPrestamos, // Total disponible para descontar
-                        aplicar_descuento_prestamo: aplicarDescuentoPrestamo, // Checkbox
-                        descuento_prestamo: descuentoPrestamoManual, // Monto manual a descontar
-                        prestamos: 0, // Inicialmente 0 (no se descuenta)
-                        
+                        prestamos_disponibles: totalPrestamos,
+                        aplicar_descuento_prestamo: aplicarDescuentoPrestamo,
+                        descuento_prestamo: descuentoPrestamoManual,
+                        prestamos: 0,
+                        descuento_infonavit: descuento_infonavit,
+                        descuento_fonacot: descuento_fonacot,
+                        otros_descuentos: otros_descuentos,
+                        total_descuentos_automaticos: totalDescuentosAutomaticos,
                         pago_neto: pagoNeto > 0 ? pagoNeto : 0,
                         estatus: 'Pendiente',
                         viajes: viajesEmpleado,
-                        prestamos_detalle: prestamosEmpleado // Guardar detalles para mostrar
+                        prestamos_detalle: prestamosEmpleado
                     };
                 });
 
+            // ESPERAR A QUE TODAS LAS PROMESAS SE RESUELVAN
+            const nominas = await Promise.all(nominasPromises);
             setNominasCalculadas(nominas);
             setShowResults(true);
             setNominaGuardada(false);
@@ -501,9 +581,9 @@ const NominaModule = () => {
                 // Descuentos
                 descuento_imss: 0,
                 descuento_isr: 0,
-                descuento_infonavit: 0,
-                descuento_fonacot: 0,
-                otros_descuentos: 0,
+                descuento_infonavit: nomina.descuento_infonavit || 0,
+                descuento_fonacot: nomina.descuento_fonacot || 0,
+                otros_descuentos: nomina.otros_descuentos || 0,
                 
                 // Préstamos y deducciones
                 prestamos: nomina.prestamos || 0,
@@ -765,6 +845,24 @@ const NominaModule = () => {
 
     const leftToolbarTemplate = () => (
         <div className="flex flex-wrap gap-2">
+            <div className="p-inputgroup">
+                <span className="p-inputgroup-addon">
+                    <i className="pi pi-search"></i>
+                </span>
+                <InputText 
+                    placeholder="Buscar operador..." 
+                    value={filtroBusqueda}
+                    onChange={(e) => setFiltroBusqueda(e.target.value)}
+                    className="w-20rem"
+                />
+                {filtroBusqueda && (
+                    <Button 
+                        icon="pi pi-times" 
+                        className="p-button-text p-button-sm" 
+                        onClick={() => setFiltroBusqueda('')}
+                    />
+                )}
+            </div>
             <Button 
                 label="Verificar Nómina" 
                 icon="pi pi-search" 
@@ -873,6 +971,10 @@ const NominaModule = () => {
                 'Salario Base': formatCurrency(nomina.salario_base),
                 'Rebasó 40K': nomina.rebaso ? 'Sí' : 'No',
                 'Bono': formatCurrency(nomina.bono),
+                'Infonavit': formatCurrency(nomina.descuento_infonavit || 0),
+                'Fonacot': formatCurrency(nomina.descuento_fonacot || 0),
+                'Otros Descuentos': formatCurrency(nomina.otros_descuentos || 0),
+                'Total Descuentos': formatCurrency(nomina.total_descuentos_automaticos || 0),
                 'Pago Bruto': formatCurrency(nomina.pago_bruto),
                 'Préstamos': formatCurrency(nomina.prestamos),
                 'Pago Neto': formatCurrency(nomina.pago_neto),
@@ -1141,7 +1243,7 @@ const NominaModule = () => {
                                 
                                 <DataTable
                                     ref={dt}
-                                    value={nominasCalculadas}
+                                    value={datosFiltrados}
                                     paginator
                                     rows={10}
                                     rowsPerPageOptions={[5, 10, 25]}
@@ -1156,6 +1258,10 @@ const NominaModule = () => {
                                     <Column field="salario_base" header="Salario Base" body={salarioBaseBodyTemplate} />
                                     <Column field="rebaso" header="Rebasó 40K" body={rebasoBodyTemplate} />
                                     <Column field="bono" header="Bono" body={bonoBodyTemplate} />
+                                    <Column field="descuento_infonavit" header="Infonavit" body={(row) => formatCurrency(row.descuento_infonavit)} />
+                                    <Column field="descuento_fonacot" header="Fonacot" body={(row) => formatCurrency(row.descuento_fonacot)} />
+                                    <Column field="otros_descuentos" header="Otros" body={(row) => formatCurrency(row.otros_descuentos)} />
+                                    <Column field="total_descuentos_automaticos" header="Total Desc." body={(row) => formatCurrency(row.total_descuentos_automaticos)} />
                                     <Column field="pago_bruto" header="Pago Bruto" body={pagoBrutoBodyTemplate} />
                                     <Column field="prestamos" header="Préstamos" body={(row) => formatCurrency(row.prestamos)} />
                                     <Column field="pago_neto" header="Pago Neto" body={pagoNetoBodyTemplate} />
@@ -1164,12 +1270,37 @@ const NominaModule = () => {
                             </Card>
 
                             {viajesSemana.length > 0 && (
-                                <Card title={`Viajes de la Semana (Total: ${viajesSemana.length})`} className="mb-4">
+                                <Card 
+                                    title={
+                                        <div className="flex justify-content-between align-items-center w-full">
+                                            <div className="flex align-items-center gap-3">
+                                                <span className="text-lg font-semibold">
+                                                    Viajes de la Semana
+                                                    <span className="ml-2 text-sm text-gray-600 font-normal">
+                                                        (Total: {viajesSemana.length} viajes)
+                                                    </span>
+                                                </span>
+                                                <span className="text-sm text-gray-600">
+                                                    | Monto Generado: 
+                                                    <span className="font-bold text-green-600 ml-1">
+                                                        {formatCurrency(calcularTotalViajesSemana(viajesFiltrados))}
+                                                    </span>
+                                                    {filtroBusqueda && (
+                                                        <span className="ml-2 text-sm text-gray-500">
+                                                            (filtrado de {formatCurrency(calcularTotalViajesSemana(viajesSemana))})
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    } 
+                                    className="mb-4"
+                                    >
                                     <DataTable
-                                        value={viajesSemana}
+                                        value={viajesFiltrados}
                                         paginator
                                         rows={5}
-                                        emptyMessage="No se encontraron viajes"
+                                        emptyMessage={filtroBusqueda ? "No hay viajes para el operador seleccionado" : "No se encontraron viajes"}
                                         className="p-datatable-sm"
                                     >
                                         <Column field="id" header="ID Viaje" />
