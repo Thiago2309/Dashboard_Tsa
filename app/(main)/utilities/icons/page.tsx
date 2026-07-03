@@ -15,6 +15,8 @@ import { RadioButton } from 'primereact/radiobutton';
 import { Checkbox } from 'primereact/checkbox';
 import { InputNumber } from 'primereact/inputnumber';
 import { createMaterial, Material } from '../../../../Services/BD/materialService';
+// import LogisticaTabla from '../../../../app/(main)/pages/crud/Logistica/LogisticaTabla';
+
 
 const userRoleId = getUserRoleIdFromLocalStorage();
 const isAlmacen = userRoleId === 4;
@@ -37,7 +39,12 @@ export default function GestionAreas() {
       <div>
         {/* Formulario de Viajes */}
         <div className="card crud-demo p-4 mb-4">
-          <h2>Gestión de Notas de Viajes</h2>
+            {/* <div>
+                <h2>Pre listado de viajes logísticos por Aprobar</h2>
+                <LogisticaTabla />
+            </div>
+        <br /> */}
+        <h2>Gestión de Notas de Viajes</h2>
           <FormularioNotaViaje />
         </div>
   
@@ -274,7 +281,7 @@ const FormularioNotaViaje = () => {
                     {submitted && !viaje.folio && <small className="p-invalid">Folio es requerido.</small>}
                     </div>
                     <div className="field">
-                    <label htmlFor="folio_bco">Folio Banco</label><span style={{ color: 'red' }}> *</span>
+                    <label htmlFor="folio_bco">Folio Banco</label>
                     <InputText
                         id="folio_bco"
                         value={viaje.folio_bco}
@@ -282,20 +289,19 @@ const FormularioNotaViaje = () => {
                         required
                         className={submitted && !viaje.folio_bco ? 'p-invalid' : ''}
                     />
-                    {submitted && !viaje.folio_bco && <small className="p-invalid">Folio Banco es requerido.</small>}
+                    {/* {submitted && !viaje.folio_bco && <small className="p-invalid">Folio Banco es requerido.</small>} */}
                     </div>
                     <div className="field">
-                    <label htmlFor="numero_viaje">No Viaje</label><span style={{ color: 'red' }}> *</span>
+                    <label htmlFor="numero_viaje">No. Viaje</label>
                     <InputNumber
                         id="numero_viaje"
                         value={viaje.numero_viaje}
                         onValueChange={(e) => setViaje({ ...viaje, numero_viaje: e.value })}
                         useGrouping={false}
                         required
-                        autoFocus
                         className={submitted && !viaje.numero_viaje ? 'p-invalid' : ''}
                     />
-                    {submitted && !viaje.numero_viaje && <small className="p-invalid">No Viaje es requerido.</small>}
+                    {/* {submitted && !viaje.numero_viaje && <small className="p-invalid">No. Viaje es requerido.</small>} */}
                     </div>
                     <div className="field">
                     <label htmlFor="id_cliente">Cliente</label><span style={{ color: 'red' }}> *</span>
