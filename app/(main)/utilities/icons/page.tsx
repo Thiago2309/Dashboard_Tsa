@@ -15,7 +15,8 @@ import { RadioButton } from 'primereact/radiobutton';
 import { Checkbox } from 'primereact/checkbox';
 import { InputNumber } from 'primereact/inputnumber';
 import { createMaterial, Material } from '../../../../Services/BD/materialService';
-import LogisticaTabla from '../../../../app/(main)/pages/crud/Logistica/LogisticaTabla';
+// import LogisticaTabla from '../../../../app/(main)/pages/crud/Logistica/LogisticaTabla';
+
 
 const userRoleId = getUserRoleIdFromLocalStorage();
 const isAlmacen = userRoleId === 4;
