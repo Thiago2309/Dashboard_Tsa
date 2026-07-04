@@ -6,6 +6,7 @@ import { InputNumber } from 'primereact/inputnumber';
 import { Button } from 'primereact/button';
 import { Dropdown } from 'primereact/dropdown';
 import { crearProducto, actualizarProducto, Inventario } from '../../../Services/BD/inventario/inventarioService';
+import QRCode from 'qrcode';
 
 interface ProductoFormProps {
     producto?: Inventario | null;

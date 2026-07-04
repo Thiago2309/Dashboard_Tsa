@@ -1,7 +1,9 @@
 import { supabase } from '../../superbase.service';
+import QRCode from 'qrcode';
 
 export interface Inventario {
     id: number;
+    codigo_barras: string | null;
     codigo: string;
     nombre: string;
     categoria: string | null;
@@ -133,8 +135,9 @@ export const getProductoById = async (id: number): Promise<Inventario | null> =>
     return data;
 };
 
-// Crear nuevo producto
+// Crear producto con Codigo de Barras generado automáticamente basado en el ID del producto. El código de barras se genera como un número de 8 dígitos, rellenando con ceros a la izquierda si es necesario. Por ejemplo, si el ID del producto es 5, el código de barras será "00000005".
 export const crearProducto = async (producto: Omit<Inventario, 'id' | 'created_at' | 'updated_at'>): Promise<Inventario> => {
+    // 1. Crear el producto
     const { data, error } = await supabase
         .from('inventario')
         .insert([producto])
@@ -144,6 +147,39 @@ export const crearProducto = async (producto: Omit<Inventario, 'id' | 'created_a
     if (error) {
         console.error('Error al crear producto:', error);
         throw new Error(error.message);
+    }
+
+    // 2. Generar código de barras (usando el ID o código del producto)
+    const codigoBarras = `${data.id}`.padStart(8, '0'); // Ej: "00000005"
+    // O usar el código del producto: data.codigo
+
+    // 3. Guardar el código de barras
+    const { data: updatedData, error: updateError } = await supabase
+        .from('inventario')
+        .update({ codigo_barras: codigoBarras })
+        .eq('id', data.id)
+        .select()
+        .single();
+
+    if (updateError) {
+        console.error('Error al actualizar código de barras:', updateError);
+        throw new Error(updateError.message);
+    }
+
+    return updatedData;
+};
+
+// Obtener producto por código de barras
+export const getProductoByBarcode = async (codigoBarras: string): Promise<Inventario | null> => {
+    const { data, error } = await supabase
+        .from('inventario')
+        .select('*')
+        .eq('codigo_barras', codigoBarras)
+        .single();
+
+    if (error) {
+        console.error('Error al obtener producto por código de barras:', error);
+        return null;
     }
     return data;
 };

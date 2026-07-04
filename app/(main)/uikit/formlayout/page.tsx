@@ -40,8 +40,8 @@ const TableModule = () => {
                 return <OrigenDestino />;
             case 'Clientes':
                 return <ClientesCrud />;
-            case 'Operadores':
-                return <OperadoresCrud />;
+            // case 'Operadores':
+            //     return <OperadoresCrud />;
             case 'Provedores':
                 return <ProvedoresCrud />;
             case 'Material':
@@ -97,12 +97,12 @@ const TableModule = () => {
                                 >
                                     Clientes
                                 </div>
-                                <div
+                                {/* <div
                                     className={`menu-item ${activeModule === 'Operadores' ? 'active' : ''}`}
                                     onClick={() => setActiveModule('Operadores')}
                                 >
                                     Operadores
-                                </div>
+                                </div> */}
                                 <div
                                     className={`menu-item ${activeModule === 'Provedores' ? 'active' : ''}`}
                                     onClick={() => setActiveModule('Provedores')}

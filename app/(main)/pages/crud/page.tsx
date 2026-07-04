@@ -706,7 +706,7 @@ const Crud = () => {
                                 autoFocus
                                 className={submitted && !viaje.folio_bco ? 'p-invalid' : ''}
                             />
-                            {submitted && !viaje.folio_bco && <small className="p-invalid">Folio Banco es requerido.</small>}
+                            {/* {submitted && !viaje.folio_bco && <small className="p-invalid">Folio Banco es requerido.</small>} */}
                         </div>
                         <div className="field">
                             <label htmlFor="folio">Folio</label>
@@ -752,7 +752,7 @@ const Crud = () => {
                                 autoFocus
                                 className={submitted && !viaje.numero_viaje ? 'p-invalid' : ''}
                             />
-                            {submitted && !viaje.numero_viaje && <small className="p-invalid">No. Viaje es requerido.</small>}
+                            {/* {submitted && !viaje.numero_viaje && <small className="p-invalid">No. Viaje es requerido.</small>} */}
                         </div>
                         <div className="field">
                             <label htmlFor="id_cliente">Cliente</label>

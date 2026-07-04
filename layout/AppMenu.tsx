@@ -8,77 +8,119 @@ import Link from 'next/link';
 import { AppMenuItem } from '@/types';
 import { getUserRoleIdFromLocalStorage } from '@/Services/BD/userService';
 
+// Definición de roles para mejor legibilidad
+const ROLES = {
+    ADMIN: 1,
+    EMPLEADO: 2,
+    ALMACEN: 4,
+    LOGISTICA: 5
+} as const;
 
 const AppMenu = () => {
     const { layoutConfig } = useContext(LayoutContext);
     const userRoleId = getUserRoleIdFromLocalStorage();
     console.log('userRoleId', userRoleId);
-    const isAdmin = userRoleId === 1;
-    const isAlmacen = userRoleId === 4;
-    console.log('isAdmin', isAdmin);
+    
+    // Definir permisos basados en roles
+    const esAdmin = userRoleId === ROLES.ADMIN;
+    const isAlmacen = userRoleId === ROLES.ALMACEN;
+    const isEmpleado = userRoleId === ROLES.EMPLEADO;
+    const isLogistica = userRoleId === ROLES.LOGISTICA;
+    
+    // ADMIN ve TODO, los demás roles solo lo que les corresponde
+    const puedeVerTodo = esAdmin;
+    console.log('esAdmin', esAdmin);
+
+    // Determinar qué secciones mostrar según el rol (Admin ve todo)
+    const puedeVerGestion = puedeVerTodo || (!isEmpleado && !isLogistica);
+    const puedeVerMantenimiento = puedeVerTodo || (isAlmacen || (esAdmin && !isLogistica));
+    const puedeVerAdminViajes = puedeVerTodo || esAdmin;
+    const puedeVerLogistica = puedeVerTodo || isLogistica;
 
     const model: AppMenuItem[] = [
+        // ========== SECCIÓN HOME ==========
+        // Visible para: TODOS
         {
             label: 'Home',
             items: [{ label: 'Dashboard', icon: 'pi pi-fw pi-home', to: '/' }]
         },
+
+        // ========== SECCIÓN GESTION ==========
+        // Visible para: Admin, Almacen (NO para Empleado ni Logistica)
+        ...(puedeVerGestion ? [
+            {
+                label: 'Gestion',
+                items: [
+                    { label: 'Rastreo GPS', icon: 'pi pi-fw pi-map-marker', to: '/utilities/gps' },
+                    { label: 'Notas', icon: 'pi pi-book', to: '/utilities/icons' },
+                ]
+            },
+            {
+                label: 'RRHH',
+                items: [
+                    { label: 'Empleados', icon: 'pi pi-users', to: '/uikit/RH' },
+                    { label: 'Vacaciones', icon: 'pi pi-calendar', to: '/uikit/RH/Vacaciones' },
+                ]
+            },
+        ] : []),
+
+        // ========== SECCIÓN MANTENIMIENTO ==========
+        // Visible para: Admin, Almacen (NO para Logistica)
+        ...(puedeVerMantenimiento ? [
+            {
+                label: 'Mantenimiento',
+                items: [
+                    { label: 'Inventario', icon: 'pi pi-fw pi-box', to: '/inventario' },
+                    { label: 'Taller', icon: 'pi pi-fw pi-wrench', to: '/pages/empty' }
+                ]
+            },
+        ] : []),
+
+        // ========== SECCIÓN ADMINISTRACIÓN ==========
+        // Visible para: Admin (viajes y administración), Logistica (solo su sección)
         {
-            label: 'Gestion',
+            label: 'Administración',
             items: [
-                { label: 'Rastreo GPS', icon: 'pi pi-fw pi-map-marker', to: '/utilities/gps' },
-                { label: 'Notas', icon: 'pi pi-book', to: '/utilities/icons' },
-            ]
-        },
-        {
-            label: 'RRHH',
-            items: [
-                { label: 'Empleados', icon: 'pi pi-users', to: '/pages/empty' },
-            ]
-        },
-        ...(isAlmacen || isAdmin
-            ? [
+                // Sub-sección Admin de Viajes - Solo para ADMIN
+                ...(puedeVerAdminViajes ? [
                     {
-                        label: 'Mantenimiento',
+                        label: 'Admin. de Viajes',
+                        icon: 'pi pi-fw pi-truck',
                         items: [
-                            { label: 'Inventario', icon: 'pi pi-fw pi-box', to: '/inventario' },
-                            { label: 'Taller', icon: 'pi pi-fw pi-wrench', to: '/pages/empty' }
+                            { label: 'Viajes', icon: 'pi pi-fw pi-truck', to: '/uikit/formlayout' },
+                            { label: 'Resumen', icon: 'pi pi-fw pi-file', to: '/uikit/input' },
+                            { label: 'Nomina', icon: 'pi pi-fw pi-user', to: '/uikit/floatlabel' },
+                            { label: 'Facturación', icon: 'pi pi-fw pi-mobile', to: '/uikit/facturacion', class: 'rotated-icon' },
+                            { label: 'Estimaciones', icon: 'pi pi-fw pi-calculator', to: '/uikit/formlayout/estimaciones' },
                         ]
                     },
-                ]
-            : []),
-        
-        ...(isAdmin
-            ? [
-                  {
-                      label: 'Administración',
-                      items: [
-                        {
-                            label: 'Admin. de Viajes',
-                            icon: 'pi pi-fw pi-truck',
-                            items: [
-                                { label: 'Viajes', icon: 'pi pi-fw pi-truck', to: '/uikit/formlayout' },
-                                { label: 'Resumen', icon: 'pi pi-fw pi-file', to: '/uikit/input' },
-                                { label: 'Nomina', icon: 'pi pi-fw pi-user', to: '/uikit/floatlabel' },
-                                { label: 'Facturación', icon: 'pi pi-fw pi-mobile', to: '/uikit/facturacion', class: 'rotated-icon' },
-                                { label: 'Estimaciones', icon: 'pi pi-fw pi-calculator', to: '/uikit/formlayout/estimaciones' },
-                            ]
-                        },
-                            { label: 'Logistica de Viajes', icon: 'pi pi-fw pi-pencil', to: '/pages/empty' },
-                          // { label: 'Table', icon: 'pi pi-fw pi-table', to: '/uikit/table' },
-                          // { label: 'List', icon: 'pi pi-fw pi-list', to: '/uikit/list' },
-                          // { label: 'Tree', icon: 'pi pi-fw pi-share-alt', to: '/uikit/tree' },
-                          // { label: 'Panel', icon: 'pi pi-fw pi-tablet', to: '/uikit/panel' },
-                          // { label: 'Overlay', icon: 'pi pi-fw pi-clone', to: '/uikit/overlay' },
-                          // { label: 'Media', icon: 'pi pi-fw pi-image', to: '/uikit/media' },
-                          // { label: 'Menu', icon: 'pi pi-fw pi-bars', to: '/uikit/menu', preventExact: true },
-                          // { label: 'Message', icon: 'pi pi-fw pi-comment', to: '/uikit/message' },
-                          // { label: 'File', icon: 'pi pi-fw pi-file', to: '/uikit/file' },
-                          // { label: 'Chart', icon: 'pi pi-fw pi-chart-bar', to: '/uikit/charts' },
-                          // { label: 'Misc', icon: 'pi pi-fw pi-circle', to: '/uikit/misc' }
-                      ]
-                  }
-              ]
-            : []),
+                ] : []),
+
+                // Sub-sección Admin de Logistica - Solo para LOGISTICA
+                ...(puedeVerLogistica ? [
+                    { 
+                        label: 'Admin. de Logistica', 
+                        icon: 'pi pi-fw pi-pencil', 
+                        to: '/uikit/logistica' 
+                    },
+                ] : []),
+
+                // NOTA: Las siguientes opciones están comentadas para referencia futura
+                // { label: 'Table', icon: 'pi pi-fw pi-table', to: '/uikit/table' },
+                // { label: 'List', icon: 'pi pi-fw pi-list', to: '/uikit/list' },
+                // { label: 'Tree', icon: 'pi pi-fw pi-share-alt', to: '/uikit/tree' },
+                // { label: 'Panel', icon: 'pi pi-fw pi-tablet', to: '/uikit/panel' },
+                // { label: 'Overlay', icon: 'pi pi-fw pi-clone', to: '/uikit/overlay' },
+                // { label: 'Media', icon: 'pi pi-fw pi-image', to: '/uikit/media' },
+                // { label: 'Menu', icon: 'pi pi-fw pi-bars', to: '/uikit/menu', preventExact: true },
+                // { label: 'Message', icon: 'pi pi-fw pi-comment', to: '/uikit/message' },
+                // { label: 'File', icon: 'pi pi-fw pi-file', to: '/uikit/file' },
+                // { label: 'Chart', icon: 'pi pi-fw pi-chart-bar', to: '/uikit/charts' },
+                // { label: 'Misc', icon: 'pi pi-fw pi-circle', to: '/uikit/misc' }
+            ]
+        }
+
+        // ========== OTRAS SECCIONES COMENTADAS ==========
         // {
         //     label: 'Utilities',
         //     items: [
