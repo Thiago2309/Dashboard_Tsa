@@ -410,10 +410,11 @@ const Crud = () => {
     };
 
     const folioBcoBodyTemplate = (rowData: Viaje) => {
+        const valor = rowData.folio_bco?.toString().trim();
         return (
             <>
                 <span className="p-column-title">Folio Banco</span>
-                {rowData.folio_bco ?? '-'}
+                {valor ? valor : '-'}
             </>
         );
     };
