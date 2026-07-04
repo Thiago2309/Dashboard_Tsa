@@ -16,6 +16,7 @@ import { Gasto, fetchGastos } from '../../Services/BD/gastoService';
 import { CajaChica, fetchCajaChica } from '../../Services/BD/cajaChicaService';
 import { fetchTodosClientesConCuentas } from '../../Services/BD/cuentasPorCobrarService';
 import { getUserRoleIdFromLocalStorage } from '@/Services/BD/userService';
+import LogisticaTabla from '../../app/(main)/pages/crud/Logistica/LogisticaEmpleadoTabla';
 
 const lineData: ChartData = {
     labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
@@ -84,7 +85,16 @@ const Dashboard = () => {
     console.log('userRoleId', userRoleId);
     const isAdmin = userRoleId === 1;
     const isAlmacen = userRoleId === 4;
+    const isEmpleado = userRoleId === 2;
+    const isLogistica = userRoleId === 5;
     console.log('isAdmin', isAdmin);
+
+    const formattedDate = new Date().toLocaleDateString('es-PE', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
 
     // Cargar todos los datos para el dashboard
     useEffect(() => {
@@ -203,15 +213,38 @@ const Dashboard = () => {
     return (
         <div className="grid">
             {/* El resto de tu contenido existente del dashboard */}
-            <div className="col-12">
-                <div className="card">
-                    <h5>Resumen General</h5>
-                    <p>Dashboard principal con métricas clave del sistema.</p>
+            {!isEmpleado && (
+                <div className="col-12">
+                    <div className="card">
+                        <h5>Resumen General</h5>
+                        <p>Dashboard principal con métricas clave del sistema.</p>
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {/* Renderizar la tabla de logística solo si el usuario es un empleado */}
+            {isEmpleado && (
+                <div className="col-12">
+                    <div className="card p-4">
+                        <div className="flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+                            <div>
+                                <h4 className="m-0">Bienvenido</h4>
+                                <p className="m-0 text-500">Viajes pendientes por realizar hoy</p>
+                            </div>
+                            <div className="text-right">
+                                <span className="text-500">Fecha</span>
+                                <div className="text-900 font-medium">{formattedDate}</div>
+                            </div>
+                        </div>
+                        <div className="surface-border border-round p-3">
+                            <LogisticaTabla />
+                        </div>
+                    </div>
+                </div>
+            )}
             
             {/* Card 1: Sub Total - Gestión de Notas de Viajes */}
-            {!isAlmacen && (
+            {!isAlmacen && !isEmpleado && !isLogistica && (
                 <>
                     <div className="col-12 lg:col-6 xl:col-3">
                 <Link href="/uikit/formlayout?module=Viajes" className="no-underline">

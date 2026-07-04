@@ -15,7 +15,7 @@ import { RadioButton } from 'primereact/radiobutton';
 import { Checkbox } from 'primereact/checkbox';
 import { InputNumber } from 'primereact/inputnumber';
 import { createMaterial, Material } from '../../../../Services/BD/materialService';
-// import LogisticaTabla from '../../../../app/(main)/pages/crud/Logistica/LogisticaTabla';
+import LogisticaTabla from '../../../../app/(main)/pages/crud/Logistica/LogisticaTabla';
 
 
 const userRoleId = getUserRoleIdFromLocalStorage();
@@ -39,11 +39,11 @@ export default function GestionAreas() {
       <div>
         {/* Formulario de Viajes */}
         <div className="card crud-demo p-4 mb-4">
-            {/* <div>
+            <div>
                 <h2>Pre listado de viajes logísticos por Aprobar</h2>
                 <LogisticaTabla />
             </div>
-        <br /> */}
+        <br />
         <h2>Gestión de Notas de Viajes</h2>
           <FormularioNotaViaje />
         </div>

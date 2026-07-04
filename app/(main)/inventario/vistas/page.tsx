@@ -24,6 +24,7 @@ import {
 import ProductoForm from '../ProductoForm';
 import MovimientoForm from '../MovimientoForm';
 import HistorialMovimientos from '../HistorialMovimientos';
+import BarcodeGenerator from '../BarcodeGenerator';
 
 const InventarioPage = () => {
     const [productos, setProductos] = useState<Inventario[]>([]);
@@ -50,6 +51,9 @@ const InventarioPage = () => {
 
     const toast = useRef<Toast>(null);
     const dt = useRef<DataTable<any>>(null);
+    const [barcodeDialog, setBarcodeDialog] = useState(false);
+    const [scannerVisible, setScannerVisible] = useState(false);
+    const [productoBarcode, setProductoBarcode] = useState<Inventario | null>(null);
 
     // Cargar datos iniciales
     const cargarProductos = async () => {
@@ -172,6 +176,26 @@ const InventarioPage = () => {
     };
 
     const exportCSV = () => dt.current?.exportCSV();
+
+    // Template para mostrar código de barras en la tabla
+    const barcodeBodyTemplate = (rowData: Inventario) => {
+        return (
+            <div className="flex justify-content-center">
+                <Button
+                    icon="pi pi-qrcode"
+                    rounded
+                    severity="info"
+                    tooltip="Ver código de barras"
+                    onClick={() => openBarcodeDialog(rowData)}
+                />
+            </div>
+        );
+    };
+
+    const openBarcodeDialog = (producto: Inventario) => {
+        setProductoBarcode(producto);
+        setBarcodeDialog(true);
+    };
 
     const actionBodyTemplate = (rowData: Inventario) => {
         return (
@@ -315,8 +339,9 @@ const InventarioPage = () => {
                     >
                         <Column selectionMode="multiple" headerStyle={{ width: '3rem' }} exportable={false} />
                         <Column field="id" header="ID" sortable style={{ width: '80px' }} />
+                        <Column field="barcode" header="Código De Barras" body={barcodeBodyTemplate} style={{ width: '80px' }} exportable={false} />
                         <Column field="codigo" header="Código" sortable style={{ width: '150px' }} />
-                        <Column field="nombre" header="Producto" sortable style={{ minWidth: '200px' }} />
+                        <Column field="nombre" header="Producto" sortable style={{ minWidth: '150px' }} />
                         <Column field="categoria" header="Categoría" sortable style={{ width: '150px' }} />
                         <Column field="stock_actual" header="Stock" body={stockBodyTemplate} sortable style={{ width: '180px' }} />
                         <Column field="stock_minimo" header="Stock Mínimo" sortable style={{ width: '120px' }} />
@@ -382,6 +407,31 @@ const InventarioPage = () => {
                         onHide={() => setHistorialDialog(false)}
                     >
                         <HistorialMovimientos productoId={productoSeleccionado?.id || 0} />
+                    </Dialog>
+
+                    {/* Diálogo para mostrar código de barras */}
+                    <Dialog
+                        visible={barcodeDialog}
+                        style={{ width: '400px' }}
+                        header="Código de Barras del Producto"
+                        modal
+                        onHide={() => setBarcodeDialog(false)}
+                    >
+                        {productoBarcode && (
+                            <div className="flex flex-column align-items-center p-3">
+                                <BarcodeGenerator 
+                                    producto={productoBarcode} 
+                                    height={80} 
+                                    width={2}
+                                />
+                                <div className="mt-3 text-center">
+                                    <p><strong>Código:</strong> {productoBarcode.codigo}</p>
+                                    <p><strong>Producto:</strong> {productoBarcode.nombre}</p>
+                                    <p><strong>Stock:</strong> {productoBarcode.stock_actual} {productoBarcode.unidad}</p>
+                                    <p><strong>Código Barras:</strong> {productoBarcode.codigo_barras}</p>
+                                </div>
+                            </div>
+                        )}
                     </Dialog>
 
                     {/* Confirmar eliminación individual */}

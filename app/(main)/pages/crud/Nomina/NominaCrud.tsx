@@ -445,16 +445,27 @@ const NominaModule = () => {
 
                     const salarioBase = empleado.salario_base || 0;
                     
-                    // Lógica de pago por alcance de meta
+                    // Lógica de pago por alcance de meta con distinto porcentaje según horario
                     let pagoAlcanceMeta = 0;
                     let rebaso = false;
-                    
+
+                    // Determinar si el operador tuvo viajes en horario diurno ('D') o nocturno ('N')
+                    const tieneViajeDiurno = viajesEmpleado.some(v => v.horario === 'D');
+                    const tieneViajeNocturno = viajesEmpleado.some(v => v.horario === 'N');
+
                     if (totalViajes > 40000) {
-                        // Pago del 10% sobre el total generado (47,850 * 0.1 = 4,785)
-                        pagoAlcanceMeta = totalViajes * 0.1;
+                        // Si rebasa la meta (40,000) aplicar porcentaje según horario:
+                        // - Si tiene viajes diurnos 'D' aplicar 12%
+                        // - En caso contrario (o nocturno) aplicar 10%
+                        if (tieneViajeDiurno && !tieneViajeNocturno) {
+                            pagoAlcanceMeta = totalViajes * 0.12;
+                        } else {
+                            pagoAlcanceMeta = totalViajes * 0.10;
+                        }
                         rebaso = true;
                     } else {
-                        // Si no rebasa los 40K, se paga el 10% de 40K (4,000)
+                        // Si no rebasa la meta, mantener la lógica actual (salario base)
+                        // Si prefieres pagar 10% de 40k (4000) cambiar a: pagoAlcanceMeta = 4000;
                         pagoAlcanceMeta = salarioBase;
                         rebaso = false;
                     }
@@ -1391,6 +1402,7 @@ const NominaModule = () => {
                                         />
                                         <Column field="origen" header="Origen" />
                                         <Column field="destino" header="Destino" />
+                                        <Column field="horario" header="Horario" />
                                     </DataTable>
                                 </Card>
                             )}
