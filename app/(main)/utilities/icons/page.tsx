@@ -128,7 +128,7 @@ const FormularioNotaViaje = () => {
         if (
         viaje.id_cliente !== null &&
         viaje.fecha &&
-        viaje.folio_bco &&
+       // viaje.folio_bco &&
         viaje.folio &&
         viaje.id_precio_origen_destino !== null &&
         viaje.id_material !== null &&
@@ -286,8 +286,8 @@ const FormularioNotaViaje = () => {
                         id="folio_bco"
                         value={viaje.folio_bco}
                         onChange={(e) => setViaje({ ...viaje, folio_bco: e.target.value })}
-                        required
-                        className={submitted && !viaje.folio_bco ? 'p-invalid' : ''}
+                        //required
+                        //className={submitted && !viaje.folio_bco ? 'p-invalid' : ''}
                     />
                     {/* {submitted && !viaje.folio_bco && <small className="p-invalid">Folio Banco es requerido.</small>} */}
                     </div>
@@ -298,8 +298,8 @@ const FormularioNotaViaje = () => {
                         value={viaje.numero_viaje}
                         onValueChange={(e) => setViaje({ ...viaje, numero_viaje: e.value })}
                         useGrouping={false}
-                        required
-                        className={submitted && !viaje.numero_viaje ? 'p-invalid' : ''}
+                        //required
+                        //className={submitted && !viaje.numero_viaje ? 'p-invalid' : ''}
                     />
                     {/* {submitted && !viaje.numero_viaje && <small className="p-invalid">No. Viaje es requerido.</small>} */}
                     </div>
