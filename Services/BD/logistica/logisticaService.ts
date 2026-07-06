@@ -63,7 +63,7 @@ export const fetchViajesLogistica = async (): Promise<LogisticaViaje[]> => {
     const { data, error } = await supabase
         .from('fetch_logistica')
         .select('*')
-        .order('id', { ascending: false });
+        .order('id', { ascending: true });
 
     if (error) {
         console.error('Error fetching logistica viajes:', error);
@@ -408,7 +408,8 @@ export const fetchViajesAsignadosPorOperador = async (): Promise<LogisticaViaje[
             .select('*')
             .eq('id_operador', operador.id)
             .in('estado', ['asignado', 'en_curso'])
-            .order('id', { ascending: false });
+            .order('fecha_asignacion', { ascending: true })
+            .order('id', { ascending: true });
 
         if (error) {
             console.error('Error fetching viajes asignados:', error);

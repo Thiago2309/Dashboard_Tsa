@@ -59,7 +59,6 @@ const LogisticaEmpleadoTabla = () => {
     const cargarDatos = useCallback(async () => {
         setLoading(true);
         try {
-            // Usar la nueva función que filtra por operador logueado
             const viajesData = await fetchViajesAsignadosPorOperador();
             setViajes(filtrarViajesPorFechaAsignacion(viajesData));
         } catch (error) {
@@ -117,11 +116,8 @@ const LogisticaEmpleadoTabla = () => {
                 life: 3000
             });
 
-            // Si se completó, quitar de la lista después de unos segundos
             if (nuevoEstado === 'completado') {
-                setTimeout(() => {
-                    cargarDatos(); // Recargar para quitar los completados
-                }, 2000);
+                cargarDatos(); // Recargar para mostrar el siguiente viaje pendiente
             }
 
         } catch (error) {
@@ -257,7 +253,7 @@ const LogisticaEmpleadoTabla = () => {
                     />
                 </div>
                 <span className="bg-blue-100 text-blue-800 px-3 py-1 border-round align-self-start md:align-self-center">
-                    Total: {viajes.length}
+                    Pendientes: {viajes.length}
                 </span>
             </div>
 
@@ -267,98 +263,87 @@ const LogisticaEmpleadoTabla = () => {
                 ) : viajes.length === 0 ? (
                     <div className="text-center py-4 text-500">No tienes viajes asignados para hoy</div>
                 ) : (
-                    <div className="flex flex-column gap-3">
-                        {viajes.map((viaje) => (
-                            <div key={viaje.id} className="surface-card border-1 border-round p-3 shadow-1">
-                                <div className="flex justify-content-between align-items-start gap-2 mb-2">
-                                    <div>
-                                        <div className="font-bold text-lg">{viaje.folio || '-'}</div>
-                                        <div className="text-sm text-500">
-                                            {fechaAsignacionBodyTemplate(viaje)}
-                                        </div>
-                                    </div>
-                                    <span className={`px-3 py-1 border-round text-sm font-medium ${getEstadoChipClass(viaje.estado || '')}`}>
-                                        {getEstadoLabel(viaje.estado)}
-                                    </span>
-                                </div>
-
-                                <div className="grid">
-                                    <div className="col-12">
-                                        <div className="text-500 text-sm">Cliente</div>
-                                        <div className="font-medium">{clienteBodyTemplate(viaje)}</div>
-                                    </div>
-                                    <div className="col-12 sm:col-6">
-                                        <div className="text-500 text-sm">Origen</div>
-                                        <div className="font-medium">{origenBodyTemplate(viaje)}</div>
-                                    </div>
-                                    <div className="col-12 sm:col-6">
-                                        <div className="text-500 text-sm">Destino</div>
-                                        <div className="font-medium">{destinoBodyTemplate(viaje)}</div>
-                                    </div>
-                                    <div className="col-12 sm:col-6">
-                                        <div className="text-500 text-sm">Material</div>
-                                        <div className="font-medium">{materialBodyTemplate(viaje)}</div>
-                                    </div>
-                                    <div className="col-12 sm:col-6">
-                                        <div className="text-500 text-sm">Horario</div>
-                                        <div className="font-medium">{horarioBodyTemplate(viaje)}</div>
-                                    </div>
-                                </div>
-
-                                <div className="mt-3">
-                                    <label className="block text-500 text-sm mb-2">Cambiar estado</label>
-                                    <Dropdown
-                                        value={viaje.estado}
-                                        options={estadoOptions}
-                                        onChange={(e) => cambiarEstado(viaje, e.value)}
-                                        placeholder="Seleccionar estado"
-                                        disabled={updating === viaje.id || viaje.estado === 'completado'}
-                                        className="w-full"
-                                        panelClassName="p-2"
-                                        itemTemplate={(option) => {
-                                            const color = getEstadoChipClass(option.value);
-                                            return (
-                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${color}`}>
-                                                    {option.label}
-                                                </span>
-                                            );
-                                        }}
-                                        valueTemplate={(option) => {
-                                            if (!option) return <span>Seleccionar</span>;
-                                            const color = getEstadoChipClass(option.value);
-                                            return (
-                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${color}`}>
-                                                    {option.label}
-                                                </span>
-                                            );
-                                        }}
-                                    />
+                    <div className="surface-card border-1 border-round p-3 shadow-1">
+                        <div className="flex justify-content-between align-items-start gap-2 mb-2">
+                            <div>
+                                <div className="font-bold text-lg">{viajes[0].folio || '-'}</div>
+                                <div className="text-sm text-500">
+                                    {fechaAsignacionBodyTemplate(viajes[0])}
                                 </div>
                             </div>
-                        ))}
+                            <span className={`px-3 py-1 border-round text-sm font-medium ${getEstadoChipClass(viajes[0].estado || '')}`}>
+                                {getEstadoLabel(viajes[0].estado)}
+                            </span>
+                        </div>
+
+                        <div className="grid">
+                            <div className="col-12">
+                                <div className="text-500 text-sm">Cliente</div>
+                                <div className="font-medium">{clienteBodyTemplate(viajes[0])}</div>
+                            </div>
+                            <div className="col-12 sm:col-6">
+                                <div className="text-500 text-sm">Origen</div>
+                                <div className="font-medium">{origenBodyTemplate(viajes[0])}</div>
+                            </div>
+                            <div className="col-12 sm:col-6">
+                                <div className="text-500 text-sm">Destino</div>
+                                <div className="font-medium">{destinoBodyTemplate(viajes[0])}</div>
+                            </div>
+                            <div className="col-12 sm:col-6">
+                                <div className="text-500 text-sm">Material</div>
+                                <div className="font-medium">{materialBodyTemplate(viajes[0])}</div>
+                            </div>
+                            <div className="col-12 sm:col-6">
+                                <div className="text-500 text-sm">Horario</div>
+                                <div className="font-medium">{horarioBodyTemplate(viajes[0])}</div>
+                            </div>
+                        </div>
+
+                        <div className="mt-3">
+                            <label className="block text-500 text-sm mb-2">Cambiar estado</label>
+                            <Dropdown
+                                value={viajes[0].estado}
+                                options={estadoOptions}
+                                onChange={(e) => cambiarEstado(viajes[0], e.value)}
+                                placeholder="Seleccionar estado"
+                                disabled={updating === viajes[0].id || viajes[0].estado === 'completado'}
+                                className="w-full"
+                                panelClassName="p-2"
+                                itemTemplate={(option) => {
+                                    const color = getEstadoChipClass(option.value);
+                                    return (
+                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${color}`}>
+                                            {option.label}
+                                        </span>
+                                    );
+                                }}
+                                valueTemplate={(option) => {
+                                    if (!option) return <span>Seleccionar</span>;
+                                    const color = getEstadoChipClass(option.value);
+                                    return (
+                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${color}`}>
+                                            {option.label}
+                                        </span>
+                                    );
+                                }}
+                            />
+                        </div>
                     </div>
                 )}
             </div>
 
             <div className="hidden md:block">
                 <DataTable
-                    value={viajes}
+                    value={viajes.slice(0, 1)}
                     dataKey="id"
-                    paginator
-                    rows={10}
-                    rowsPerPageOptions={[5, 10, 25]}
                     className="datatable-responsive"
-                    paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} viajes"
                     emptyMessage="No tienes viajes asignados para hoy"
                     responsiveLayout="scroll"
                     loading={loading}
                     globalFilterFields={['folio', 'cliente_nombre', 'operador_nombre', 'origen', 'destino']}
                 >
                     <Column field="folio" header="Folio" sortable body={folioBodyTemplate} />
-                    {/* <Column field="folio_bco" header="Folio Bco" sortable body={folioBcoBodyTemplate} /> */}
                     <Column field="fecha_asignacion" header="Fecha Asignación" sortable body={fechaAsignacionBodyTemplate} />
-                    {/* <Column field="numero_viaje" header="Número de Viaje" sortable body={numeroViajeBodyTemplate} /> */}
                     <Column field="cliente_nombre" header="Cliente" sortable body={clienteBodyTemplate} />
                     <Column field="operador_nombre" header="Operador" sortable body={operadorBodyTemplate} />
                     <Column field="origen" header="Origen" sortable body={origenBodyTemplate} />
@@ -366,7 +351,6 @@ const LogisticaEmpleadoTabla = () => {
                     <Column field="material_nombre" header="Material" sortable body={materialBodyTemplate} />
                     <Column field="m3_nombre" header="M3" sortable body={m3BodyTemplate} />
                     <Column field="horario" header="Horario" sortable body={horarioBodyTemplate} />
-                    {/* <Column field="en_renta" header="Renta" sortable body={rentaBodyTemplate} /> */}
                     <Column 
                         field="estado" 
                         header="Estado" 

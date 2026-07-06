@@ -231,8 +231,8 @@ const Dashboard = () => {
                                 <h4 className="m-0">Bienvenido</h4>
                                 <p className="m-0 text-500">Viajes pendientes por realizar hoy</p>
                             </div>
-                            <div className="text-right">
-                                <span className="text-500">Fecha</span>
+                            <div>
+                                <span className="text-500">Fecha:</span>
                                 <div className="text-900 font-medium">{formattedDate}</div>
                             </div>
                         </div>
