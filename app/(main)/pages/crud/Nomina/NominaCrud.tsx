@@ -460,7 +460,7 @@ const NominaModule = () => {
                         if (tieneViajeDiurno && !tieneViajeNocturno) {
                             pagoAlcanceMeta = totalViajes * 0.12;
                         } else {
-                            pagoAlcanceMeta = totalViajes * 0.10;
+                            pagoAlcanceMeta = totalViajes * 0.15; // Ajustado a 15% para nocturno o mixto
                         }
                         rebaso = true;
                     } else {

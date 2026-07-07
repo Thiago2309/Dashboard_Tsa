@@ -17,6 +17,7 @@ export interface Operador {
     pass?: string;
     user_id?: number | null;
     rol_id?: number | null;
+    camion_full?: boolean;
 }
 
 export const fetchOperadores = async (): Promise<Operador[]> => {
@@ -88,7 +89,8 @@ export const createOperador = async (operador: Omit<Operador, 'id'>): Promise<Op
                 direccion: operador.direccion,
                 fecha_contratacion: operador.fecha_contratacion,
                 acceso_sistema: operador.acceso_sistema || false,
-                rol_id: operador.rol_id || null
+                rol_id: operador.rol_id || null,
+                camion_full: operador.camion_full || false
             }])
             .select()
             .single();
@@ -279,7 +281,8 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
             direccion: operador.direccion,
             fecha_contratacion: operador.fecha_contratacion,
             acceso_sistema: operador.acceso_sistema || false,
-            rol_id: operador.rol_id || null
+            rol_id: operador.rol_id || null,
+            camion_full: operador.camion_full || false
         })
         .eq('id', operador.id)
         .select()

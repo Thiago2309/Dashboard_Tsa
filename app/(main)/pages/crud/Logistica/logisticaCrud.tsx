@@ -145,15 +145,15 @@ const LogisticaCrud = () => {
         setSubmitted(true);
 
         // Validaciones
-        if (!viaje.folio || viaje.folio.trim() === '') {
-            toast.current?.show({
-                severity: 'error',
-                summary: 'Error',
-                detail: 'El folio es obligatorio',
-                life: 3000
-            });
-            return;
-        }
+        // if (!viaje.folio || viaje.folio.trim() === '') {
+        //     toast.current?.show({
+        //         severity: 'error',
+        //         summary: 'Error',
+        //         detail: 'El folio es obligatorio',
+        //         life: 3000
+        //     });
+        //     return;
+        // }
 
         if (!viaje.id_cliente || !viaje.id_operador || !viaje.id_precio_origen_destino || 
             !viaje.id_material || !viaje.id_m3) {
@@ -263,7 +263,7 @@ const LogisticaCrud = () => {
         return (
             <>
                 <span className="p-column-title">Folio</span>
-                <span className="font-bold">{rowData.folio}</span>
+                <span className="font-bold">{rowData.folio || '-'}</span>
             </>
         );
     };
@@ -585,7 +585,7 @@ const LogisticaCrud = () => {
                         <Column field="material_nombre" header="Material" sortable body={materialBodyTemplate} />
                         <Column field="m3_nombre" header="M3" sortable body={m3BodyTemplate} />
                         <Column field="horario" header="Horario" sortable body={horarioBodyTemplate} />
-                        <Column field="en_renta" header="Renta" sortable body={rentaBodyTemplate} />
+                        {/* <Column field="en_renta" header="Renta" sortable body={rentaBodyTemplate} /> */}
                         <Column field="estado" header="Estado" sortable body={estadoBodyTemplate} />
                         <Column header="Acciones" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }} />
                     </DataTable>
@@ -610,7 +610,7 @@ const LogisticaCrud = () => {
                 <div className="grid">
                     <div className="col-12">
                         <div className="field">
-                            <label htmlFor="folio">Folio</label><span style={{ color: 'red' }}> *</span>
+                            <label htmlFor="folio">Folio</label>
                             <InputText
                                 id="folio"
                                 value={viaje.folio || ''}
@@ -619,10 +619,9 @@ const LogisticaCrud = () => {
                                     setFolioError(false);
                                 }}
                                 placeholder="Ingresa el folio"
-                                required
-                                className={submitted && !viaje.folio ? 'p-invalid' : (folioError ? 'p-invalid' : '')}
+                                // className={submitted && !viaje.folio ? 'p-invalid' : (folioError ? 'p-invalid' : '')}
                             />
-                            {submitted && !viaje.folio && <small className="p-error">El folio es obligatorio</small>}
+                            {/* {submitted && !viaje.folio && <small className="p-error">El folio es obligatorio</small>} */}
                             {folioError && <small className="p-error">Este folio ya existe. Por favor ingresa otro.</small>}
                         </div>
                     </div>
@@ -795,12 +794,12 @@ const LogisticaCrud = () => {
                                 id="numero_viaje"
                                 value={viaje.numero_viaje || ''}
                                 onChange={(e) => setViaje({ ...viaje, numero_viaje: e.target.value })}
-                                placeholder="Número de viaje"
+                                placeholder="Número de viaje (opcional)"
                             />
                         </div>
                     </div>
 
-                    <div className="col-12">
+                    {/* <div className="col-12">
                         <div className="field">
                             <label htmlFor="en_renta" className="block mb-2">
                                 <Checkbox
@@ -836,7 +835,7 @@ const LogisticaCrud = () => {
                                 )}
                             </div>
                         )}
-                    </div>
+                    </div> */}
 
                     <div className="col-12">
                         <div className="field">
