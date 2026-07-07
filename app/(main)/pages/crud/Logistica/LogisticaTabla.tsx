@@ -3,7 +3,7 @@
 import { Column } from 'primereact/column';
 import { DataTable } from 'primereact/datatable';
 import { Toast } from 'primereact/toast';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { 
     fetchViajesLogistica, 
     LogisticaViaje,
@@ -12,11 +12,13 @@ import {
     fetchM3,
     fetchOperadores,
     fetchInvitados,
-    fetchClientes
+    fetchClientes,
+    updateViajeLogistica
 } from '../../../../../Services/BD/logistica/logisticaService';
 import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
 import { InputText } from 'primereact/inputtext';
+import { InputNumber } from 'primereact/inputnumber';
 import { supabase } from '../../../../../Services/superbase.service';
 import { createViaje } from '../../../../../Services/BD/viajeService';
 
@@ -29,15 +31,14 @@ const LogisticaTabla = () => {
     const [editDialog, setEditDialog] = useState(false);
     const [editViaje, setEditViaje] = useState<LogisticaViaje | null>(null);
     const [folioBco, setFolioBco] = useState('');
+    const [folio, setFolio] = useState('');
+    const [numeroViaje, setNumeroViaje] = useState('');
+    const [cantidadViajes, setCantidadViajes] = useState<number | null>(null);
     const [submittedEdit, setSubmittedEdit] = useState(false);
     const [loadingEdit, setLoadingEdit] = useState(false);
 
-    // Cargar datos
-    useEffect(() => {
-        cargarDatos();
-    }, []);
-
-    const cargarDatos = async () => {
+    // Cargar datos - usar useCallback para evitar recreación
+    const cargarDatos = useCallback(async () => {
         setLoading(true);
         try {
             const viajesData = await fetchViajesLogistica();
@@ -54,25 +55,43 @@ const LogisticaTabla = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        cargarDatos();
+    }, [cargarDatos]);
+
+    // Función para cerrar el diálogo
+    const cerrarDialog = useCallback(() => {
+        setEditDialog(false);
+        setEditViaje(null);
+        setFolioBco('');
+        setFolio('');
+        setNumeroViaje('');
+        setCantidadViajes(null);
+        setSubmittedEdit(false);
+    }, []);
 
     // Función para Editar
-    const handleEditar = (rowData: LogisticaViaje) => {
+    const handleEditar = useCallback((rowData: LogisticaViaje) => {
         setEditViaje(rowData);
         setFolioBco(rowData.folio_bco || '');
+        setFolio(rowData.folio || '');
+        setNumeroViaje(rowData.numero_viaje || '');
+        setCantidadViajes(rowData.cantidad_viajes || null);
         setSubmittedEdit(false);
         setEditDialog(true);
-    };
+    }, []);
 
     // Función para guardar la edición
-    const guardarEdicion = async () => {
+    const guardarEdicion = useCallback(async () => {
         setSubmittedEdit(true);
         
-        // if (!folioBco || folioBco.trim() === '') {
+        // if (!folio || folio.trim() === '') {
         //     toast.current?.show({
         //         severity: 'error',
         //         summary: 'Error',
-        //         detail: 'El campo Folio Bco es obligatorio',
+        //         detail: 'El campo Folio es obligatorio',
         //         life: 3000
         //     });
         //     return;
@@ -81,61 +100,72 @@ const LogisticaTabla = () => {
         try {
             setLoadingEdit(true);
             
-            const { error } = await supabase
-                .from('logistica')
-                .update({ folio_bco: folioBco })
-                .eq('id', editViaje?.id);
+            const datosActualizar = {
+                id: editViaje?.id,
+                folio: folio.trim(),
+                folio_bco: folioBco || null,
+                numero_viaje: numeroViaje || null,
+                cantidad_viajes: cantidadViajes || null,
+                id_cliente: editViaje?.id_cliente,
+                id_operador: editViaje?.id_operador,
+                id_precio_origen_destino: editViaje?.id_precio_origen_destino,
+                id_material: editViaje?.id_material,
+                id_m3: editViaje?.id_m3,
+                id_invitado: editViaje?.id_invitado,
+                estado: editViaje?.estado,
+                observaciones: editViaje?.observaciones,
+                fecha_asignacion: editViaje?.fecha_asignacion,
+                horario: editViaje?.horario,
+                en_renta: editViaje?.en_renta,
+                horas_renta: editViaje?.horas_renta
+            };
 
-            if (error) {
-                console.error('Error actualizando folio_bco:', error);
-                toast.current?.show({
-                    severity: 'error',
-                    summary: 'Error',
-                    detail: 'Error al actualizar el folio bancario',
-                    life: 3000
-                });
-                return;
-            }
+            await updateViajeLogistica(datosActualizar as LogisticaViaje);
 
-            setViajes(viajes.map(v => 
-                v.id === editViaje?.id ? { ...v, folio_bco: folioBco } : v
-            ));
+            // Actualizar el estado local usando la función de actualización
+            setViajes(prevViajes => 
+                prevViajes.map(v => 
+                    v.id === editViaje?.id ? { 
+                        ...v, 
+                        folio: folio.trim(),
+                        folio_bco: folioBco,
+                        numero_viaje: numeroViaje,
+                        cantidad_viajes: cantidadViajes
+                    } : v
+                )
+            );
 
             toast.current?.show({
                 severity: 'success',
                 summary: 'Éxito',
-                detail: 'Folio bancario actualizado correctamente',
+                detail: 'Datos actualizados correctamente',
                 life: 3000
             });
 
-            setEditDialog(false);
-            setEditViaje(null);
-            setFolioBco('');
+            cerrarDialog();
             
         } catch (error) {
             console.error('Error:', error);
             toast.current?.show({
                 severity: 'error',
                 summary: 'Error',
-                detail: 'Error al actualizar el folio bancario',
+                detail: 'Error al actualizar los datos',
                 life: 3000
             });
         } finally {
             setLoadingEdit(false);
         }
-    };
+    }, [editViaje, folio, folioBco, numeroViaje, cantidadViajes, cerrarDialog]);
 
-    // Función para Aprobar - Crear el viaje en la tabla viajes
-    const handleAprobar = async (rowData: LogisticaViaje) => {
+    // Función para Aprobar
+    const handleAprobar = useCallback(async (rowData: LogisticaViaje) => {
         try {
-            // 1. Obtener los datos necesarios para calcular caphrsviajes
             const [preciosData, materialesData, m3Data] = await Promise.all([
                 fetchPreciosOrigenDestino(),
                 fetchMateriales(),
                 fetchM3()
             ]);
 
-            // 2. Buscar el precio, material y m3 correspondientes
             const precio = preciosData.find(p => p.id === rowData.id_precio_origen_destino);
             const material = materialesData.find(m => m.id === rowData.id_material);
             const m3Item = m3Data.find(m => m.id === rowData.id_m3);
@@ -150,7 +180,6 @@ const LogisticaTabla = () => {
                 return;
             }
 
-            // 3. Calcular caphrsviajes
             let caphrsviajes;
             if (rowData.en_renta && rowData.horas_renta) {
                 caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos * rowData.horas_renta;
@@ -158,17 +187,14 @@ const LogisticaTabla = () => {
                 caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos;
             }
 
-            // 4. Preparar el objeto para crear el viaje con los tipos correctos
             const fechaViaje = rowData.fecha_asignacion 
                 ? new Date(rowData.fecha_asignacion).toISOString().split('T')[0] 
                 : new Date().toISOString().split('T')[0];
             
-            // Convertir numero_viaje a número o null
-            const numeroViaje = rowData.numero_viaje != null && rowData.numero_viaje !== ''
+            const numeroViajeNum = rowData.numero_viaje != null && rowData.numero_viaje !== ''
                 ? Number(rowData.numero_viaje)
                 : null;
 
-            // Asegurar que id_invitado sea string | null (no number)
             const idInvitado = rowData.id_invitado ? String(rowData.id_invitado) : null;
 
             const nuevoViaje = {
@@ -181,14 +207,14 @@ const LogisticaTabla = () => {
                 id_m3: rowData.id_m3,
                 caphrsviajes: caphrsviajes,
                 id_operador: rowData.id_operador,
-                id_invitado: idInvitado, // ← Convertir a string | null
+                id_invitado: idInvitado,
                 en_renta: rowData.en_renta || false,
                 horas_renta: rowData.horas_renta || null,
                 horario: rowData.horario || 'D',
-                numero_viaje: numeroViaje
+                numero_viaje: numeroViajeNum,
+                cantidad_viajes: rowData.cantidad_viajes || null
             };
 
-            // 5. Crear el viaje en la tabla viajes
             const result = await createViaje(nuevoViaje);
 
             if (result) {
@@ -199,17 +225,15 @@ const LogisticaTabla = () => {
                     life: 3000
                 });
 
-                // 6. ELIMINAR el registro de la tabla logistica
                 const { error: deleteError } = await supabase
                     .from('logistica')
                     .delete()
                     .eq('id', rowData.id);
 
                 if (deleteError) {
-                    console.error('Error actualizando estado en logistica:', deleteError);
+                    console.error('Error eliminando registro:', deleteError);
                 }
 
-                // 7. Recargar la tabla para reflejar los cambios
                 cargarDatos();
             }
         } catch (error) {
@@ -221,21 +245,18 @@ const LogisticaTabla = () => {
                 life: 3000
             });
         }
-    };
+    }, [cargarDatos]);
 
-    // Función para Rechazar - Eliminar de la tabla logistica
-    const handleRechazar = async (rowData: LogisticaViaje) => {
-        console.log('Rechazar viaje:', rowData);
-        
+    // Función para Rechazar
+    const handleRechazar = useCallback(async (rowData: LogisticaViaje) => {
         try {
-            // 1. ELIMINAR el registro de la tabla logistica
             const { error: deleteError } = await supabase
                 .from('logistica')
                 .delete()
                 .eq('id', rowData.id);
 
             if (deleteError) {
-                console.error('Error eliminando registro de logistica:', deleteError);
+                console.error('Error eliminando registro:', deleteError);
                 toast.current?.show({
                     severity: 'error',
                     summary: 'Error',
@@ -245,7 +266,6 @@ const LogisticaTabla = () => {
                 return;
             }
 
-            // 2. Mostrar mensaje de éxito
             toast.current?.show({
                 severity: 'info',
                 summary: 'Rechazado',
@@ -253,7 +273,6 @@ const LogisticaTabla = () => {
                 life: 3000
             });
 
-            // 3. Recargar la tabla para reflejar los cambios
             cargarDatos();
         } catch (error) {
             console.error('Error al rechazar viaje:', error);
@@ -264,17 +283,17 @@ const LogisticaTabla = () => {
                 life: 3000
             });
         }
-    };
+    }, [cargarDatos]);
 
-    // Template de acciones con botones
-    const accionesBodyTemplate = (rowData: LogisticaViaje) => {
+    // Templates para la tabla
+    const accionesBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         return (
             <div className="flex gap-2">
                 <Button 
                     icon="pi pi-pencil" 
                     rounded 
                     size="small"
-                    tooltip="Editar Folio Bco"
+                    tooltip="Editar Viaje"
                     severity="info" 
                     onClick={() => handleEditar(rowData)}
                     tooltipOptions={{ position: 'top' }}
@@ -299,38 +318,80 @@ const LogisticaTabla = () => {
                 />
             </div>
         );
-    };
+    }, [handleEditar, handleAprobar, handleRechazar]);
 
-    // Templates para la tabla
-    const folioBodyTemplate = (rowData: LogisticaViaje) => {
-        return <span className="font-bold">{rowData.folio}</span>;
-    };
+    const folioBodyTemplate = useCallback((rowData: LogisticaViaje) => {
+        return <span className="font-bold">{rowData.folio || '-'}</span>;
+    }, []);
 
-    const clienteBodyTemplate = (rowData: LogisticaViaje) => {
+    const folioBcoBodyTemplate = useCallback((rowData: LogisticaViaje) => {
+        return rowData.folio_bco || '-';
+    }, []);
+
+    const cantidadViajesBodyTemplate = useCallback((rowData: LogisticaViaje) => {
+        return rowData.cantidad_viajes || '-';
+    }, []);
+
+    const fechaAsignacionBodyTemplate = useCallback((rowData: LogisticaViaje) => {
+        if (!rowData.fecha_asignacion) return '-';
+        const date = new Date(rowData.fecha_asignacion);
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = String(date.getFullYear());
+        return `${day}-${month}-${year}`;
+    }, []);
+
+    const numeroViajeBodyTemplate = useCallback((rowData: LogisticaViaje) => {
+        return rowData.numero_viaje || '-';
+    }, []);
+
+    const clienteBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         return rowData.cliente_nombre || '-';
-    };
+    }, []);
 
-    const operadorBodyTemplate = (rowData: LogisticaViaje) => {
+    const operadorBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         return rowData.operador_nombre || '-';
-    };
+    }, []);
 
-    const origenBodyTemplate = (rowData: LogisticaViaje) => {
+    const origenBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         return rowData.origen || '-';
-    };
+    }, []);
 
-    const destinoBodyTemplate = (rowData: LogisticaViaje) => {
+    const destinoBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         return rowData.destino || '-';
-    };
+    }, []);
 
-    const materialBodyTemplate = (rowData: LogisticaViaje) => {
+    const materialBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         return rowData.material_nombre || '-';
-    };
+    }, []);
 
-    const m3BodyTemplate = (rowData: LogisticaViaje) => {
+    const m3BodyTemplate = useCallback((rowData: LogisticaViaje) => {
         return rowData.m3_nombre || '-';
-    };
+    }, []);
 
-    const estadoBodyTemplate = (rowData: LogisticaViaje) => {
+    const horarioBodyTemplate = useCallback((rowData: LogisticaViaje) => {
+        const horarioMap = {
+            'D': 'Día',
+            'N': 'Noche'
+        };
+        return horarioMap[rowData.horario as keyof typeof horarioMap] || rowData.horario || '-';
+    }, []);
+
+    const rentaBodyTemplate = useCallback((rowData: LogisticaViaje) => {
+        return rowData.en_renta ? (
+            <div className="flex align-items-center">
+                <i className="pi pi-check-circle text-green-500 mr-2" />
+                <span>{rowData.horas_renta?.toFixed(2) || '0.00'} hrs</span>
+            </div>
+        ) : (
+            <div className="flex align-items-center">
+                <i className="pi pi-times-circle text-red-500 mr-2" />
+                <span>No</span>
+            </div>
+        );
+    }, []);
+
+    const estadoBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         const getEstadoColor = (estado: string) => {
             switch (estado) {
                 case 'pendiente': return 'bg-orange-100 text-orange-800';
@@ -357,46 +418,7 @@ const LogisticaTabla = () => {
                 {estadoLabel}
             </span>
         );
-    };
-
-    const fechaAsignacionBodyTemplate = (rowData: LogisticaViaje) => {
-        if (!rowData.fecha_asignacion) return '-';
-        const date = new Date(rowData.fecha_asignacion);
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = String(date.getFullYear());
-        return `${day}-${month}-${year}`;
-    };
-
-    const horarioBodyTemplate = (rowData: LogisticaViaje) => {
-        const horarioMap = {
-            'D': 'Día',
-            'N': 'Noche'
-        };
-        return horarioMap[rowData.horario as keyof typeof horarioMap] || rowData.horario || '-';
-    };
-
-    const rentaBodyTemplate = (rowData: LogisticaViaje) => {
-        return rowData.en_renta ? (
-            <div className="flex align-items-center">
-                <i className="pi pi-check-circle text-green-500 mr-2" />
-                <span>{rowData.horas_renta?.toFixed(2) || '0.00'} hrs</span>
-            </div>
-        ) : (
-            <div className="flex align-items-center">
-                <i className="pi pi-times-circle text-red-500 mr-2" />
-                <span>No</span>
-            </div>
-        );
-    };
-
-    const numeroViajeBodyTemplate = (rowData: LogisticaViaje) => {
-        return rowData.numero_viaje || '-';
-    };
-
-    const folioBcoBodyTemplate = (rowData: LogisticaViaje) => {
-        return rowData.folio_bco || '-';
-    };
+    }, []);
 
     return (
         <div className="card">
@@ -433,6 +455,7 @@ const LogisticaTabla = () => {
             >
                 <Column field="folio" header="Folio" sortable body={folioBodyTemplate} />
                 <Column field="folio_bco" header="Folio Bco" sortable body={folioBcoBodyTemplate} />
+                <Column field="cantidad_viajes" header="Cant. Viajes" sortable body={cantidadViajesBodyTemplate} />
                 <Column field="fecha_asignacion" header="Fecha Asignación" sortable body={fechaAsignacionBodyTemplate} />
                 <Column field="numero_viaje" header="Número de Viaje" sortable body={numeroViajeBodyTemplate} />
                 <Column field="cliente_nombre" header="Cliente" sortable body={clienteBodyTemplate} />
@@ -447,25 +470,20 @@ const LogisticaTabla = () => {
                 <Column header="Acciones" body={accionesBodyTemplate} headerStyle={{ minWidth: '120px' }} style={{ textAlign: 'center' }} />
             </DataTable>
 
-            {/* Dialog para editar Folio Bco */}
+            {/* Dialog para editar */}
             <Dialog
                 visible={editDialog}
-                header="Editar Folio Bancario"
+                header="Editar Viaje Logístico"
                 modal
                 className="p-fluid"
-                style={{ width: '450px' }}
+                style={{ width: '500px' }}
                 footer={
                     <>
                         <Button 
                             label="Cancelar" 
                             icon="pi pi-times" 
                             text 
-                            onClick={() => {
-                                setEditDialog(false);
-                                setEditViaje(null);
-                                setFolioBco('');
-                                setSubmittedEdit(false);
-                            }} 
+                            onClick={cerrarDialog}
                         />
                         <Button 
                             label="Guardar" 
@@ -476,35 +494,62 @@ const LogisticaTabla = () => {
                         />
                     </>
                 }
-                onHide={() => {
-                    setEditDialog(false);
-                    setEditViaje(null);
-                    setFolioBco('');
-                    setSubmittedEdit(false);
-                }}
+                onHide={cerrarDialog}
             >
                 <div className="field">
-                    <label htmlFor="folio_bco">Folio Bancario </label>
+                    <label htmlFor="folio">Folio</label>
+                    <InputText
+                        id="folio"
+                        value={folio}
+                        onChange={(e) => setFolio(e.target.value)}
+                        placeholder="Ingresa el folio"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="folio_bco">Folio Bancario</label>
                     <InputText
                         id="folio_bco"
                         value={folioBco}
                         onChange={(e) => setFolioBco(e.target.value)}
                         placeholder="Ingresa el folio bancario"
-                        required
-                        className={submittedEdit && !folioBco ? 'p-invalid' : ''}
                     />
-                    {/* {submittedEdit && !folioBco && (
-                        <small className="p-error">El folio bancario es obligatorio</small>
-                    )} */}
+                </div>
+
+                <div className="field">
+                    <label htmlFor="numero_viaje">Número de Viaje</label>
+                    <InputText
+                        id="numero_viaje"
+                        value={numeroViaje}
+                        onChange={(e) => setNumeroViaje(e.target.value)}
+                        placeholder="Ingresa el número de viaje"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="cantidad_viajes">Cantidad de Viajes</label>
+                    <InputNumber
+                        id="cantidad_viajes"
+                        value={cantidadViajes}
+                        onValueChange={(e) => setCantidadViajes(e.value ?? null)}
+                        placeholder="Ingresa la cantidad de viajes"
+                        min={0}
+                        useGrouping={false}
+                        className="w-full"
+                        mode="decimal"
+                    />
                 </div>
                 
                 {editViaje && (
                     <div className="field">
                         <label>Información del Viaje</label>
-                        <div className="text-sm text-500">
-                            <div><strong>Folio:</strong> {editViaje.folio}</div>
+                        <div className="text-sm text-500 p-2 bg-gray-50 border-round">
                             <div><strong>Cliente:</strong> {editViaje.cliente_nombre}</div>
                             <div><strong>Operador:</strong> {editViaje.operador_nombre}</div>
+                            <div><strong>Origen - Destino:</strong> {editViaje.origen} - {editViaje.destino}</div>
+                            <div><strong>Material:</strong> {editViaje.material_nombre}</div>
+                            <div><strong>M3:</strong> {editViaje.m3_nombre}</div>
+                            <div><strong>Estado:</strong> {editViaje.estado}</div>
                         </div>
                     </div>
                 )}

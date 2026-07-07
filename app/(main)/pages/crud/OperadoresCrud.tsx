@@ -11,7 +11,8 @@ import { Calendar } from 'primereact/calendar';
 import { ToggleButton } from 'primereact/togglebutton';
 import { Checkbox } from 'primereact/checkbox';
 import { Password } from 'primereact/password';
-import React, { useEffect, useRef, useState } from 'react';
+import { DataTableFilterMeta } from 'primereact/datatable';
+import React, { useEffect, useRef, useState, useCallback } from 'react'; // ← Agregar useCallback
 import { 
   fetchOperadores, 
   createOperador, 
@@ -39,11 +40,14 @@ const OperadoresCrud = () => {
       acceso_sistema: false,
       email: '',
       pass: '',
-      rol_id: null
+      rol_id: null,
+      camion_full: false
     });
     const [selectedOperadores, setSelectedOperadores] = useState<Operador[]>([]);
     const [submitted, setSubmitted] = useState(false);
-    const [globalFilter, setGlobalFilter] = useState('');
+    const [filters, setFilters] = useState<DataTableFilterMeta>({
+        global: { value: null, matchMode: 'contains' as const }
+    });
     const [loading, setLoading] = useState(false);
     const [roles, setRoles] = useState<{ id: number; nombre: string; descripcion: string }[]>([]);
     const toast = useRef<Toast>(null);
@@ -70,11 +74,8 @@ const OperadoresCrud = () => {
       'Ayudante'
     ];
 
-    useEffect(() => {
-        cargarDatos();
-    }, []);
-
-    const cargarDatos = async () => {
+    // Usar useCallback para evitar recreación
+    const cargarDatos = useCallback(async () => {
         try {
             const [operadoresData, rolesData] = await Promise.all([
                 fetchOperadores(),
@@ -91,41 +92,46 @@ const OperadoresCrud = () => {
                 life: 3000 
             });
         }
-    };
+    }, []);
 
-    const openNew = () => {
+    useEffect(() => {
+        cargarDatos();
+    }, [cargarDatos]);
+
+    const openNew = useCallback(() => {
         setOperador({ 
-          nombre: '', 
-          puesto: '', 
-          salario_base: 0, 
-          estatus: true,
-          descripcion: '',
-          telefono: '',
-          direccion: '',
-          fecha_contratacion: '',
-          acceso_sistema: false,
-          email: '',
-          pass: '',
-          rol_id: null
+            nombre: '', 
+            puesto: '', 
+            salario_base: 0, 
+            estatus: true,
+            descripcion: '',
+            telefono: '',
+            direccion: '',
+            fecha_contratacion: '',
+            acceso_sistema: false,
+            email: '',
+            pass: '',
+            rol_id: null,
+            camion_full: false
         });
         setSubmitted(false);
         setOperadorDialog(true);
-    };
+    }, []);
 
-    const hideDialog = () => {
+    const hideDialog = useCallback(() => {
         setSubmitted(false);
         setOperadorDialog(false);
-    };
+    }, []);
 
-    const hideDeleteOperadorDialog = () => {
+    const hideDeleteOperadorDialog = useCallback(() => {
         setDeleteOperadorDialog(false);
-    };
+    }, []);
 
-    const hideDeleteOperadoresDialog = () => {
+    const hideDeleteOperadoresDialog = useCallback(() => {
         setDeleteOperadoresDialog(false);
-    };
+    }, []);
 
-    const saveOperador = async () => {
+    const saveOperador = useCallback(async () => {
         setSubmitted(true);
 
         // Validaciones básicas
@@ -141,9 +147,7 @@ const OperadoresCrud = () => {
 
         // Validaciones para acceso al sistema
         if (operador.acceso_sistema) {
-            // Solo validar email y password si es NUEVO o si se están modificando
             if (!operador.id) {
-                // Nuevo: obligatorio
                 if (!operador.email || !operador.email.includes('@')) {
                     toast.current?.show({ 
                         severity: 'error', 
@@ -172,7 +176,6 @@ const OperadoresCrud = () => {
                     return;
                 }
             } else {
-                // Edición: solo validar si se proporcionaron
                 if (operador.pass && operador.pass.length < 6) {
                     toast.current?.show({ 
                         severity: 'error', 
@@ -196,10 +199,16 @@ const OperadoresCrud = () => {
 
         try {
             setLoading(true);
+            
+            // Asegurar que camion_full sea booleano
+            const operadorToSave = {
+                ...operador,
+                camion_full: operador.camion_full ?? false
+            };
+
             if (operador.id) {
-                // Solo actualizar, no crear usuario (el usuario ya existe)
-                const updatedOperador = await updateOperador(operador);
-                setOperadores(operadores.map(o => o.id === updatedOperador.id ? updatedOperador : o));
+                const updatedOperador = await updateOperador(operadorToSave);
+                setOperadores(prev => prev.map(o => o.id === updatedOperador.id ? updatedOperador : o));
                 toast.current?.show({ 
                     severity: 'success', 
                     summary: 'Éxito', 
@@ -243,37 +252,40 @@ const OperadoresCrud = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [operador, roles]);
 
-    const editOperador = (operador: Operador) => {
-        setOperador({ ...operador });
+    const editOperador = useCallback((operador: Operador) => {
+        setOperador({ 
+            ...operador,
+            camion_full: operador.camion_full ?? false
+        });
         setOperadorDialog(true);
-    };
+    }, []);
 
-    const confirmDeleteOperador = (operador: Operador) => {
+    const confirmDeleteOperador = useCallback((operador: Operador) => {
         setOperador(operador);
         setDeleteOperadorDialog(true);
-    };
+    }, []);
 
-    const confirmDeleteSelected = () => {
+    const confirmDeleteSelected = useCallback(() => {
         setDeleteOperadoresDialog(true);
-    };
+    }, []);
 
-    const deleteOperadorConfirmado = async () => {
+    const deleteOperadorConfirmado = useCallback(async () => {
         try {
             await deleteOperador(operador.id!);
-            setOperadores(operadores.filter(o => o.id !== operador.id));
+            setOperadores(prev => prev.filter(o => o.id !== operador.id));
             setDeleteOperadorDialog(false);
             toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Empleado eliminado', life: 3000 });
         } catch (error) {
             toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Error al eliminar empleado', life: 3000 });
         }
-    };
+    }, [operador]);
 
-    const toggleEstatus = async (operador: Operador) => {
+    const toggleEstatus = useCallback(async (operador: Operador) => {
         try {
             const newEstatus = await toggleEstatusOperador(operador.id!, operador.estatus);
-            setOperadores(operadores.map(o => 
+            setOperadores(prev => prev.map(o => 
                 o.id === operador.id ? { ...o, estatus: newEstatus } : o
             ));
             toast.current?.show({ 
@@ -285,50 +297,50 @@ const OperadoresCrud = () => {
         } catch (error) {
             toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Error al cambiar estatus', life: 3000 });
         }
-    };
+    }, []);
 
-    const deleteSelectedOperadores = async () => {
+    const deleteSelectedOperadores = useCallback(async () => {
         try {
             await Promise.all(selectedOperadores.map(o => deleteOperador(o.id!)));
-            setOperadores(operadores.filter(o => !selectedOperadores.includes(o)));
+            setOperadores(prev => prev.filter(o => !selectedOperadores.includes(o)));
             setDeleteOperadoresDialog(false);
             setSelectedOperadores([]);
             toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Empleados eliminados', life: 3000 });
         } catch (error) {
             toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Error al eliminar empleados', life: 3000 });
         }
-    };
+    }, [selectedOperadores]);
 
-    const exportCSV = () => {
+    const exportCSV = useCallback(() => {
         dt.current?.exportCSV();
-    };
+    }, []);
 
     // Templates para la tabla
-    const nombreBodyTemplate = (rowData: Operador) => {
+    const nombreBodyTemplate = useCallback((rowData: Operador) => {
         return <span>{rowData.nombre}</span>;
-    };
+    }, []);
 
-    const puestoBodyTemplate = (rowData: Operador) => {
+    const puestoBodyTemplate = useCallback((rowData: Operador) => {
         return <span>{rowData.puesto}</span>;
-    };
+    }, []);
 
-    const salarioBodyTemplate = (rowData: Operador) => {
+    const salarioBodyTemplate = useCallback((rowData: Operador) => {
         return <span>${rowData.salario_base?.toFixed(2) || '0.00'}</span>;
-    };
+    }, []);
 
-    const telefonoBodyTemplate = (rowData: Operador) => {
+    const telefonoBodyTemplate = useCallback((rowData: Operador) => {
         return <span>{rowData.telefono || '-'}</span>;
-    };
+    }, []);
 
-    const fechaContratacionBodyTemplate = (rowData: Operador) => {
+    const fechaContratacionBodyTemplate = useCallback((rowData: Operador) => {
         return <span>{rowData.fecha_contratacion || '-'}</span>;
-    };
+    }, []);
 
-    const idBodyTemplate = (rowData: Operador) => {
+    const idBodyTemplate = useCallback((rowData: Operador) => {
         return <span>{rowData.id}</span>;
-    };
+    }, []);
 
-    const estatusBodyTemplate = (rowData: Operador) => {
+    const estatusBodyTemplate = useCallback((rowData: Operador) => {
         return (
             <ToggleButton
                 checked={rowData.estatus}
@@ -340,9 +352,9 @@ const OperadoresCrud = () => {
                 className="w-8rem"
             />
         );
-    };
+    }, [toggleEstatus]);
 
-    const accesoBodyTemplate = (rowData: Operador) => {
+    const accesoBodyTemplate = useCallback((rowData: Operador) => {
         return rowData.acceso_sistema ? (
             <span className="inline-flex align-items-center gap-1">
                 <i className="pi pi-check-circle text-green-500" />
@@ -354,22 +366,38 @@ const OperadoresCrud = () => {
                 <span>No</span>
             </span>
         );
-    };
+    }, []);
 
-    const descripcionBodyTemplate = (rowData: Operador) => {
+    const descripcionBodyTemplate = useCallback((rowData: Operador) => {
         return <span>{rowData.descripcion || '-'}</span>;
-    };
+    }, []);
 
-    const actionBodyTemplate = (rowData: Operador) => {
+    // Template para camion_full
+    const camionFullBodyTemplate = useCallback((rowData: Operador) => {
+        const isFull = rowData.camion_full === true;
+        return isFull ? (
+            <span className="inline-flex align-items-center gap-1">
+                <i className="pi pi-check-circle text-green-500" />
+                <span>Sí</span>
+            </span>
+        ) : (
+            <span className="inline-flex align-items-center gap-1">
+                <i className="pi pi-times-circle text-red-500" />
+                <span>No</span>
+            </span>
+        );
+    }, []);
+
+    const actionBodyTemplate = useCallback((rowData: Operador) => {
         return (
             <div className="flex gap-2">
                 <Button icon="pi pi-pencil" rounded severity="info" onClick={() => editOperador(rowData)} />
                 <Button icon="pi pi-trash" rounded severity="danger" onClick={() => confirmDeleteOperador(rowData)} />
             </div>
         );
-    };
+    }, [editOperador, confirmDeleteOperador]);
 
-    const leftToolbarTemplate = () => {
+    const leftToolbarTemplate = useCallback(() => {
         return (
             <div className="my-2">
                 <Button label="Nuevo" icon="pi pi-plus" severity="info" className="mr-2" onClick={openNew} />
@@ -377,44 +405,55 @@ const OperadoresCrud = () => {
                     disabled={!selectedOperadores || selectedOperadores.length === 0} />
             </div>
         );
-    };
+    }, [openNew, confirmDeleteSelected, selectedOperadores]);
 
-    const rightToolbarTemplate = () => {
+    const rightToolbarTemplate = useCallback(() => {
         return (
             <Button label="Exportar" icon="pi pi-upload" severity="help" onClick={exportCSV} />
         );
-    };
+    }, [exportCSV]);
 
-    const header = (
-        <div className="flex flex-column md:flex-row md:justify-content-between md:align-items-center">
-            <h5 className="m-0">Gestión de Empleados</h5>
-            <span className="block mt-2 md:mt-0 p-input-icon-left">
-                <i className="pi pi-search" />
-                <InputText type="search" onInput={(e) => setGlobalFilter(e.currentTarget.value)} placeholder="Buscar..." />
-            </span>
-        </div>
-    );
+    const header = useCallback(() => {
+        return (
+            <div className="flex flex-column md:flex-row md:justify-content-between md:align-items-center">
+                <h5 className="m-0">Gestión de Empleados</h5>
+                <span className="block mt-2 md:mt-0 p-input-icon-left">
+                    <i className="pi pi-search" />
+                    <InputText
+                        type="search"
+                        onInput={(e) =>
+                            setFilters({
+                                ...filters,
+                                global: { value: e.currentTarget.value, matchMode: 'contains' }
+                            })
+                        }
+                        placeholder="Buscar..."
+                    />
+                </span>
+            </div>
+        );
+    }, []);
 
-    const operadorDialogFooter = (
+    const operadorDialogFooter = useCallback(() => (
         <>
             <Button label="Cancelar" icon="pi pi-times" text onClick={hideDialog} />
             <Button label="Guardar" icon="pi pi-check" text onClick={saveOperador} loading={loading} />
         </>
-    );
+    ), [hideDialog, saveOperador, loading]);
 
-    const deleteOperadorDialogFooter = (
+    const deleteOperadorDialogFooter = useCallback(() => (
         <>
             <Button label="No" icon="pi pi-times" text onClick={hideDeleteOperadorDialog} />
             <Button label="Sí" icon="pi pi-check" text onClick={deleteOperadorConfirmado} />
         </>
-    );
+    ), [hideDeleteOperadorDialog, deleteOperadorConfirmado]);
 
-    const deleteOperadoresDialogFooter = (
+    const deleteOperadoresDialogFooter = useCallback(() => (
         <>
             <Button label="No" icon="pi pi-times" text onClick={hideDeleteOperadoresDialog} />
             <Button label="Sí" icon="pi pi-check" text onClick={deleteSelectedOperadores} />
         </>
-    );
+    ), [hideDeleteOperadoresDialog, deleteSelectedOperadores]);
 
     return (
         <div className="grid crud-demo">
@@ -456,6 +495,10 @@ const OperadoresCrud = () => {
                                             <div className="col-12 sm:col-6">
                                                 <div className="text-500 text-sm">Acceso</div>
                                                 <div className="font-medium">{accesoBodyTemplate(operadorItem)}</div>
+                                            </div>
+                                            <div className="col-12 sm:col-6">
+                                                <div className="text-500 text-sm">Camión Full</div>
+                                                <div className="font-medium">{camionFullBodyTemplate(operadorItem)}</div>
                                             </div>
                                             {operadorItem.descripcion && (
                                                 <div className="col-12">
@@ -501,7 +544,7 @@ const OperadoresCrud = () => {
                             className="datatable-responsive"
                             paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                             currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} empleados"
-                            globalFilter={globalFilter}
+                            filters={filters} // PARA EL DE BUSQUEDA
                             emptyMessage="No se encontraron empleados"
                             header={header}
                             responsiveLayout="scroll"
@@ -514,6 +557,7 @@ const OperadoresCrud = () => {
                             <Column field="telefono" header="Teléfono" body={telefonoBodyTemplate}></Column>
                             <Column field="fecha_contratacion" header="Fecha Alta" body={fechaContratacionBodyTemplate}></Column>
                             <Column field="acceso_sistema" header="Acceso" body={accesoBodyTemplate}></Column>
+                            <Column field="camion_full" header="Camión Full ?" body={camionFullBodyTemplate}></Column>
                             <Column field="estatus" header="Estatus" body={estatusBodyTemplate}></Column>
                             <Column header="Acciones" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }}></Column>
                         </DataTable>
@@ -648,8 +692,7 @@ const OperadoresCrud = () => {
                                                 setOperador({ 
                                                     ...operador, 
                                                     acceso_sistema: checked,
-                                                    // Si se desactiva el acceso, limpiar email, password y rol
-                                                    ...(checked ? {} : { email: '', password: '', rol_id: null })
+                                                    ...(checked ? {} : { email: '', pass: '', rol_id: null })
                                                 });
                                             }}
                                         />
@@ -674,7 +717,7 @@ const OperadoresCrud = () => {
                                                 value={operador.email || ''}
                                                 onChange={(e) => setOperador({ ...operador, email: e.target.value })}
                                                 placeholder="correo@ejemplo.com"
-                                                required={!operador.id} // Solo requerido si es nuevo
+                                                required={!operador.id}
                                                 className={submitted && !operador.id && !operador.email ? 'p-invalid' : ''}
                                             />
                                             {submitted && !operador.id && !operador.email && (
@@ -693,7 +736,7 @@ const OperadoresCrud = () => {
                                                 onChange={(e) => setOperador({ ...operador, pass: e.target.value })}
                                                 placeholder={operador.id ? "Dejar vacío para mantener la actual" : "Mínimo 6 caracteres"}
                                                 toggleMask
-                                                required={!operador.id} // Solo requerido si es nuevo
+                                                required={!operador.id}
                                                 feedback={false}
                                                 className={submitted && !operador.id && !operador.pass ? 'p-invalid' : ''}
                                             />
@@ -729,10 +772,32 @@ const OperadoresCrud = () => {
                                 </>
                             )}
 
+                            {/* Camion full? */}
+                            <div className="col-12">
+                                <div className="field">
+                                    <div className="flex align-items-center">
+                                        <Checkbox
+                                            id="camion_full"
+                                            checked={operador.camion_full === true}
+                                            onChange={(e) => {
+                                                const checked = e.checked || false;
+                                                setOperador({ 
+                                                    ...operador, 
+                                                    camion_full: checked 
+                                                });
+                                            }}
+                                        />
+                                        <label htmlFor="camion_full" className="ml-2">
+                                            Camion Full ?
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
                             {operador.id && (
                                 <div className="col-12">
                                     <div className="field">
-                                        <label htmlFor="estatus">Estatus</label>
+                                        {/* <label htmlFor="estatus">Estatus</label> */}
                                         <ToggleButton
                                             checked={operador.estatus}
                                             onChange={(e) => setOperador({ ...operador, estatus: e.value })}

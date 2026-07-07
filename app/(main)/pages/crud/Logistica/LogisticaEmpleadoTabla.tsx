@@ -14,6 +14,7 @@ import { supabase } from '../../../../../Services/superbase.service';
 
 const LogisticaEmpleadoTabla = () => {
     const [viajes, setViajes] = useState<LogisticaViaje[]>([]);
+    const [camionFull, setCamionFull] = useState(false);
     const [loading, setLoading] = useState(false);
     const [updating, setUpdating] = useState<number | null>(null);
     const toast = useRef<Toast>(null);
@@ -59,8 +60,30 @@ const LogisticaEmpleadoTabla = () => {
     const cargarDatos = useCallback(async () => {
         setLoading(true);
         try {
-            const viajesData = await fetchViajesAsignadosPorOperador();
-            setViajes(filtrarViajesPorFechaAsignacion(viajesData));
+            const [viajesData, operadorData] = await Promise.all([
+                fetchViajesAsignadosPorOperador(),
+                (async () => {
+                    const userId = sessionStorage.getItem('userId');
+                    if (!userId) return false;
+
+                    const { data, error } = await supabase
+                        .from('operador')
+                        .select('camion_full')
+                        .eq('user_id', parseInt(userId, 10))
+                        .maybeSingle();
+
+                    if (error) {
+                        console.error('Error obteniendo camion_full del operador:', error);
+                        return false;
+                    }
+
+                    return data?.camion_full === true;
+                })()
+            ]);
+
+            const viajesFiltrados = filtrarViajesPorFechaAsignacion(viajesData);
+            setViajes(viajesFiltrados);
+            setCamionFull(operadorData);
         } catch (error) {
             console.error('Error cargando datos:', error);
             toast.current?.show({
@@ -233,6 +256,8 @@ const LogisticaEmpleadoTabla = () => {
         return rowData.folio_bco || '-';
     };
 
+    const viajesVisibles = viajes.slice(0, camionFull ? 2 : 1);
+
     return (
         <div className="card">
             <Toast ref={toast} />
@@ -260,81 +285,85 @@ const LogisticaEmpleadoTabla = () => {
             <div className="block md:hidden">
                 {loading ? (
                     <div className="text-center py-4 text-500">Cargando viajes...</div>
-                ) : viajes.length === 0 ? (
+                ) : viajesVisibles.length === 0 ? (
                     <div className="text-center py-4 text-500">No tienes viajes asignados para hoy</div>
                 ) : (
-                    <div className="surface-card border-1 border-round p-3 shadow-1">
-                        <div className="flex justify-content-between align-items-start gap-2 mb-2">
-                            <div>
-                                <div className="font-bold text-lg">{viajes[0].folio || '-'}</div>
-                                <div className="text-sm text-500">
-                                    {fechaAsignacionBodyTemplate(viajes[0])}
+                    <div className="flex flex-column gap-3">
+                        {viajesVisibles.map((viajeItem) => (
+                            <div key={viajeItem.id} className="surface-card border-1 border-round p-3 shadow-1">
+                                <div className="flex justify-content-between align-items-start gap-2 mb-2">
+                                    <div>
+                                        <div className="font-bold text-lg">{viajeItem.folio || '-'}</div>
+                                        <div className="text-sm text-500">
+                                            {fechaAsignacionBodyTemplate(viajeItem)}
+                                        </div>
+                                    </div>
+                                    <span className={`px-3 py-1 border-round text-sm font-medium ${getEstadoChipClass(viajeItem.estado || '')}`}>
+                                        {getEstadoLabel(viajeItem.estado)}
+                                    </span>
+                                </div>
+
+                                <div className="grid">
+                                    <div className="col-12">
+                                        <div className="text-500 text-sm">Cliente</div>
+                                        <div className="font-medium">{clienteBodyTemplate(viajeItem)}</div>
+                                    </div>
+                                    <div className="col-12 sm:col-6">
+                                        <div className="text-500 text-sm">Origen</div>
+                                        <div className="font-medium">{origenBodyTemplate(viajeItem)}</div>
+                                    </div>
+                                    <div className="col-12 sm:col-6">
+                                        <div className="text-500 text-sm">Destino</div>
+                                        <div className="font-medium">{destinoBodyTemplate(viajeItem)}</div>
+                                    </div>
+                                    <div className="col-12 sm:col-6">
+                                        <div className="text-500 text-sm">Material</div>
+                                        <div className="font-medium">{materialBodyTemplate(viajeItem)}</div>
+                                    </div>
+                                    <div className="col-12 sm:col-6">
+                                        <div className="text-500 text-sm">Horario</div>
+                                        <div className="font-medium">{horarioBodyTemplate(viajeItem)}</div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-3">
+                                    <label className="block text-500 text-sm mb-2">Cambiar estado</label>
+                                    <Dropdown
+                                        value={viajeItem.estado}
+                                        options={estadoOptions}
+                                        onChange={(e) => cambiarEstado(viajeItem, e.value)}
+                                        placeholder="Seleccionar estado"
+                                        disabled={updating === viajeItem.id || viajeItem.estado === 'completado'}
+                                        className="w-full"
+                                        panelClassName="p-2"
+                                        itemTemplate={(option) => {
+                                            const color = getEstadoChipClass(option.value);
+                                            return (
+                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${color}`}>
+                                                    {option.label}
+                                                </span>
+                                            );
+                                        }}
+                                        valueTemplate={(option) => {
+                                            if (!option) return <span>Seleccionar</span>;
+                                            const color = getEstadoChipClass(option.value);
+                                            return (
+                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${color}`}>
+                                                    {option.label}
+                                                </span>
+                                            );
+                                        }}
+                                    />
                                 </div>
                             </div>
-                            <span className={`px-3 py-1 border-round text-sm font-medium ${getEstadoChipClass(viajes[0].estado || '')}`}>
-                                {getEstadoLabel(viajes[0].estado)}
-                            </span>
-                        </div>
-
-                        <div className="grid">
-                            <div className="col-12">
-                                <div className="text-500 text-sm">Cliente</div>
-                                <div className="font-medium">{clienteBodyTemplate(viajes[0])}</div>
-                            </div>
-                            <div className="col-12 sm:col-6">
-                                <div className="text-500 text-sm">Origen</div>
-                                <div className="font-medium">{origenBodyTemplate(viajes[0])}</div>
-                            </div>
-                            <div className="col-12 sm:col-6">
-                                <div className="text-500 text-sm">Destino</div>
-                                <div className="font-medium">{destinoBodyTemplate(viajes[0])}</div>
-                            </div>
-                            <div className="col-12 sm:col-6">
-                                <div className="text-500 text-sm">Material</div>
-                                <div className="font-medium">{materialBodyTemplate(viajes[0])}</div>
-                            </div>
-                            <div className="col-12 sm:col-6">
-                                <div className="text-500 text-sm">Horario</div>
-                                <div className="font-medium">{horarioBodyTemplate(viajes[0])}</div>
-                            </div>
-                        </div>
-
-                        <div className="mt-3">
-                            <label className="block text-500 text-sm mb-2">Cambiar estado</label>
-                            <Dropdown
-                                value={viajes[0].estado}
-                                options={estadoOptions}
-                                onChange={(e) => cambiarEstado(viajes[0], e.value)}
-                                placeholder="Seleccionar estado"
-                                disabled={updating === viajes[0].id || viajes[0].estado === 'completado'}
-                                className="w-full"
-                                panelClassName="p-2"
-                                itemTemplate={(option) => {
-                                    const color = getEstadoChipClass(option.value);
-                                    return (
-                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${color}`}>
-                                            {option.label}
-                                        </span>
-                                    );
-                                }}
-                                valueTemplate={(option) => {
-                                    if (!option) return <span>Seleccionar</span>;
-                                    const color = getEstadoChipClass(option.value);
-                                    return (
-                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${color}`}>
-                                            {option.label}
-                                        </span>
-                                    );
-                                }}
-                            />
-                        </div>
+                        ))}
                     </div>
                 )}
             </div>
 
             <div className="hidden md:block">
                 <DataTable
-                    value={viajes.slice(0, 1)}
+                    value={viajesVisibles}
                     dataKey="id"
                     className="datatable-responsive"
                     emptyMessage="No tienes viajes asignados para hoy"

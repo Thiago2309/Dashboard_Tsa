@@ -375,7 +375,7 @@ const Crud = () => {
         return (
             <React.Fragment>
                 <div className="my-2">
-                    <Button label="Nuevo" icon="pi pi-plus" severity="info" className="mr-2" onClick={openNew} />
+                    {/* <Button label="Nuevo" icon="pi pi-plus" severity="info" className="mr-2" onClick={openNew} /> */}
                     <Button label="Eliminar" icon="pi pi-trash" severity="danger" className="mr-2" onClick={confirmDeleteSelected} disabled={!selectedViajes || !selectedViajes.length} />
                     <Button label="Filtros" icon="pi pi-filter" className="p-button-outlined" onClick={() => setShowFiltros(true)} />
                 </div>
@@ -545,6 +545,15 @@ const Crud = () => {
         );
     };
 
+    const cantidadViajesBodyTemplate = (rowData: Viaje) => {
+        return (
+            <>
+                <span className="p-column-title">Cantidad de Viajes</span>
+                {rowData.cantidad_viajes ?? '-'}
+            </>
+        );
+    }
+
     const actionBodyTemplate = (rowData: Viaje) => {
         return (
             <>
@@ -656,6 +665,7 @@ const Crud = () => {
                         <Column field="folio_bco" header="Folio Banco" sortable body={folioBcoBodyTemplate}></Column>
                         <Column field="folio" header="Folio" sortable body={folioBodyTemplate}></Column>
                         <Column field="numero_viaje" header="No. Viaje" sortable body={folioNo_ViajeBodyTemplate}></Column>
+                        <Column field="cantidad_viajes" header="Cantidad de Viajes" sortable body={cantidadViajesBodyTemplate}></Column>
                         <Column field="cliente_nombre" header="Cliente" sortable body={clienteBodyTemplate}></Column>
                         <Column field="operador_nombre" header="Operador" sortable body={operadorBodyTemplate}></Column>
                         <Column field="origen" header="Origen" sortable body={origenBodyTemplate}></Column>

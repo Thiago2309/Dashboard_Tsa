@@ -18,6 +18,7 @@ export interface LogisticaViaje {
     numero_viaje: string | null;
     en_renta: boolean;
     horas_renta: number | null;
+    cantidad_viajes?: number | null; // ← NUEVO CAMPO
     
     // Campos de la vista (relaciones)
     cliente_nombre?: string;
@@ -55,7 +56,8 @@ const transformLogisticaData = (data: any): LogisticaViaje => ({
     horas_renta: data.horas_renta || null,
     origen: data.origen || '',
     destino: data.destino || '',
-    user_id: data.user_id || null
+    user_id: data.user_id || null,
+    cantidad_viajes: data.cantidad_viajes || null
 });
 
 // Obtener todos los viajes logísticos
@@ -90,7 +92,8 @@ export const createViajeLogistica = async (viaje: Omit<LogisticaViaje, 'id'>): P
         horario: viaje.horario || 'D',
         numero_viaje: viaje.numero_viaje,
         en_renta: viaje.en_renta || false,
-        horas_renta: viaje.horas_renta
+        horas_renta: viaje.horas_renta,
+        cantidad_viajes: viaje.cantidad_viajes || null 
     };
 
     const { data, error } = await supabase
@@ -137,7 +140,8 @@ export const updateViajeLogistica = async (viaje: LogisticaViaje): Promise<Logis
         horario: viaje.horario,
         numero_viaje: viaje.numero_viaje,
         en_renta: viaje.en_renta,
-        horas_renta: viaje.horas_renta
+        horas_renta: viaje.horas_renta,
+        cantidad_viajes: viaje.cantidad_viajes || null 
     };
 
     const { data, error } = await supabase
