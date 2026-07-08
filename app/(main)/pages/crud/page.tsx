@@ -37,7 +37,9 @@ const Crud = () => {
         operador_nombre: '',
         en_renta: false,
         horas_renta: null,
-        id_invitado: null
+        id_invitado: null,
+        numero_viaje: null,
+        cantidad_viajes: null
     };
 
     const [viajes, setViajes] = useState<Viaje[]>([]);
@@ -247,8 +249,8 @@ const Crud = () => {
         setSubmitted(true);
 
         if (
-            viaje.folio_bco.trim() &&
-            viaje.folio.trim() &&
+            // viaje.folio_bco.trim() &&
+            // viaje.folio.trim() &&
             viaje.id_cliente !== null &&
             viaje.id_material !== null &&
             viaje.id_m3 !== null &&
@@ -274,10 +276,13 @@ const Crud = () => {
                     // Calcular caphrsviajes - MODIFICADO PARA RENTA
                     let caphrsviajes;
                     if (viaje.en_renta && viaje.horas_renta) {
-                        // Si está en renta: precio_unidad * horas_renta
+                        // Si está en renta: precio_unidad * metros_cubicos * horas_renta
                         caphrsviajes = precio_unidad * metros_cubicos * viaje.horas_renta;
+                    } else if (viaje.cantidad_viajes && viaje.cantidad_viajes > 0) {
+                        // Si no está en renta pero si tiene cantidad de viaje es interno: precio_unidad * metros_cubicos * cantidad_viajes
+                        caphrsviajes = precio_unidad * metros_cubicos * viaje.cantidad_viajes;
                     } else {
-                        // Si no está en renta: precio_unidad * metros_cubicos (comportamiento original)
+                        // Si no hay cantidad de viajes precio_unidad * metros_cubicos (comportamiento original)
                         caphrsviajes = precio_unidad * metros_cubicos;
                     }
 
@@ -298,10 +303,12 @@ const Crud = () => {
                         id_m3: viaje.id_m3,
                         caphrsviajes,
                         id_operador: viaje.id_operador,
-                        id_invitados: viaje.id_invitado,
+                        id_invitado: viaje.id_invitado,
                         horario: viaje.horario || 'D',
-                        en_renta: viaje.en_renta, // Nuevo campo
-                        horas_renta: viaje.en_renta ? viaje.horas_renta : null // Solo guardar horas si está en renta
+                        en_renta: viaje.en_renta,
+                        horas_renta: viaje.en_renta ? viaje.horas_renta : null,
+                        numero_viaje: viaje.numero_viaje ?? null,
+                        cantidad_viajes: viaje.cantidad_viajes ?? null
                     };
 
                     console.log('Objeto enviado a Supabase:', { ...viajeLimpio, id: viaje.id });
@@ -713,9 +720,9 @@ const Crud = () => {
                                 id="folio_bco"
                                 value={viaje.folio_bco}
                                 onChange={(e) => setViaje({ ...viaje, folio_bco: e.target.value })}
-                                required
+                                // required
                                 autoFocus
-                                className={submitted && !viaje.folio_bco ? 'p-invalid' : ''}
+                                // className={submitted && !viaje.folio_bco ? 'p-invalid' : ''}
                             />
                             {/* {submitted && !viaje.folio_bco && <small className="p-invalid">Folio Banco es requerido.</small>} */}
                         </div>
@@ -747,10 +754,10 @@ const Crud = () => {
                                     }
                                     }
                                 }}
-                                required
-                                className={submitted && !viaje.folio ? 'p-invalid' : (folioError ? 'p-invalid' : '')}
+                                // required
+                                // className={submitted && !viaje.folio ? 'p-invalid' : (folioError ? 'p-invalid' : '')}
                             />
-                            {submitted && !viaje.folio && <small className="p-invalid">Folio es requerido.</small>}
+                            {/* {submitted && !viaje.folio && <small className="p-invalid">Folio es requerido.</small>} */}
                         </div>
                         <div className="field">
                             <label htmlFor="numero_viaje">No. Viaje</label>
@@ -759,11 +766,23 @@ const Crud = () => {
                                 value={viaje.numero_viaje}
                                 onValueChange={(e) => setViaje({ ...viaje, numero_viaje: e.value })}
                                 useGrouping={false}
-                                required
+                                // required
                                 autoFocus
-                                className={submitted && !viaje.numero_viaje ? 'p-invalid' : ''}
+                                // className={submitted && !viaje.numero_viaje ? 'p-invalid' : ''}
                             />
                             {/* {submitted && !viaje.numero_viaje && <small className="p-invalid">No. Viaje es requerido.</small>} */}
+                        </div>
+                        <div className="field">
+                            <label htmlFor="cantidad_viajes">Cantidad de Viajes</label>
+                            <InputNumber
+                                id="cantidad_viajes"
+                                value={viaje.cantidad_viajes ?? null}
+                                onValueChange={(e) => setViaje({ ...viaje, cantidad_viajes: e.value ?? null })}
+                                useGrouping={false}
+                                //required
+                                //className={submitted && !viaje.cantidad_viajes ? 'p-invalid' : ''}
+                            />
+                            {/* {submitted && !viaje.cantidad_viajes && <small className="p-invalid">Cantidad de Viajes es requerido.</small>} */}
                         </div>
                         <div className="field">
                             <label htmlFor="id_cliente">Cliente</label>

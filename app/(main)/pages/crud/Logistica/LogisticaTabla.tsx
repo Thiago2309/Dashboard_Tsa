@@ -183,6 +183,8 @@ const LogisticaTabla = () => {
             let caphrsviajes;
             if (rowData.en_renta && rowData.horas_renta) {
                 caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos * rowData.horas_renta;
+            } else if (rowData.cantidad_viajes && rowData.cantidad_viajes > 0) {
+                caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos * rowData.cantidad_viajes;
             } else {
                 caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos;
             }

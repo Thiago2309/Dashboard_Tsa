@@ -92,7 +92,8 @@ const FormularioNotaViaje = () => {
         en_renta: false,
         horas_renta: null,
         horario: 'D',
-        numero_viaje: null
+        numero_viaje: null,
+        cantidad_viajes: null
     });
     const [clientes, setClientes] = useState<{ id?: number; empresa: string }[]>([]);
     const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; precio_unidad: number }[]>([]);
@@ -129,7 +130,7 @@ const FormularioNotaViaje = () => {
         viaje.id_cliente !== null &&
         viaje.fecha &&
        // viaje.folio_bco &&
-        viaje.folio &&
+        // viaje.folio &&
         viaje.id_precio_origen_destino !== null &&
         viaje.id_material !== null &&
         viaje.id_m3 !== null && 
@@ -155,13 +156,18 @@ const FormularioNotaViaje = () => {
             const precio_unidad = precioOrigenDestino.precio_unidad;
             const metros_cubicos = m3Seleccionado.metros_cubicos;
 
+            // Precio_unidad = precio Flete
+
             // Calcular caphrsviajes - MODIFICADO PARA RENTA
             let caphrsviajes;
             if (viaje.en_renta && viaje.horas_renta) {
-                // Si está en renta: precio_unidad * horas_renta
+                // Si está en renta: precio_unidad * metros_cubicos * horas_renta
                 caphrsviajes = precio_unidad * metros_cubicos * viaje.horas_renta;
+            } else if (viaje.cantidad_viajes && viaje.cantidad_viajes > 0) {
+                // Si no está en renta pero si tiene cantidad de viaje es interno: precio_unidad * metros_cubicos * cantidad_viajes
+                caphrsviajes = precio_unidad * metros_cubicos * viaje.cantidad_viajes;
             } else {
-                // Si no está en renta: precio_unidad * metros_cubicos (comportamiento original)
+                // Si no hay cantidad de viajes precio_unidad * metros_cubicos (comportamiento original)
                 caphrsviajes = precio_unidad * metros_cubicos;
             }
 
@@ -201,7 +207,8 @@ const FormularioNotaViaje = () => {
                 en_renta: false,
                 horas_renta: null,
                 horario: 'D',
-                numero_viaje: null
+                numero_viaje: null,
+                cantidad_viajes: null
             });
             setSubmitted(false);
             } else {
@@ -224,6 +231,7 @@ const FormularioNotaViaje = () => {
                     <label htmlFor="fecha">Fecha</label><span style={{ color: 'red' }}> *</span>
                     <Calendar
                         id="fecha"
+                        placeholder="Selecciona una fecha"
                         value={
                             viaje.fecha
                                 ? (() => {
@@ -248,10 +256,11 @@ const FormularioNotaViaje = () => {
                     {submitted && !viaje.fecha && <small className="p-invalid">Fecha es requerida.</small>}
                     </div>
                     <div className="field">
-                    <label htmlFor="folio">Folio</label><span style={{ color: 'red' }}> *</span>
+                    <label htmlFor="folio">Folio</label>
                     <InputText
                         id="folio"
                         value={viaje.folio}
+                        placeholder="Agregar el folio si es necesario"
                         onChange={(e) => {
                             setViaje({ ...viaje, folio: e.target.value });
                             // Limpiar el estado de error si el usuario modifica el folio
@@ -275,10 +284,10 @@ const FormularioNotaViaje = () => {
                             }
                             }
                         }}
-                        required
-                        className={submitted && !viaje.folio ? 'p-invalid' : (folioError ? 'p-invalid' : '')}
+                        // required
+                        // className={submitted && !viaje.folio ? 'p-invalid' : (folioError ? 'p-invalid' : '')}
                         />
-                    {submitted && !viaje.folio && <small className="p-invalid">Folio es requerido.</small>}
+                    {/* {submitted && !viaje.folio && <small className="p-invalid">Folio es requerido.</small>} */}
                     </div>
                     <div className="field">
                     <label htmlFor="folio_bco">Folio Banco</label>
@@ -286,6 +295,7 @@ const FormularioNotaViaje = () => {
                         id="folio_bco"
                         value={viaje.folio_bco}
                         onChange={(e) => setViaje({ ...viaje, folio_bco: e.target.value })}
+                        placeholder="Agregar el folio del banco si es necesario"
                         //required
                         //className={submitted && !viaje.folio_bco ? 'p-invalid' : ''}
                     />
@@ -298,10 +308,24 @@ const FormularioNotaViaje = () => {
                         value={viaje.numero_viaje}
                         onValueChange={(e) => setViaje({ ...viaje, numero_viaje: e.value })}
                         useGrouping={false}
+                        placeholder="Agregar el número de viaje si es necesario"
                         //required
                         //className={submitted && !viaje.numero_viaje ? 'p-invalid' : ''}
                     />
                     {/* {submitted && !viaje.numero_viaje && <small className="p-invalid">No. Viaje es requerido.</small>} */}
+                    </div>
+                    <div className="field">
+                    <label htmlFor="cantidad_viajes">Cantidad de Viajes</label>
+                    <InputNumber
+                        id="cantidad_viajes"
+                        value={viaje.cantidad_viajes}
+                        onValueChange={(e) => setViaje({ ...viaje, cantidad_viajes: e.value })}
+                        useGrouping={false}
+                        placeholder="Agregar la cantidad de viajes si es necesario"
+                        //required
+                        //className={submitted && !viaje.cantidad_viajes ? 'p-invalid' : ''}
+                    />
+                    {/* {submitted && !viaje.cantidad_viajes && <small className="p-invalid">Cantidad de Viajes es requerido.</small>} */}
                     </div>
                     <div className="field">
                     <label htmlFor="id_cliente">Cliente</label><span style={{ color: 'red' }}> *</span>
@@ -1113,3 +1137,7 @@ const FormularioMaterial = () => {
         </div>
     );
 };
+
+function elseif(arg0: number | boolean | null | undefined) {
+    throw new Error('Function not implemented.');
+}

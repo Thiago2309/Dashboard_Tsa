@@ -1,10 +1,11 @@
 import { supabase } from '../superbase.service';
 
 export interface OrigenDestino {
-    id?: number; // Opcional para nuevos registros
+    id?: number;
     nombreorigen: string;
     nombredestino: string;
-    precio_unidad: number;
+    precio_unidad: number;   // Precio Flete
+    precio_materia: number;  // Precio Material
     status?: boolean;
 }
 
@@ -14,6 +15,7 @@ const transformOrigenDestinoData = (data: any): OrigenDestino => ({
     nombreorigen: data.nombreorigen,
     nombredestino: data.nombredestino,
     precio_unidad: data.precio_unidad,
+    precio_materia: data.precio_materia ?? 0,
     status: data.status ?? true,
 });
 
@@ -30,7 +32,7 @@ export const fetchOrigenDestino = async (): Promise<OrigenDestino[]> => {
         throw error;
     }
 
-    return data || [];
+    return data?.map(transformOrigenDestinoData) || [];
 };
 
 // Obtener solo los registros activos (status = true)
@@ -52,12 +54,13 @@ export const fetchOrigenDestinoActivos = async (): Promise<OrigenDestino[]> => {
 // Crear un nuevo registro de Origen Destino
 export const createOrigenDestino = async (origenDestino: Omit<OrigenDestino, 'id'>): Promise<OrigenDestino> => {
     const { data, error } = await supabase
-        .from('fetch_origen_destino')  // Tabla base para INSERT
+        .from('fetch_origen_destino')
         .insert([{
             nombreorigen: origenDestino.nombreorigen,
             nombredestino: origenDestino.nombredestino,
             precio_unidad: origenDestino.precio_unidad,
-            status: origenDestino.status ?? true  // Nuevo campo
+            precio_materia: origenDestino.precio_materia ?? 0,
+            status: origenDestino.status ?? true
         }])
         .select('*')
         .single();
@@ -78,7 +81,8 @@ export const updateOrigenDestino = async (origenDestino: OrigenDestino): Promise
             nombreorigen: origenDestino.nombreorigen,
             nombredestino: origenDestino.nombredestino,
             precio_unidad: origenDestino.precio_unidad,
-            status: origenDestino.status ?? true 
+            precio_materia: origenDestino.precio_materia ?? 0,
+            status: origenDestino.status ?? true
         })
         .eq('id', origenDestino.id)
         .select('*')
