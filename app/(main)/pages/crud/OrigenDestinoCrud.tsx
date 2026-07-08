@@ -18,6 +18,7 @@ const OrigenDestinoCrud = () => {
         nombreorigen: '',
         nombredestino: '',
         precio_unidad: 0,
+        precio_materia: 0,
         status: true,
     };
 
@@ -61,16 +62,16 @@ const OrigenDestinoCrud = () => {
     const saveOrigenDestino = async () => {
         setSubmitted(true);
     
-        if (origenDestino.nombreorigen.trim() && origenDestino.nombredestino.trim() && origenDestino.precio_unidad > 0) {
+        if (origenDestino.nombreorigen.trim() && origenDestino.nombredestino.trim() && origenDestino.precio_unidad > 0 && origenDestino.precio_materia >= 0) {
             try {
                 if (origenDestino.id) {
                     const updatedOrigenDestino = await updateOrigenDestino(origenDestino);
                     setOrigenDestinoList(origenDestinoList.map(o => o.id === updatedOrigenDestino.id ? updatedOrigenDestino : o));
-                    toast.current?.show({ severity: 'success', summary: 'Successful', detail: 'Origen Destino Updated', life: 3000 });
+                    toast.current?.show({ severity: 'success', summary: 'Successful', detail: 'Origen - Destino Actualizado', life: 3000 });
                 } else {
                     const newOrigenDestino = await createOrigenDestino(origenDestino);
                     setOrigenDestinoList([...origenDestinoList, newOrigenDestino]);
-                    toast.current?.show({ severity: 'success', summary: 'Successful', detail: 'Origen Destino Created', life: 3000 });
+                    toast.current?.show({ severity: 'success', summary: 'Successful', detail: 'Origen - Destino Creado', life: 3000 });
                 }
                 setOrigenDestinoDialog(false);
                 setOrigenDestino(emptyOrigenDestino);
@@ -248,6 +249,15 @@ const OrigenDestinoCrud = () => {
         );
     };
 
+    const precio_materiaBodyTemplate = (rowData: OrigenDestino) => {
+        return (
+            <>
+                <span className="p-column-title">Precio Material</span>
+                $ {rowData.precio_materia}
+            </>
+        );
+    };
+
     const actionBodyTemplate = (rowData: OrigenDestino) => {
         return (
             <>
@@ -346,7 +356,8 @@ const OrigenDestinoCrud = () => {
                         <Column field="id" header="Id" sortable body={idBodyTemplate}></Column>
                         <Column field="nombreorigen" header="Origen" sortable body={nombreorigenBodyTemplate}></Column>
                         <Column field="nombredestino" header="Destino" sortable body={nombredestinoBodyTemplate}></Column>
-                        <Column field="precio_unidad" header="Precio Unidad" sortable body={precio_unidadBodyTemplate}></Column>
+                        <Column field="precio_unidad" header="Precio Flete" sortable body={precio_unidadBodyTemplate}></Column>
+                        <Column field="precio_materia" header="Precio Material" sortable body={precio_materiaBodyTemplate}></Column>
                         <Column field="status" header="Estado" sortable body={statusBodyTemplate}></Column>
                         <Column body={actionBodyTemplate} headerStyle={{ minWidth: '12rem' }}></Column>
                     </DataTable>
@@ -383,7 +394,7 @@ const OrigenDestinoCrud = () => {
                             {submitted && !origenDestino.nombredestino && <small className="p-invalid">Destino es requerido.</small>}
                         </div>
                         <div className="field">
-                            <label htmlFor="precio_unidad">Precio Unidad</label>
+                            <label htmlFor="precio_unidad">Precio Flete</label>
                             <InputNumber 
                                 id="precio_unidad"
                                 value={origenDestino.precio_unidad}
@@ -393,7 +404,20 @@ const OrigenDestinoCrud = () => {
                                 maxFractionDigits={2}
                                 min={0}
                             />
-                            {submitted && origenDestino.precio_unidad <= 0 && <small className="p-invalid">Precio debe ser mayor a 0.</small>}
+                            {submitted && origenDestino.precio_unidad <= 0 && <small className="p-invalid">Precio flete debe ser mayor a 0.</small>}
+                        </div>
+                        <div className="field">
+                            <label htmlFor="precio_materia">Precio Material</label>
+                            <InputNumber 
+                                id="precio_materia"
+                                value={origenDestino.precio_materia}
+                                onValueChange={(e) => setOrigenDestino({ ...origenDestino, precio_materia: e.value || 0 })}
+                                mode="decimal"
+                                minFractionDigits={2}
+                                maxFractionDigits={2}
+                                min={0}
+                            />
+                            {submitted && origenDestino.precio_materia < 0 && <small className="p-invalid">Precio material no puede ser negativo.</small>}
                         </div>
                         {origenDestino.id && (
                             <div className="field-checkbox">
