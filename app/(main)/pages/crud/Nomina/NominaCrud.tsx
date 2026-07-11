@@ -78,14 +78,14 @@ const NominaModule = () => {
 
     // ************************************** FUNCIONES PARA CAMBIAR LA FECHA DE RANGO DE NOMINA *************************************
     // Sistema de semanas fijas (siempre 7 días)
-    const getStartOfFixedWeek = (date: Date, startDay: number = 6) => { // 6 = Sábado
+    const getStartOfFixedWeek = (date: Date, startDay: number = 5) => { // 6 = Sábado
         const d = new Date(date);
         const day = d.getDay();
         
         // Calcular diferencia al día de inicio deseado (ej: sábado)
         const diff = day >= startDay ? 
             startDay - day : 
-            startDay - day - 7;
+            startDay - day - 8;
         
         d.setDate(d.getDate() + diff);
         d.setHours(0, 0, 0, 0);
@@ -1331,7 +1331,7 @@ const NominaModule = () => {
                                         <Column field="folio" header="Folio" />
                                         <Column field="folio_bco" header="Folio BCO" />
                                         <Column 
-                                            header="Monto Original" 
+                                            header="Monto Flete" 
                                             body={(row) => formatCurrency(row.caphrsviajes || 0)} 
                                         />
                                         <Column 

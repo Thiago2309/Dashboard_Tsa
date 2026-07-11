@@ -3,16 +3,13 @@
 import { Column } from 'primereact/column';
 import { DataTable } from 'primereact/datatable';
 import { Toast } from 'primereact/toast';
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { 
     fetchViajesLogistica, 
     LogisticaViaje,
     fetchPreciosOrigenDestino,
     fetchMateriales,
     fetchM3,
-    fetchOperadores,
-    fetchInvitados,
-    fetchClientes,
     updateViajeLogistica
 } from '../../../../../Services/BD/logistica/logisticaService';
 import { Button } from 'primereact/button';
@@ -22,8 +19,16 @@ import { InputNumber } from 'primereact/inputnumber';
 import { supabase } from '../../../../../Services/superbase.service';
 import { createViaje } from '../../../../../Services/BD/viajeService';
 
-const LogisticaTabla = () => {
+const LogisticaAdmin = () => {
     const [viajes, setViajes] = useState<LogisticaViaje[]>([]);
+    const [estadisticas, setEstadisticas] = useState({
+        total: 0,
+        pendientes: 0,
+        asignados: 0,
+        enCurso: 0,
+        completados: 0,
+        cancelados: 0
+    });
     const [loading, setLoading] = useState(false);
     const toast = useRef<Toast>(null);
 
@@ -37,13 +42,22 @@ const LogisticaTabla = () => {
     const [submittedEdit, setSubmittedEdit] = useState(false);
     const [loadingEdit, setLoadingEdit] = useState(false);
 
-    // Cargar datos - usar useCallback para evitar recreación
+    // Cargar datos
     const cargarDatos = useCallback(async () => {
         setLoading(true);
         try {
             const viajesData = await fetchViajesLogistica();
-            const viajesCompletados = viajesData.filter(v => v.estado === 'completado');
-            setViajes(viajesCompletados);
+            setViajes(viajesData);
+
+            const stats = {
+                total: viajesData.length,
+                pendientes: viajesData.filter(v => v.estado === 'pendiente').length,
+                asignados: viajesData.filter(v => v.estado === 'asignado').length,
+                enCurso: viajesData.filter(v => v.estado === 'en_curso').length,
+                completados: viajesData.filter(v => v.estado === 'completado').length,
+                cancelados: viajesData.filter(v => v.estado === 'cancelado').length
+            };
+            setEstadisticas(stats);
         } catch (error) {
             console.error('Error cargando datos:', error);
             toast.current?.show({
@@ -61,7 +75,6 @@ const LogisticaTabla = () => {
         cargarDatos();
     }, [cargarDatos]);
 
-    // Función para cerrar el diálogo
     const cerrarDialog = useCallback(() => {
         setEditDialog(false);
         setEditViaje(null);
@@ -72,7 +85,6 @@ const LogisticaTabla = () => {
         setSubmittedEdit(false);
     }, []);
 
-    // Función para Editar
     const handleEditar = useCallback((rowData: LogisticaViaje) => {
         setEditViaje(rowData);
         setFolioBco(rowData.folio_bco || '');
@@ -83,19 +95,8 @@ const LogisticaTabla = () => {
         setEditDialog(true);
     }, []);
 
-    // Función para guardar la edición
     const guardarEdicion = useCallback(async () => {
         setSubmittedEdit(true);
-        
-        // if (!folio || folio.trim() === '') {
-        //     toast.current?.show({
-        //         severity: 'error',
-        //         summary: 'Error',
-        //         detail: 'El campo Folio es obligatorio',
-        //         life: 3000
-        //     });
-        //     return;
-        // }
 
         try {
             setLoadingEdit(true);
@@ -122,7 +123,6 @@ const LogisticaTabla = () => {
 
             await updateViajeLogistica(datosActualizar as LogisticaViaje);
 
-            // Actualizar el estado local usando la función de actualización
             setViajes(prevViajes => 
                 prevViajes.map(v => 
                     v.id === editViaje?.id ? { 
@@ -157,7 +157,6 @@ const LogisticaTabla = () => {
         }
     }, [editViaje, folio, folioBco, numeroViaje, cantidadViajes, cerrarDialog]);
 
-    // Función para Aprobar
     const handleAprobar = useCallback(async (rowData: LogisticaViaje) => {
         try {
             const [preciosData, materialesData, m3Data] = await Promise.all([
@@ -256,7 +255,6 @@ const LogisticaTabla = () => {
         }
     }, [cargarDatos]);
 
-    // Función para Rechazar
     const handleRechazar = useCallback(async (rowData: LogisticaViaje) => {
         try {
             const { error: deleteError } = await supabase
@@ -294,41 +292,26 @@ const LogisticaTabla = () => {
         }
     }, [cargarDatos]);
 
-    // Templates para la tabla
-    const accionesBodyTemplate = useCallback((rowData: LogisticaViaje) => {
-        return (
-            <div className="flex gap-2">
-                <Button 
-                    icon="pi pi-pencil" 
-                    rounded 
-                    size="small"
-                    tooltip="Editar Viaje"
-                    severity="info" 
-                    onClick={() => handleEditar(rowData)}
-                    tooltipOptions={{ position: 'top' }}
-                />
-                <Button
-                    icon="pi pi-check"
-                    severity="success"
-                    rounded
-                    size="small"
-                    onClick={() => handleAprobar(rowData)}
-                    tooltip="Aprobar"
-                    tooltipOptions={{ position: 'top' }}
-                />
-                <Button
-                    icon="pi pi-times"
-                    severity="danger"
-                    rounded
-                    size="small"
-                    onClick={() => handleRechazar(rowData)}
-                    tooltip="Rechazar"
-                    tooltipOptions={{ position: 'top' }}
-                />
-            </div>
-        );
-    }, [handleEditar, handleAprobar, handleRechazar]);
+    // Ordenar viajes por prioridad de estado
+    const viajesOrdenados = useMemo(() => {
+        const priority: Record<string, number> = {
+            asignado: 1,
+            en_curso: 2,
+            completado: 3,
+            pendiente: 4,
+            cancelado: 5
+        };
+        return [...viajes].sort((a, b) => {
+            const pa = priority[a.estado] ?? 99;
+            const pb = priority[b.estado] ?? 99;
+            if (pa !== pb) return pa - pb;
+            const fa = a.fecha_asignacion ? new Date(a.fecha_asignacion).getTime() : 0;
+            const fb = b.fecha_asignacion ? new Date(b.fecha_asignacion).getTime() : 0;
+            return fb - fa;
+        });
+    }, [viajes]);
 
+    // Templates para la tabla
     const folioBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         return <span className="font-bold">{rowData.folio || '-'}</span>;
     }, []);
@@ -429,55 +412,128 @@ const LogisticaTabla = () => {
         );
     }, []);
 
+    // Estadísticas en cards
+    const StatCard = ({ title, value, icon, color, bgColor }: any) => (
+        <div className={`col-6 sm:col-4 md:col-3 lg:col-2`}>
+            <div className={`card p-2 sm:p-3 ${bgColor}`}>
+                <div className="flex justify-content-between align-items-center">
+                    <div className="flex-1 min-w-0">
+                        <span className="block text-500 font-medium text-xs sm:text-sm truncate">{title}</span>
+                        <div className="text-900 font-medium text-xl sm:text-2xl">{value}</div>
+                    </div>
+                    <div className={`flex align-items-center justify-content-center ${color} border-round`} style={{ width: '2.5rem', height: '2.5rem', minWidth: '2.5rem' }}>
+                        <i className={`${icon} text-xl`} />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="card">
             <Toast ref={toast} />
 
             <div className="flex justify-content-between align-items-center mb-3">
-                <div className="flex align-items-center gap-2">
-                    <Button 
-                        icon="pi pi-refresh" 
-                        severity="secondary" 
-                        rounded 
-                        label="Recargar" 
-                        onClick={cargarDatos} 
-                        loading={loading}
-                        tooltip="Recargar datos"
-                        tooltipOptions={{ position: 'top' }}
-                    />
+                <h2 className="text-xl sm:text-2xl m-0">Gestión de Viajes</h2>
+                <Button 
+                    icon="pi pi-refresh" 
+                    severity="secondary" 
+                    rounded 
+                    label="Recargar" 
+                    onClick={cargarDatos} 
+                    loading={loading}
+                    tooltip="Recargar datos"
+                    tooltipOptions={{ position: 'top' }}
+                    className="p-button-sm"
+                />
+            </div>
+
+            {/* Cards de estadísticas - Siempre visibles */}
+            <div className="grid mb-3">
+                <StatCard 
+                    title="Total" 
+                    value={estadisticas.total} 
+                    icon="pi pi-truck" 
+                    color="bg-blue-100" 
+                    bgColor="bg-blue-50" 
+                />
+                <StatCard 
+                    title="Asignados" 
+                    value={estadisticas.asignados} 
+                    icon="pi pi-users" 
+                    color="bg-blue-200" 
+                    bgColor="bg-blue-100" 
+                />
+                <StatCard 
+                    title="En Curso" 
+                    value={estadisticas.enCurso} 
+                    icon="pi pi-spinner" 
+                    color="bg-cyan-100" 
+                    bgColor="bg-cyan-50" 
+                />
+                <StatCard 
+                    title="Completados" 
+                    value={estadisticas.completados} 
+                    icon="pi pi-check-circle" 
+                    color="bg-green-100" 
+                    bgColor="bg-green-50" 
+                />
+                <StatCard 
+                    title="Pendientes" 
+                    value={estadisticas.pendientes} 
+                    icon="pi pi-clock" 
+                    color="bg-orange-100" 
+                    bgColor="bg-orange-50" 
+                />
+                <StatCard 
+                    title="Cancelados" 
+                    value={estadisticas.cancelados} 
+                    icon="pi pi-times-circle" 
+                    color="bg-red-100" 
+                    bgColor="bg-red-50" 
+                />
+            </div>
+
+            {/* Vista Móvil - Solo tarjetas de estadísticas (ocultar tabla en móvil) */}
+            <div className="block md:hidden">
+                <div className="text-center text-500 p-3">
+                    <i className="pi pi-table text-2xl mr-2" />
+                    <span>Visualiza los detalles en computadora</span>
                 </div>
             </div>
-            
-            <DataTable
-                value={viajes}
-                dataKey="id"
-                paginator
-                rows={10}
-                rowsPerPageOptions={[5, 10, 25]}
-                className="datatable-responsive"
-                paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-                currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} viajes completados"
-                emptyMessage="No hay viajes completados"
-                responsiveLayout="scroll"
-                loading={loading}
-                globalFilterFields={['folio', 'cliente_nombre', 'operador_nombre', 'origen', 'destino']}
-            >
-                <Column field="folio" header="Folio" sortable body={folioBodyTemplate} />
-                <Column field="folio_bco" header="Folio Bco" sortable body={folioBcoBodyTemplate} />
-                <Column field="cantidad_viajes" header="Cant. Viajes" sortable body={cantidadViajesBodyTemplate} />
-                <Column field="fecha_asignacion" header="Fecha Asignación" sortable body={fechaAsignacionBodyTemplate} />
-                <Column field="numero_viaje" header="Número de Viaje" sortable body={numeroViajeBodyTemplate} />
-                <Column field="cliente_nombre" header="Cliente" sortable body={clienteBodyTemplate} />
-                <Column field="operador_nombre" header="Operador" sortable body={operadorBodyTemplate} />
-                <Column field="origen" header="Origen" sortable body={origenBodyTemplate} />
-                <Column field="destino" header="Destino" sortable body={destinoBodyTemplate} />
-                <Column field="material_nombre" header="Material" sortable body={materialBodyTemplate} />
-                <Column field="m3_nombre" header="M3" sortable body={m3BodyTemplate} />
-                <Column field="horario" header="Horario" sortable body={horarioBodyTemplate} />
-                <Column field="en_renta" header="Renta" sortable body={rentaBodyTemplate} />
-                <Column field="estado" header="Estado" sortable body={estadoBodyTemplate} />
-                <Column header="Acciones" body={accionesBodyTemplate} headerStyle={{ minWidth: '120px' }} style={{ textAlign: 'center' }} />
-            </DataTable>
+
+            {/* Vista Desktop - Tabla completa */}
+            <div className="hidden md:block">
+                <DataTable
+                    value={viajesOrdenados}
+                    dataKey="id"
+                    paginator
+                    rows={10}
+                    rowsPerPageOptions={[5, 10, 25, 50]}
+                    className="datatable-responsive"
+                    paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} viajes"
+                    emptyMessage="No hay viajes registrados"
+                    responsiveLayout="scroll"
+                    loading={loading}
+                    globalFilterFields={['folio', 'cliente_nombre', 'operador_nombre', 'origen', 'destino']}
+                >
+                    <Column field="folio" header="Folio" sortable body={folioBodyTemplate} />
+                    {/* <Column field="folio_bco" header="Folio Bco" sortable body={folioBcoBodyTemplate} /> */}
+                    {/* <Column field="cantidad_viajes" header="Cant. Viajes" sortable body={cantidadViajesBodyTemplate} /> */}
+                    <Column field="fecha_asignacion" header="Fecha Asignación" sortable body={fechaAsignacionBodyTemplate} />
+                    {/* <Column field="numero_viaje" header="Número de Viaje" sortable body={numeroViajeBodyTemplate} /> */}
+                    <Column field="cliente_nombre" header="Cliente" sortable body={clienteBodyTemplate} />
+                    <Column field="operador_nombre" header="Operador" sortable body={operadorBodyTemplate} />
+                    <Column field="origen" header="Origen" sortable body={origenBodyTemplate} />
+                    <Column field="destino" header="Destino" sortable body={destinoBodyTemplate} />
+                    <Column field="material_nombre" header="Material" sortable body={materialBodyTemplate} />
+                    <Column field="m3_nombre" header="M3" sortable body={m3BodyTemplate} />
+                    <Column field="horario" header="Horario" sortable body={horarioBodyTemplate} />
+                    {/* <Column field="en_renta" header="Renta" sortable body={rentaBodyTemplate} /> */}
+                    <Column field="estado" header="Estado" sortable body={estadoBodyTemplate} />
+                </DataTable>
+            </div>
 
             {/* Dialog para editar */}
             <Dialog
@@ -485,7 +541,7 @@ const LogisticaTabla = () => {
                 header="Editar Viaje Logístico"
                 modal
                 className="p-fluid"
-                style={{ width: '500px' }}
+                style={{ width: '90%', maxWidth: '500px' }}
                 footer={
                     <>
                         <Button 
@@ -567,4 +623,4 @@ const LogisticaTabla = () => {
     );
 };
 
-export default LogisticaTabla;
+export default LogisticaAdmin;

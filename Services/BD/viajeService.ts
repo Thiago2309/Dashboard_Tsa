@@ -24,6 +24,7 @@ export interface Viaje {
     horario?: string; 
     numero_viaje?: number | null;
     cantidad_viajes?: number | null;
+    total_materia?: number | null;
 }
 
 // Helper function to transform Supabase response to Viaje interface
@@ -50,7 +51,8 @@ const transformViajeData = (data: any): Viaje => ({
     horas_renta: data.horas_renta,
     horario: 'D',
     numero_viaje: data.numero_viaje || null,
-    cantidad_viajes: data.cantidad_viajes || null
+    cantidad_viajes: data.cantidad_viajes || null,
+    total_materia: data.total_materia || null
 });
 
 export const fetchViajes = async (): Promise<Viaje[]> => {
@@ -100,7 +102,8 @@ export const updateViaje = async (viaje: Viaje): Promise<Viaje> => {
             horas_renta: viaje.horas_renta,
             horario: viaje.horario,
             numero_viaje: viaje.numero_viaje,
-            cantidad_viajes: viaje.cantidad_viajes
+            cantidad_viajes: viaje.cantidad_viajes,
+            total_materia: viaje.total_materia
         })
         .eq('id', viaje.id)
         .select('*')
@@ -133,13 +136,14 @@ export const fetchClientes = async (): Promise<{ id: number; empresa: string }[]
     return data || [];
 };
 
-export const fetchPreciosOrigenDestino = async (): Promise<{ id: number; label: string; precio_unidad: number }[]> => {
-    const { data, error } = await supabase.from('precio_origen_destino').select('id, nombreorigen, nombredestino, precio_unidad').eq('status', true);
+export const fetchPreciosOrigenDestino = async (): Promise<{ id: number; label: string; precio_unidad: number; precio_materia?: number }[]> => {
+    const { data, error } = await supabase.from('precio_origen_destino').select('id, nombreorigen, nombredestino, precio_unidad, precio_materia').eq('status', true);
     if (error) throw error;
     return data?.map(item => ({
         id: item.id,
         label: `${item.nombreorigen} - ${item.nombredestino}`,
-        precio_unidad: item.precio_unidad
+        precio_unidad: item.precio_unidad,
+        precio_materia: item.precio_materia ?? 0
     })) || [];
 };
 
@@ -165,7 +169,8 @@ export const fetchViajesPorCliente = async (id_cliente: number): Promise<any[]> 
             fecha,
             folio_bco,
             folio,
-            caphrsviajes
+            caphrsviajes,
+            total_materia
         `)
         .eq('id_cliente', id_cliente)
         .order('fecha', { ascending: false });
