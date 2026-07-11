@@ -291,10 +291,10 @@ export const fetchM3 = async (): Promise<{ id: number; nombre: string; metros_cu
 };
 
 // Obtener precios origen-destino
-export const fetchPreciosOrigenDestino = async (): Promise<{ id: number; label: string; precio_unidad: number; origen: string; destino: string }[]> => {
+export const fetchPreciosOrigenDestino = async (): Promise<{ id: number; label: string; precio_unidad: number; precio_materia?: number; origen: string; destino: string }[]> => {
     const { data, error } = await supabase
         .from('precio_origen_destino')
-        .select('id, nombreorigen, nombredestino, precio_unidad')
+        .select('id, nombreorigen, nombredestino, precio_unidad, precio_materia')
         .eq('status', true);
 
     if (error) {
@@ -306,6 +306,7 @@ export const fetchPreciosOrigenDestino = async (): Promise<{ id: number; label: 
         id: item.id,
         label: `${item.nombreorigen} - ${item.nombredestino}`,
         precio_unidad: item.precio_unidad,
+        precio_materia: item.precio_materia ?? 0,
         origen: item.nombreorigen,
         destino: item.nombredestino
     })) || [];

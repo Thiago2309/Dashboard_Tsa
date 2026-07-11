@@ -564,15 +564,17 @@ const CxcCrud = () => {
                                                             field="fecha" 
                                                             header="Fecha" 
                                                             body={(row) => {
+                                                                console.log('row:', row);
                                                                 if (!row.fecha) return '-';
                                                                 // Mostrar la fecha exactamente como viene, pero formateada a dd-mm-aaaa sin modificar la zona horaria
                                                                 const [year, month, day] = row.fecha.split('T')[0].split('-');
                                                                 return `${day}-${month}-${year}`;
                                                             }} 
                                                         />
-                                                        <Column field="folio" header="Folio" />
-                                                        <Column field="folio_bco" header="Folio BCO" />
-                                                        <Column field="caphrsviajes" header="SubTotal de Deuda" body={(row) => formatCurrency(row.caphrsviajes || 0)} />
+                                                        <Column field="folio" header="Folio" body={(row) => row.folio ? row.folio : '-'} />
+                                                        <Column field="folio_bco" header="Folio BCO" body={(row) => row.folio_bco ? row.folio_bco : '-'} />
+                                                        <Column field="caphrsviajes" header="Total Flete" body={(row) => formatCurrency(row.caphrsviajes || 0)} />
+                                                        <Column field="total_materia" header="Total Material" body={(row) => formatCurrency(row.total_materia || 0)} />
                                                     </DataTable>
                                                 </div>
                                             )}

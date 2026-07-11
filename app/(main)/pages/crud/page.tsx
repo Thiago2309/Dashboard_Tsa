@@ -511,6 +511,19 @@ const Crud = () => {
         );
     };
 
+    const totalMaterialBodyTemplate = (rowData: Viaje) => {
+        return (
+            <>
+                <span className="p-column-title">Total Material</span>
+                ${' '}
+                {rowData.total_materia?.toLocaleString('es-MX', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }) || '0.00'}
+            </>
+        );
+    }
+
     const rentaBodyTemplate = (rowData: Viaje) => {
         return (
             <>
@@ -682,7 +695,8 @@ const Crud = () => {
                         <Column field="en_renta" header="Renta" sortable body={rentaBodyTemplate}></Column>
                         <Column field="invitado_nombre" header="Invitado" sortable body={invitadoBodyTemplate}></Column>
                         <Column field="horario" header="Horario" sortable body={horarioBodyTemplate}></Column>
-                        <Column field="caphrsviajes" header="Precio" sortable body={caphrsviajesBodyTemplate} style={{ width: '150px', minWidth: '120px' }}></Column>
+                        <Column field="caphrsviajes" header="Total Flete" sortable body={caphrsviajesBodyTemplate} style={{ width: '150px', minWidth: '120px' }}></Column>
+                        <Column field="total_material" header="Total Material" sortable body={totalMaterialBodyTemplate} style={{ width: '150px', minWidth: '120px' }}></Column>
                         <Column header="Acción" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }}></Column>
                     </DataTable>
 

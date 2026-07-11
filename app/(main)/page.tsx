@@ -17,6 +17,7 @@ import { CajaChica, fetchCajaChica } from '../../Services/BD/cajaChicaService';
 import { fetchTodosClientesConCuentas } from '../../Services/BD/cuentasPorCobrarService';
 import { getUserRoleIdFromLocalStorage } from '@/Services/BD/userService';
 import LogisticaTabla from '../../app/(main)/pages/crud/Logistica/LogisticaEmpleadoTabla';
+import LogisticaAdmin from '../../app/(main)/pages/crud/Logistica/LogisticaAdmin';
 
 const lineData: ChartData = {
     labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
@@ -324,7 +325,7 @@ const Dashboard = () => {
             </div>
 
             {/* Card 4: Resumen general del dinero de la empresa */}
-            <div className="col-12 lg:col-6 xl:col-3">
+            {/* <div className="col-12 lg:col-6 xl:col-3">
                 <Link href="/uikit/formlayout?module=Caja Negra" className="no-underline">
                     <div className="card mb-0 cursor-pointer hover:shadow-2 transition-all transition-duration-300">
                         <div className="flex justify-content-between mb-3">
@@ -351,7 +352,9 @@ const Dashboard = () => {
                         <span className="text-500 text-blue-500">Click para ver detalles</span>
                     </div>
                 </Link>
-            </div>
+            </div> */}
+
+            
 
             {/* Card 5: Cuentas por Cobrar - Clickable */}
             <div className="col-12 lg:col-6 xl:col-3">
@@ -382,6 +385,12 @@ const Dashboard = () => {
                     </div>
                 </Link>
             </div>
+
+            {/* card 6: Seguimineto de viajes tirados */}
+            <div className="surface-border border-round p-3">
+                <LogisticaAdmin />
+            </div>
+
             </>
         )}
         </div>

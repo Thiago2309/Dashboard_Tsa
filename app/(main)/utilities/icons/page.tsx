@@ -93,10 +93,11 @@ const FormularioNotaViaje = () => {
         horas_renta: null,
         horario: 'D',
         numero_viaje: null,
-        cantidad_viajes: null
+        cantidad_viajes: null,
+        total_materia: null
     });
     const [clientes, setClientes] = useState<{ id?: number; empresa: string }[]>([]);
-    const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; precio_unidad: number }[]>([]);
+    const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; precio_unidad: number; precio_materia?: number }[]>([]);
     const [materiales, setMateriales] = useState<{ id: number; nombre: string }[]>([]);
     const [operadores, setOperadores] = useState<{ id: number; nombre: string }[]>([]);
     const [m3, setM3] = useState<{ id: number; nombre: string; metros_cubicos: number }[]>([]);
@@ -155,32 +156,44 @@ const FormularioNotaViaje = () => {
             if (precioOrigenDestino && m3Seleccionado) {
             const precio_unidad = precioOrigenDestino.precio_unidad;
             const metros_cubicos = m3Seleccionado.metros_cubicos;
+            const precio_materia = precioOrigenDestino.precio_materia ?? 0; // Precio material, si existe
 
             // Precio_unidad = precio Flete
 
-            // Calcular caphrsviajes - MODIFICADO PARA RENTA
-            let caphrsviajes;
+            // Calcular caphrsviajes con el valor base del flete
+            // Por defecto tomamos el precio del flete por los metros cúbicos
+            let caphrsviajes = precio_unidad * metros_cubicos;
+            let total_materia: number | null = 0;
+
+            // Si el viaje está en renta, el flete se multiplica por las horas de renta
             if (viaje.en_renta && viaje.horas_renta) {
-                // Si está en renta: precio_unidad * metros_cubicos * horas_renta
                 caphrsviajes = precio_unidad * metros_cubicos * viaje.horas_renta;
-            } else if (viaje.cantidad_viajes && viaje.cantidad_viajes > 0) {
-                // Si no está en renta pero si tiene cantidad de viaje es interno: precio_unidad * metros_cubicos * cantidad_viajes
+            }
+            // Si tiene cantidad de viajes, se multiplica por esa cantidad
+            else if (viaje.cantidad_viajes && viaje.cantidad_viajes > 0) {
                 caphrsviajes = precio_unidad * metros_cubicos * viaje.cantidad_viajes;
-            } else {
-                // Si no hay cantidad de viajes precio_unidad * metros_cubicos (comportamiento original)
-                caphrsviajes = precio_unidad * metros_cubicos;
+            }
+
+            // Si existe precio de material, calculamos su total usando los metros cúbicos
+            if (precio_materia > 0) {
+                total_materia = precio_materia * metros_cubicos;
             }
 
             console.log('precio_unidad:', precio_unidad);
             console.log('metros_cubicos:', metros_cubicos);
+            console.log('precio_materia:', precio_materia);
             console.log('en_renta:', viaje.en_renta);
             console.log('horas_renta:', viaje.horas_renta);
-            console.log('caphrsviajes:', caphrsviajes);
+            console.log('total_flete:', caphrsviajes);
+            console.log('total_material:', total_materia);
+
+            // return; // Salir de la función para evitar guardar el viaje por ahora
 
             // Actualizar el estado del viaje con el cálculo
             const viajeActualizado = {
                 ...viaje,
-                caphrsviajes: caphrsviajes,
+                caphrsviajes,
+                total_materia,
             };
 
             // Guardar o actualizar el viaje
@@ -208,7 +221,8 @@ const FormularioNotaViaje = () => {
                 horas_renta: null,
                 horario: 'D',
                 numero_viaje: null,
-                cantidad_viajes: null
+                cantidad_viajes: null,
+                total_materia: null
             });
             setSubmitted(false);
             } else {
@@ -373,11 +387,20 @@ const FormularioNotaViaje = () => {
                     <Dropdown
                         id="id_precio_origen_destino"
                         value={viaje.id_precio_origen_destino}
-                        options={preciosOrigenDestino.map(p => ({
-                        label: `${p.label} - ($${p.precio_unidad?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) ?? '0.00'})`,
-                        value: p.id,
-                        precio_unidad: p.precio_unidad
-                        }))}
+                        options={preciosOrigenDestino.map(p => {
+                        const precioFlete = p.precio_unidad ?? 0;
+                        const precioMaterial = p.precio_materia;
+                        const precioTexto = precioMaterial != null && precioMaterial !== 0
+                            ? `Precio flete: $${precioFlete.toLocaleString('es-MX', { minimumFractionDigits: 2 })} / Precio material: $${precioMaterial.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+                            : `Precio flete: $${precioFlete.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+
+                        return {
+                            label: `${p.label} - (${precioTexto})`,
+                            value: p.id,
+                            precio_unidad: p.precio_unidad,
+                            precio_materia: p.precio_materia
+                        };
+                        })}
                         onChange={(e) => setViaje({ ...viaje, id_precio_origen_destino: e.value })}
                         placeholder="Selecciona un origen-destino"
                         required

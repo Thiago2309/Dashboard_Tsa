@@ -66,15 +66,17 @@ export const fetchTodosClientesConCuentas = async (): Promise<ResumenCliente[]> 
         .from('viajes')
         .select(`
             id_cliente,
-            caphrsviajes
+            caphrsviajes,
+            total_materia
         `);
 
     if (errorViajes) throw errorViajes;
 
-    // 3. Agrupar las horas por cliente
-    const horasPorCliente = viajesData?.reduce((acc, viaje) => {
+    // 3. Agrupar el total por cliente, incluyendo flete y material
+    const totalPorCliente = viajesData?.reduce((acc, viaje) => {
         if (!viaje.id_cliente) return acc;
-        acc[viaje.id_cliente] = (acc[viaje.id_cliente] || 0) + (viaje.caphrsviajes || 0);
+        const totalViaje = (viaje.caphrsviajes || 0) + (viaje.total_materia || 0);
+        acc[viaje.id_cliente] = (acc[viaje.id_cliente] || 0) + totalViaje;
         return acc;
     }, {} as Record<number, number>);
 
@@ -83,8 +85,8 @@ export const fetchTodosClientesConCuentas = async (): Promise<ResumenCliente[]> 
         const totalMontoPagado = cliente.cuentas_por_cobrar
             ?.reduce((sum, cuenta) => sum + (cuenta.monto || 0), 0) || 0;
 
-         // Calcular total de horas con descuento administrativo si aplica
-        let totalHorasViaje = horasPorCliente[cliente.id] || 0;
+         // Calcular total de deuda con descuento administrativo si aplica
+        let totalHorasViaje = totalPorCliente[cliente.id] || 0;
         
         // Aplicar porcentaje administrativo si existe
         if (cliente.porcentaje_administrativo && cliente.porcentaje_administrativo > 0) {
@@ -285,7 +287,7 @@ export const fetchCuentasPorCliente = async (id_cliente: number): Promise<Cuenta
         // 1. Obtener viajes del cliente
         const { data: viajes, error: errorViajes } = await supabase
             .from('viajes')
-            .select('id, caphrsviajes')
+            .select('id, caphrsviajes, total_materia')
             .eq('id_cliente', id_cliente);
 
         if (errorViajes) throw errorViajes;       
@@ -298,8 +300,8 @@ export const fetchCuentasPorCliente = async (id_cliente: number): Promise<Cuenta
 
         if (errorCliente) throw errorCliente;
         
-        // 3. Calcular total de horas de viaje
-        let totalHorasViaje = viajes?.reduce((sum, viaje) => sum + (viaje.caphrsviajes || 0), 0) || 0;
+        // 3. Calcular total de deuda del cliente, incluyendo flete y material
+        let totalHorasViaje = viajes?.reduce((sum, viaje) => sum + (viaje.caphrsviajes || 0) + (viaje.total_materia || 0), 0) || 0;
         
         // 4. Aplicar porcentaje administrativo si existe
         if (cliente && cliente.porcentaje_administrativo && cliente.porcentaje_administrativo > 0) {
