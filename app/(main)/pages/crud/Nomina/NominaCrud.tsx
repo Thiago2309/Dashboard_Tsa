@@ -77,45 +77,46 @@ const NominaModule = () => {
     }, [fechaSeleccionada]);
 
     // ************************************** FUNCIONES PARA CAMBIAR LA FECHA DE RANGO DE NOMINA *************************************
-    // Sistema de semanas fijas (siempre 7 días)
-    const getStartOfFixedWeek = (date: Date, startDay: number = 5) => { // 6 = Sábado
+    // Semana fija: Viernes -> Jueves
+    const getStartOfFixedWeek = (date: Date, startDay: number = 5) => {
         const d = new Date(date);
         const day = d.getDay();
-        
-        // Calcular diferencia al día de inicio deseado (ej: sábado)
-        const diff = day >= startDay ? 
-            startDay - day : 
-            startDay - day - 8;
-        
-        d.setDate(d.getDate() + diff);
+
+        // Retrocede hasta el viernes correspondiente
+        const diff = (day - startDay + 7) % 7;
+
+        d.setDate(d.getDate() - diff);
         d.setHours(0, 0, 0, 0);
+
         return d;
     };
 
-    const getEndOfFixedWeek = (date: Date, startDay: number = 6) => {
+    const getEndOfFixedWeek = (date: Date, startDay: number = 5) => {
         const start = getStartOfFixedWeek(date, startDay);
+
         const end = new Date(start);
-        end.setDate(start.getDate() + 6); // Semana de 7 días
+        end.setDate(end.getDate() + 6); // Viernes + 6 = Jueves
         end.setHours(23, 59, 59, 999);
+
         return end;
     };
+
     // ******************************************************************************************************************************
-
     const getWeekNumber = (date: Date) => {
-        const startOfWeek = getStartOfFixedWeek(date);
+        const startOfWeek = getStartOfFixedWeek(date, 5); // Viernes
 
-        // Primer sábado del año
         const year = startOfWeek.getFullYear();
         const firstDay = new Date(year, 0, 1);
-        const firstDayWeekday = firstDay.getDay(); // 0–6
 
-        // Ajustar al primer sábado del año
-        const diffToFirstSaturday = (6 - firstDayWeekday + 7) % 7;
-        const firstSaturday = new Date(firstDay);
-        firstSaturday.setDate(firstSaturday.getDate() + diffToFirstSaturday);
+        // Buscar el primer viernes del año
+        const diffToFirstFriday = (5 - firstDay.getDay() + 7) % 7;
 
-        // Calcular semana
-        const diffMs = startOfWeek.getTime() - firstSaturday.getTime();
+        const firstFriday = new Date(firstDay);
+        firstFriday.setDate(firstFriday.getDate() + diffToFirstFriday);
+        firstFriday.setHours(0, 0, 0, 0);
+
+        const diffMs = startOfWeek.getTime() - firstFriday.getTime();
+
         return Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
     };
 
@@ -359,7 +360,7 @@ const NominaModule = () => {
             const semana = getWeekNumber(fechaSeleccionada);
             console.log('Semana calculada:', semana);
             const anio = fechaSeleccionada.getFullYear();
-            const fechaInicio = getStartOfFixedWeek(new Date(fechaSeleccionada), 6); // Sábado
+            const fechaInicio = getStartOfFixedWeek(new Date(fechaSeleccionada), 5); // Sábado
             console.log('Fecha Inicio sin ajustar:', formatDate(fechaInicio));
 
             // Ajustar para que la fecha de fin sea el mismo día de la semana que inicio + 6 días (semana completa)
@@ -1186,8 +1187,8 @@ const NominaModule = () => {
         </div>
     );
 
-    const fechaInicio = getStartOfFixedWeek(new Date(fechaSeleccionada), 6); // Sábado
-    const fechaFin = getEndOfFixedWeek(new Date(fechaSeleccionada), 6); // Viernes
+    const fechaInicio = getStartOfFixedWeek(new Date(fechaSeleccionada), 5); // viernes
+    const fechaFin = getEndOfFixedWeek(new Date(fechaSeleccionada), 5); // jueves
 
     return (
         <div className="grid crud-demo">

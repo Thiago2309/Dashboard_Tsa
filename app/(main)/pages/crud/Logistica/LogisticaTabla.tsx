@@ -36,6 +36,7 @@ const LogisticaTabla = () => {
     const [cantidadViajes, setCantidadViajes] = useState<number | null>(null);
     const [submittedEdit, setSubmittedEdit] = useState(false);
     const [loadingEdit, setLoadingEdit] = useState(false);
+    const [observaciones, setObservaciones] = useState('');
 
     // Cargar datos - usar useCallback para evitar recreación
     const cargarDatos = useCallback(async () => {
@@ -69,6 +70,7 @@ const LogisticaTabla = () => {
         setFolio('');
         setNumeroViaje('');
         setCantidadViajes(null);
+        setObservaciones('');
         setSubmittedEdit(false);
     }, []);
 
@@ -79,6 +81,7 @@ const LogisticaTabla = () => {
         setFolio(rowData.folio || '');
         setNumeroViaje(rowData.numero_viaje || '');
         setCantidadViajes(rowData.cantidad_viajes || null);
+        setObservaciones(rowData.observaciones || '');
         setSubmittedEdit(false);
         setEditDialog(true);
     }, []);
@@ -113,12 +116,14 @@ const LogisticaTabla = () => {
                 id_m3: editViaje?.id_m3,
                 id_invitado: editViaje?.id_invitado,
                 estado: editViaje?.estado,
-                observaciones: editViaje?.observaciones,
+                observaciones: observaciones || null,
                 fecha_asignacion: editViaje?.fecha_asignacion,
                 horario: editViaje?.horario,
                 en_renta: editViaje?.en_renta,
                 horas_renta: editViaje?.horas_renta
             };
+
+            console.log('Datos a actualizar:', datosActualizar);
 
             await updateViajeLogistica(datosActualizar as LogisticaViaje);
 
@@ -130,7 +135,8 @@ const LogisticaTabla = () => {
                         folio: folio.trim(),
                         folio_bco: folioBco,
                         numero_viaje: numeroViaje,
-                        cantidad_viajes: cantidadViajes
+                        cantidad_viajes: cantidadViajes,
+                        observaciones: observaciones
                     } : v
                 )
             );
@@ -155,7 +161,7 @@ const LogisticaTabla = () => {
         } finally {
             setLoadingEdit(false);
         }
-    }, [editViaje, folio, folioBco, numeroViaje, cantidadViajes, cerrarDialog]);
+    }, [editViaje, folio, folioBco, numeroViaje, cantidadViajes, observaciones, cerrarDialog]);
 
     // Función para Aprobar
     const handleAprobar = useCallback(async (rowData: LogisticaViaje) => {
@@ -181,7 +187,7 @@ const LogisticaTabla = () => {
             }
 
             let caphrsviajes;
-            let total_materia = null;
+            let total_materia = 0;
 
             if (rowData.en_renta && rowData.horas_renta) {
                 caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos * rowData.horas_renta;
@@ -221,7 +227,8 @@ const LogisticaTabla = () => {
                 horas_renta: rowData.horas_renta || null,
                 horario: rowData.horario || 'D',
                 numero_viaje: numeroViajeNum,
-                cantidad_viajes: rowData.cantidad_viajes || null
+                cantidad_viajes: rowData.cantidad_viajes || null,
+                observaciones: rowData.observaciones || null
             };
 
             const result = await createViaje(nuevoViaje);
@@ -400,6 +407,10 @@ const LogisticaTabla = () => {
         );
     }, []);
 
+    const observacionesBodyTemplate = useCallback((rowData: LogisticaViaje) => {
+        return rowData.observaciones || '-';
+    }, []);
+
     const estadoBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         const getEstadoColor = (estado: string) => {
             switch (estado) {
@@ -475,6 +486,7 @@ const LogisticaTabla = () => {
                 <Column field="m3_nombre" header="M3" sortable body={m3BodyTemplate} />
                 <Column field="horario" header="Horario" sortable body={horarioBodyTemplate} />
                 <Column field="en_renta" header="Renta" sortable body={rentaBodyTemplate} />
+                <Column field="observaciones" header="Observaciones" sortable body={observacionesBodyTemplate} />
                 <Column field="estado" header="Estado" sortable body={estadoBodyTemplate} />
                 <Column header="Acciones" body={accionesBodyTemplate} headerStyle={{ minWidth: '120px' }} style={{ textAlign: 'center' }} />
             </DataTable>
@@ -546,6 +558,16 @@ const LogisticaTabla = () => {
                         useGrouping={false}
                         className="w-full"
                         mode="decimal"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="observaciones">Observaciones</label>
+                    <InputText
+                        id="observaciones"
+                        value={observaciones}
+                        onChange={(e) => {setObservaciones(e.target.value);}}
+                        placeholder="Escriba alguna observación"
                     />
                 </div>
                 

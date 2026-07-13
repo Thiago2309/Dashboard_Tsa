@@ -1,3 +1,4 @@
+// app/(main)/pages/crud/Logistica/logisticaCrud.tsx
 'use client';
 import { Button } from 'primereact/button';
 import { Column } from 'primereact/column';
@@ -11,7 +12,7 @@ import { Dropdown } from 'primereact/dropdown';
 import { Calendar } from 'primereact/calendar';
 import { Checkbox } from 'primereact/checkbox';
 import { InputNumber } from 'primereact/inputnumber';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { 
     fetchViajesLogistica, 
     createViajeLogistica, 
@@ -63,6 +64,21 @@ const LogisticaCrud = () => {
         cancelados: 0
     });
 
+    // Estados para los filtros
+    const [filtros, setFiltros] = useState({
+        fechaInicio: null as Date | null,
+        fechaFin: null as Date | null,
+        idOperador: null as number | null,
+        idCliente: null as number | null,
+        estado: null as string | null,
+        idMaterial: null as number | null,
+        idM3: null as number | null,
+        horario: null as string | null,
+        folio: ''
+    });
+    const [filtroDialog, setFiltroDialog] = useState(false);
+    const [filtrosAplicados, setFiltrosAplicados] = useState(false);
+
     // Opciones de dropdown
     const [clientes, setClientes] = useState<{ id: number; empresa: string }[]>([]);
     const [operadores, setOperadores] = useState<{ id: number; nombre: string;}[]>([]);
@@ -78,8 +94,7 @@ const LogisticaCrud = () => {
     const estadoOptions = [
         { label: 'Pendiente', value: 'pendiente' },
         { label: 'Asignado', value: 'asignado' },
-        // { label: 'En Curso', value: 'en_curso' },
-        // { label: 'Completado', value: 'completado' },
+        { label: 'Completado', value: 'completado' },
         { label: 'Cancelado', value: 'cancelado' }
     ];
 
@@ -128,6 +143,165 @@ const LogisticaCrud = () => {
         }
     };
 
+    // Filtrar por rango de fechas y otros filtros
+    const viajesFiltrados = useMemo(() => {
+        let resultado = viajes;
+        
+        // Filtro por folio
+        if (filtros.folio) {
+            resultado = resultado.filter(v => 
+                v.folio?.toLowerCase().includes(filtros.folio.toLowerCase())
+            );
+        }
+
+        // Filtro por cliente
+        if (filtros.idCliente) {
+            resultado = resultado.filter(v => v.id_cliente === filtros.idCliente);
+        }
+
+        // Filtro por operador
+        if (filtros.idOperador) {
+            resultado = resultado.filter(v => v.id_operador === filtros.idOperador);
+        }
+
+        // Filtro por estado
+        if (filtros.estado) {
+            resultado = resultado.filter(v => v.estado === filtros.estado);
+        }
+
+        // Filtro por material
+        if (filtros.idMaterial) {
+            resultado = resultado.filter(v => v.id_material === filtros.idMaterial);
+        }
+
+        // Filtro por M3
+        if (filtros.idM3) {
+            resultado = resultado.filter(v => v.id_m3 === filtros.idM3);
+        }
+
+        // Filtro por horario
+        if (filtros.horario) {
+            resultado = resultado.filter(v => v.horario === filtros.horario);
+        }
+
+        // Filtro por rango de fechas
+        if (filtros.fechaInicio && filtros.fechaFin) {
+            const inicio = new Date(filtros.fechaInicio);
+            inicio.setHours(0, 0, 0, 0);
+            const fin = new Date(filtros.fechaFin);
+            fin.setHours(23, 59, 59, 999);
+            
+            resultado = resultado.filter(v => {
+                if (!v.fecha_asignacion) return false;
+                const fecha = new Date(v.fecha_asignacion);
+                return fecha >= inicio && fecha <= fin;
+            });
+        } else if (filtros.fechaInicio) {
+            const inicio = new Date(filtros.fechaInicio);
+            inicio.setHours(0, 0, 0, 0);
+            resultado = resultado.filter(v => {
+                if (!v.fecha_asignacion) return false;
+                const fecha = new Date(v.fecha_asignacion);
+                return fecha >= inicio;
+            });
+        } else if (filtros.fechaFin) {
+            const fin = new Date(filtros.fechaFin);
+            fin.setHours(23, 59, 59, 999);
+            resultado = resultado.filter(v => {
+                if (!v.fecha_asignacion) return false;
+                const fecha = new Date(v.fecha_asignacion);
+                return fecha <= fin;
+            });
+        }
+        
+        return resultado;
+    }, [viajes, filtros]);
+
+    // Función para obtener el filtro global (para DataTable)
+    const obtenerFiltroGlobal = useCallback(() => {
+        const filtrosActivos = [];
+        
+        if (filtros.folio) filtrosActivos.push(`folio:${filtros.folio}`);
+        if (filtros.idCliente) {
+            const cliente = clientes.find(c => c.id === filtros.idCliente);
+            if (cliente) filtrosActivos.push(`cliente:${cliente.empresa}`);
+        }
+        if (filtros.idOperador) {
+            const operador = operadores.find(o => o.id === filtros.idOperador);
+            if (operador) filtrosActivos.push(`operador:${operador.nombre}`);
+        }
+        if (filtros.idMaterial) {
+            const material = materiales.find(m => m.id === filtros.idMaterial);
+            if (material) filtrosActivos.push(`material:${material.nombre}`);
+        }
+        if (filtros.idM3) {
+            const m3 = m3Options.find(m => m.id === filtros.idM3);
+            if (m3) filtrosActivos.push(`m3:${m3.nombre}`);
+        }
+        if (filtros.estado) {
+            const estadoLabel = estadoOptions.find(e => e.value === filtros.estado)?.label || filtros.estado;
+            filtrosActivos.push(`estado:${estadoLabel}`);
+        }
+        if (filtros.horario) {
+            const horarioMap = { 'D': 'Día', 'N': 'Noche' };
+            filtrosActivos.push(`horario:${horarioMap[filtros.horario as keyof typeof horarioMap] || filtros.horario}`);
+        }
+        if (filtros.fechaInicio || filtros.fechaFin) {
+            let fechaTexto = '';
+            if (filtros.fechaInicio) {
+                const fecha = new Date(filtros.fechaInicio);
+                const dia = String(fecha.getDate()).padStart(2, '0');
+                const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+                const anio = fecha.getFullYear();
+                fechaTexto += `desde: ${dia}/${mes}/${anio}`;
+            }
+            if (filtros.fechaFin) {
+                const fecha = new Date(filtros.fechaFin);
+                const dia = String(fecha.getDate()).padStart(2, '0');
+                const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+                const anio = fecha.getFullYear();
+                fechaTexto += filtros.fechaInicio ? ` hasta: ${dia}/${mes}/${anio}` : `hasta: ${dia}/${mes}/${anio}`;
+            }
+            filtrosActivos.push(fechaTexto);
+        }
+        
+        return filtrosActivos.join(' ');
+    }, [filtros, clientes, operadores, materiales, m3Options]);
+
+    // Función para aplicar filtros
+    const aplicarFiltros = useCallback(() => {
+        setFiltrosAplicados(true);
+        setFiltroDialog(false);
+        toast.current?.show({
+            severity: 'info',
+            summary: 'Filtros aplicados',
+            detail: 'Los filtros se han aplicado correctamente',
+            life: 2000
+        });
+    }, []);
+
+    // Función para limpiar filtros
+    const limpiarFiltros = useCallback(() => {
+        setFiltros({
+            fechaInicio: null,
+            fechaFin: null,
+            idOperador: null,
+            idCliente: null,
+            estado: null,
+            idMaterial: null,
+            idM3: null,
+            horario: null,
+            folio: ''
+        });
+        setFiltrosAplicados(false);
+        toast.current?.show({
+            severity: 'info',
+            summary: 'Filtros limpiados',
+            detail: 'Todos los filtros han sido eliminados',
+            life: 2000
+        });
+    }, []);
+
     const openNew = () => {
         setViaje({ ...emptyViaje });
         setSubmitted(false);
@@ -144,17 +318,6 @@ const LogisticaCrud = () => {
     const saveViaje = async () => {
         setSubmitted(true);
 
-        // Validaciones
-        // if (!viaje.folio || viaje.folio.trim() === '') {
-        //     toast.current?.show({
-        //         severity: 'error',
-        //         summary: 'Error',
-        //         detail: 'El folio es obligatorio',
-        //         life: 3000
-        //     });
-        //     return;
-        // }
-
         if (!viaje.id_cliente || !viaje.id_operador || !viaje.id_precio_origen_destino || 
             !viaje.id_material || !viaje.id_m3) {
             toast.current?.show({
@@ -166,7 +329,6 @@ const LogisticaCrud = () => {
             return;
         }
 
-        // Validar que si está en renta, tenga horas
         if (viaje.en_renta && (!viaje.horas_renta || viaje.horas_renta <= 0)) {
             toast.current?.show({
                 severity: 'error',
@@ -180,8 +342,6 @@ const LogisticaCrud = () => {
         try {
             setLoading(true);
             
-            // SOLO validar el folio si es un viaje NUEVO (sin id)
-            // Si es actualización, no validar porque el folio ya existe y es el mismo
             if (!viaje.id && viaje.folio) {
                 const folioExists = await checkFolioExists(viaje.folio);
                 if (folioExists) {
@@ -198,7 +358,6 @@ const LogisticaCrud = () => {
             }
 
             if (viaje.id) {
-                // Es una ACTUALIZACIÓN - NO validar folio
                 const updated = await updateViajeLogistica(viaje);
                 setViajes(viajes.map(v => v.id === updated.id ? updated : v));
                 toast.current?.show({
@@ -208,7 +367,6 @@ const LogisticaCrud = () => {
                     life: 3000
                 });
             } else {
-                // Es un NUEVO viaje - SI validar folio
                 const newViaje = await createViajeLogistica(viaje);
                 setViajes([newViaje, ...viajes]);
                 toast.current?.show({
@@ -219,7 +377,7 @@ const LogisticaCrud = () => {
                 });
             }
             setViajeDialog(false);
-            cargarDatos(); // Recargar estadísticas
+            cargarDatos();
         } catch (error) {
             console.error('Error guardando viaje:', error);
             toast.current?.show({
@@ -433,22 +591,37 @@ const LogisticaCrud = () => {
 
     const leftToolbarTemplate = () => {
         return (
-            <div className="my-2">
+            <div className="flex flex-wrap align-items-center gap-2 my-2">
                 <Button 
                     label="Nuevo Viaje" 
                     icon="pi pi-plus" 
                     severity="info" 
-                    className="mr-2" 
                     onClick={openNew} 
                 />
                 <Button 
                     label="Recargar" 
                     icon="pi pi-refresh" 
                     severity="secondary" 
-                    className="mr-2" 
                     onClick={cargarDatos}
                     loading={loading}
                 />
+                <Button 
+                    label="Filtros" 
+                    icon="pi pi-filter" 
+                    severity={filtrosAplicados ? "success" : "secondary"}
+                    onClick={() => setFiltroDialog(true)}
+                    badge={filtrosAplicados ? "✓" : undefined}
+                    className="p-button-outlined"
+                />
+                {filtrosAplicados && (
+                    <Button 
+                        label="Limpiar" 
+                        icon="pi pi-times" 
+                        severity="danger" 
+                        onClick={limpiarFiltros}
+                        className="p-button-outlined p-button-sm"
+                    />
+                )}
             </div>
         );
     };
@@ -557,9 +730,18 @@ const LogisticaCrud = () => {
                     <Toast ref={toast} />
                     <Toolbar className="mb-4" left={leftToolbarTemplate} right={rightToolbarTemplate} />
 
+                    {filtrosAplicados && (
+                        <div className="mb-3 p-2 bg-blue-50 border-round">
+                            <span className="text-sm text-blue-700">
+                                <i className="pi pi-info-circle mr-1" />
+                                Filtros activos: {obtenerFiltroGlobal() || 'Ninguno'}
+                            </span>
+                        </div>
+                    )}
+
                     <DataTable
                         ref={dt}
-                        value={viajes}
+                        value={viajesFiltrados}
                         selection={selectedViajes}
                         onSelectionChange={(e) => setSelectedViajes(e.value)}
                         dataKey="id"
@@ -572,7 +754,7 @@ const LogisticaCrud = () => {
                         emptyMessage="No se encontraron viajes"
                         responsiveLayout="scroll"
                         loading={loading}
-                        globalFilterFields={['folio', 'cliente_nombre', 'operador_nombre', 'origen', 'destino']}
+                        globalFilterFields={['folio', 'cliente_nombre', 'operador_nombre', 'origen', 'destino', 'material_nombre', 'm3_nombre', 'estado']}
                     >
                         <Column selectionMode="multiple" headerStyle={{ width: '4rem' }} />
                         <Column field="folio" header="Folio" sortable body={folioBodyTemplate} />
@@ -585,7 +767,6 @@ const LogisticaCrud = () => {
                         <Column field="material_nombre" header="Material" sortable body={materialBodyTemplate} />
                         <Column field="m3_nombre" header="M3" sortable body={m3BodyTemplate} />
                         <Column field="horario" header="Horario" sortable body={horarioBodyTemplate} />
-                        {/* <Column field="en_renta" header="Renta" sortable body={rentaBodyTemplate} /> */}
                         <Column field="estado" header="Estado" sortable body={estadoBodyTemplate} />
                         <Column header="Acciones" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }} />
                     </DataTable>
@@ -619,9 +800,7 @@ const LogisticaCrud = () => {
                                     setFolioError(false);
                                 }}
                                 placeholder="Ingresa el folio"
-                                // className={submitted && !viaje.folio ? 'p-invalid' : (folioError ? 'p-invalid' : '')}
                             />
-                            {/* {submitted && !viaje.folio && <small className="p-error">El folio es obligatorio</small>} */}
                             {folioError && <small className="p-error">Este folio ya existe. Por favor ingresa otro.</small>}
                         </div>
                     </div>
@@ -635,7 +814,6 @@ const LogisticaCrud = () => {
                                 onChange={(e) => {
                                     const date = e.value;
                                     if (date) {
-                                        // Formato ISO para la base de datos
                                         const fechaISO = date.toISOString();
                                         setViaje({ ...viaje, fecha_asignacion: fechaISO });
                                     } else {
@@ -799,44 +977,6 @@ const LogisticaCrud = () => {
                         </div>
                     </div>
 
-                    {/* <div className="col-12">
-                        <div className="field">
-                            <label htmlFor="en_renta" className="block mb-2">
-                                <Checkbox
-                                    id="en_renta"
-                                    checked={viaje.en_renta}
-                                    onChange={(e) => setViaje({ 
-                                        ...viaje, 
-                                        en_renta: e.checked ?? false,
-                                        horas_renta: e.checked ? (viaje.horas_renta || 0) : null
-                                    })}
-                                />
-                                <span className="ml-2">¿El camión está en renta?</span>
-                            </label>
-                        </div>
-
-                        {viaje.en_renta && (
-                            <div className="field">
-                                <label htmlFor="horas_renta">Horas de Renta *</label>
-                                <InputNumber
-                                    id="horas_renta"
-                                    value={viaje.horas_renta ?? 0}
-                                    onValueChange={(e) => setViaje({ ...viaje, horas_renta: e.value ?? 0 })}
-                                    mode="decimal"
-                                    min={0}
-                                    minFractionDigits={2}
-                                    maxFractionDigits={2}
-                                    placeholder="0.00"
-                                    required={viaje.en_renta}
-                                    className={submitted && viaje.en_renta && !viaje.horas_renta ? 'p-invalid' : ''}
-                                />
-                                {submitted && viaje.en_renta && !viaje.horas_renta && (
-                                    <small className="p-error">Las horas de renta son requeridas</small>
-                                )}
-                            </div>
-                        )}
-                    </div> */}
-
                     <div className="col-12">
                         <div className="field">
                             <label htmlFor="observaciones">Observaciones</label>
@@ -850,6 +990,165 @@ const LogisticaCrud = () => {
                         </div>
                     </div>
                 </div>
+            </Dialog>
+
+            {/* Dialog de filtros */}
+            <Dialog 
+                visible={filtroDialog} 
+                style={{ width: '650px', maxWidth: '90vw' }} 
+                header="Filtros Avanzados" 
+                modal 
+                className="p-fluid" 
+                footer={
+                    <>
+                        <Button label="Limpiar" icon="pi pi-times" severity="danger" text onClick={limpiarFiltros} />
+                        <Button label="Cancelar" icon="pi pi-times" text onClick={() => setFiltroDialog(false)} />
+                        <Button label="Aplicar Filtros" icon="pi pi-check" onClick={aplicarFiltros} />
+                    </>
+                } 
+                onHide={() => setFiltroDialog(false)}
+            >
+                <div className="grid">
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="filtroFolio">Folio</label>
+                            <InputText
+                                id="filtroFolio"
+                                value={filtros.folio}
+                                onChange={(e) => setFiltros({ ...filtros, folio: e.target.value })}
+                                placeholder="Buscar por folio"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="filtroCliente">Cliente</label>
+                            <Dropdown
+                                id="filtroCliente"
+                                value={filtros.idCliente}
+                                options={clientes.map(c => ({ label: c.empresa, value: c.id }))}
+                                onChange={(e) => setFiltros({ ...filtros, idCliente: e.value })}
+                                placeholder="Selecciona un cliente"
+                                filter
+                                showClear
+                            />
+                        </div>
+                    </div>
+
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="filtroOperador">Operador</label>
+                            <Dropdown
+                                id="filtroOperador"
+                                value={filtros.idOperador}
+                                options={operadores.map(op => ({ label: op.nombre, value: op.id }))}
+                                onChange={(e) => setFiltros({ ...filtros, idOperador: e.value })}
+                                placeholder="Selecciona un operador"
+                                filter
+                                showClear
+                            />
+                        </div>
+                    </div>
+
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="filtroEstado">Estado</label>
+                            <Dropdown
+                                id="filtroEstado"
+                                value={filtros.estado}
+                                options={estadoOptions}
+                                onChange={(e) => setFiltros({ ...filtros, estado: e.value })}
+                                placeholder="Selecciona un estado"
+                                showClear
+                            />
+                        </div>
+                    </div>
+
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="filtroMaterial">Material</label>
+                            <Dropdown
+                                id="filtroMaterial"
+                                value={filtros.idMaterial}
+                                options={materiales.map(m => ({ label: m.nombre, value: m.id }))}
+                                onChange={(e) => setFiltros({ ...filtros, idMaterial: e.value })}
+                                placeholder="Selecciona un material"
+                                filter
+                                showClear
+                            />
+                        </div>
+                    </div>
+
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="filtroM3">M3</label>
+                            <Dropdown
+                                id="filtroM3"
+                                value={filtros.idM3}
+                                options={m3Options.map(m => ({ 
+                                    label: `${m.nombre} (${m.metros_cubicos} m³)`, 
+                                    value: m.id 
+                                }))}
+                                onChange={(e) => setFiltros({ ...filtros, idM3: e.value })}
+                                placeholder="Selecciona M3"
+                                filter
+                                showClear
+                            />
+                        </div>
+                    </div>
+
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="filtroHorario">Horario</label>
+                            <Dropdown
+                                id="filtroHorario"
+                                value={filtros.horario}
+                                options={horarioOptions}
+                                onChange={(e) => setFiltros({ ...filtros, horario: e.value })}
+                                placeholder="Selecciona horario"
+                                showClear
+                            />
+                        </div>
+                    </div>
+
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="filtroFechaInicio">Fecha Inicio</label>
+                            <Calendar
+                                id="filtroFechaInicio"
+                                value={filtros.fechaInicio}
+                                onChange={(e) => setFiltros({ ...filtros, fechaInicio: e.value || null })}
+                                dateFormat="dd/mm/yy"
+                                showIcon
+                                placeholder="Fecha inicio"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="filtroFechaFin">Fecha Fin</label>
+                            <Calendar
+                                id="filtroFechaFin"
+                                value={filtros.fechaFin}
+                                onChange={(e) => setFiltros({ ...filtros, fechaFin: e.value || null })}
+                                dateFormat="dd/mm/yy"
+                                showIcon
+                                placeholder="Fecha fin"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {filtrosAplicados && (
+                    <div className="mt-3 p-2 bg-blue-50 border-round">
+                        <span className="text-sm text-blue-700">
+                            <i className="pi pi-info-circle mr-1" />
+                            Filtros activos: {obtenerFiltroGlobal() || 'Ninguno'}
+                        </span>
+                    </div>
+                )}
             </Dialog>
 
             {/* Dialog de confirmación para eliminar */}
