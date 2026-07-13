@@ -64,6 +64,7 @@ const Crud = () => {
     const [folioError, setFolioError] = useState(false);
     const [invitados, setInvitados] = useState<{ id: number; empresa: string }[]>([]);
     const [clientes, setClientes] = useState<EstimacionCliente[]>([]); 
+    const [observaciones, setObservaciones] = useState('');
 
     const [filtros, setFiltros] = useState<FiltrosEstimacion>({
         fechaInicio: null,
@@ -565,6 +566,15 @@ const Crud = () => {
         );
     };
 
+    const observacionesBodyTemplate = (rowData: Viaje) => {
+        return (
+            <>
+                <span className="p-column-title">Observaciones</span>
+                {rowData.observaciones ?? '-'}
+            </>
+        );
+    }
+
     const cantidadViajesBodyTemplate = (rowData: Viaje) => {
         return (
             <>
@@ -695,6 +705,7 @@ const Crud = () => {
                         <Column field="en_renta" header="Renta" sortable body={rentaBodyTemplate}></Column>
                         <Column field="invitado_nombre" header="Invitado" sortable body={invitadoBodyTemplate}></Column>
                         <Column field="horario" header="Horario" sortable body={horarioBodyTemplate}></Column>
+                        <Column field="observaciones" header="Observaciones" sortable body={observacionesBodyTemplate}></Column>
                         <Column field="caphrsviajes" header="Total Flete" sortable body={caphrsviajesBodyTemplate} style={{ width: '150px', minWidth: '120px' }}></Column>
                         <Column field="total_material" header="Total Material" sortable body={totalMaterialBodyTemplate} style={{ width: '150px', minWidth: '120px' }}></Column>
                         <Column header="Acción" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }}></Column>
@@ -773,6 +784,7 @@ const Crud = () => {
                             />
                             {/* {submitted && !viaje.folio && <small className="p-invalid">Folio es requerido.</small>} */}
                         </div>
+
                         <div className="field">
                             <label htmlFor="numero_viaje">No. Viaje</label>
                             <InputNumber
@@ -786,6 +798,7 @@ const Crud = () => {
                             />
                             {/* {submitted && !viaje.numero_viaje && <small className="p-invalid">No. Viaje es requerido.</small>} */}
                         </div>
+
                         <div className="field">
                             <label htmlFor="cantidad_viajes">Cantidad de Viajes</label>
                             <InputNumber
@@ -798,6 +811,7 @@ const Crud = () => {
                             />
                             {/* {submitted && !viaje.cantidad_viajes && <small className="p-invalid">Cantidad de Viajes es requerido.</small>} */}
                         </div>
+
                         <div className="field">
                             <label htmlFor="id_cliente">Cliente</label>
                             <Dropdown
@@ -811,6 +825,7 @@ const Crud = () => {
                             />
                             {submitted && !viaje.id_cliente && <small className="p-invalid">Cliente es requerido.</small>}
                         </div>
+
                         <div className="field">
                             <label htmlFor="id_precio_origen_destino">Origen - Destino</label>
                             <Dropdown
@@ -833,6 +848,7 @@ const Crud = () => {
                             />
                             {submitted && !viaje.id_precio_origen_destino && <small className="p-invalid">Origen-Destino es requerido.</small>}
                         </div>
+
                         <div className="field">
                             <label htmlFor="id_material">Material</label>
                             <Dropdown
@@ -846,6 +862,7 @@ const Crud = () => {
                             />
                             {submitted && !viaje.id_material && <small className="p-invalid">Material es requerido.</small>}
                         </div>
+
                         <div className="field">
                             <label htmlFor="id_m3">M3</label>
                             <Dropdown
@@ -859,6 +876,7 @@ const Crud = () => {
                             />
                             {submitted && !viaje.id_m3 && <small className="p-invalid">M3 es requerido.</small>}
                         </div>
+
                         <div className="operador">
                             <label htmlFor="id_operador">Operador</label>
                             <Dropdown
@@ -871,7 +889,9 @@ const Crud = () => {
                             />
                             {submitted && !viaje.id_operador && <small className="p-invalid">Operador es requerido.</small>}
                         </div>
+
                         <br />
+
                         <div className="field">
                             <label htmlFor="id_invitado">Invitado</label>
                             <Dropdown
@@ -882,6 +902,7 @@ const Crud = () => {
                                 placeholder="Selecciona un invitado (opcional)"
                             />
                         </div>
+
                         <div className="field">
                             <label htmlFor="horario">Horario</label>
                             <Dropdown
@@ -892,6 +913,17 @@ const Crud = () => {
                                 placeholder="Selecciona horario"
                             />
                         </div>
+                        
+                        <div className="field">
+                            <label htmlFor="observaciones">Observaciones</label>
+                            <InputText
+                                id="observaciones"
+                                value={observaciones}
+                                onChange={(e) => {setObservaciones(e.target.value);}}
+                                placeholder="Escriba alguna observación"
+                            />
+                        </div>
+
                         <br />
                         {/* Campo para renta */}
                         <div className="field">

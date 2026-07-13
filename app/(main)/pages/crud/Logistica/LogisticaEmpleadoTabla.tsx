@@ -6,7 +6,7 @@ import { Toast } from 'primereact/toast';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { 
     LogisticaViaje,
-    fetchViajesAsignadosPorOperador, // ← Nueva función
+    fetchViajesAsignadosPorOperador,
 } from '../../../../../Services/BD/logistica/logisticaService';
 import { Button } from 'primereact/button';
 import { Dropdown } from 'primereact/dropdown';
@@ -19,13 +19,10 @@ const LogisticaEmpleadoTabla = () => {
     const [updating, setUpdating] = useState<number | null>(null);
     const toast = useRef<Toast>(null);
 
-    // Opciones de estado (el empleado solo puede cambiar a En Curso o Completado)
     const estadoOptions = [
-        // { label: 'Pendiente', value: 'pendiente' },
         { label: 'Asignado', value: 'asignado' },
         { label: 'En Curso', value: 'en_curso' },
         { label: 'Completado', value: 'completado' },
-        // { label: 'Cancelado', value: 'cancelado' }
     ];
 
     const getEstadoChipClass = (estado: string) => {
@@ -49,10 +46,8 @@ const LogisticaEmpleadoTabla = () => {
 
         return lista.filter((viaje) => {
             if (!viaje.fecha_asignacion) return false;
-
             const fechaAsignacion = new Date(viaje.fecha_asignacion);
             const fechaAsignacionStr = `${fechaAsignacion.getFullYear()}-${String(fechaAsignacion.getMonth() + 1).padStart(2, '0')}-${String(fechaAsignacion.getDate()).padStart(2, '0')}`;
-
             return fechaAsignacionStr === hoyStr;
         });
     };
@@ -65,18 +60,15 @@ const LogisticaEmpleadoTabla = () => {
                 (async () => {
                     const userId = sessionStorage.getItem('userId');
                     if (!userId) return false;
-
                     const { data, error } = await supabase
                         .from('operador')
                         .select('camion_full')
                         .eq('user_id', parseInt(userId, 10))
                         .maybeSingle();
-
                     if (error) {
                         console.error('Error obteniendo camion_full del operador:', error);
                         return false;
                     }
-
                     return data?.camion_full === true;
                 })()
             ]);
@@ -101,7 +93,17 @@ const LogisticaEmpleadoTabla = () => {
         cargarDatos();
     }, [cargarDatos]);
 
-    // Función para cambiar el estado
+    const obtenerViajesVisibles = useCallback(() => {
+        if (camionFull) {
+            const noCompletados = viajes.filter(v => v.estado !== 'completado');
+            const completados = viajes.filter(v => v.estado === 'completado');
+            const todos = [...noCompletados, ...completados];
+            return todos.slice(0, 2);
+        } else {
+            return viajes.filter(v => v.estado !== 'completado').slice(0, 1);
+        }
+    }, [viajes, camionFull]);
+
     const cambiarEstado = async (rowData: LogisticaViaje, nuevoEstado: string) => {
         if (rowData.estado === nuevoEstado) return;
 
@@ -124,7 +126,6 @@ const LogisticaEmpleadoTabla = () => {
                 return;
             }
 
-            // Actualizar localmente sin quitarlo de la vista
             setViajes((prevViajes) =>
                 prevViajes.map((v) =>
                     v.id === rowData.id ? { ...v, estado: nuevoEstado as any } : v
@@ -140,7 +141,19 @@ const LogisticaEmpleadoTabla = () => {
             });
 
             if (nuevoEstado === 'completado') {
-                cargarDatos(); // Recargar para mostrar el siguiente viaje pendiente
+                const noCompletados = viajes.filter(v => v.id !== rowData.id && v.estado !== 'completado');
+                
+                if (camionFull) {
+                    if (noCompletados.length === 0) {
+                        setTimeout(() => {
+                            cargarDatos();
+                        }, 500);
+                    }
+                } else {
+                    setTimeout(() => {
+                        cargarDatos();
+                    }, 500);
+                }
             }
 
         } catch (error) {
@@ -156,7 +169,6 @@ const LogisticaEmpleadoTabla = () => {
         }
     };
 
-    // Template de estado con Dropdown
     const estadoEditableBodyTemplate = (rowData: LogisticaViaje) => {
         return (
             <Dropdown
@@ -188,7 +200,6 @@ const LogisticaEmpleadoTabla = () => {
         );
     };
 
-    // Templates para la tabla (igual que antes)
     const folioBodyTemplate = (rowData: LogisticaViaje) => {
         return <span className="font-bold">{rowData.folio}</span>;
     };
@@ -234,29 +245,13 @@ const LogisticaEmpleadoTabla = () => {
         return horarioMap[rowData.horario as keyof typeof horarioMap] || rowData.horario || '-';
     };
 
-    const rentaBodyTemplate = (rowData: LogisticaViaje) => {
-        return rowData.en_renta ? (
-            <div className="flex align-items-center">
-                <i className="pi pi-check-circle text-green-500 mr-2" />
-                <span>{rowData.horas_renta?.toFixed(2) || '0.00'} hrs</span>
-            </div>
-        ) : (
-            <div className="flex align-items-center">
-                <i className="pi pi-times-circle text-red-500 mr-2" />
-                <span>No</span>
-            </div>
-        );
-    };
+    const numeroviajesTempalte = (rowData: LogisticaViaje) => {
+        return rowData.numero_viaje !== null ? rowData.numero_viaje : '-';
+    }
 
-    const numeroViajeBodyTemplate = (rowData: LogisticaViaje) => {
-        return rowData.numero_viaje || '-';
-    };
-
-    const folioBcoBodyTemplate = (rowData: LogisticaViaje) => {
-        return rowData.folio_bco || '-';
-    };
-
-    const viajesVisibles = viajes.slice(0, camionFull ? 2 : 1);
+    const viajesVisibles = obtenerViajesVisibles();
+    const noCompletados = viajes.filter(v => v.estado !== 'completado');
+    const pendientesCount = noCompletados.length;
 
     return (
         <div className="card">
@@ -277,52 +272,81 @@ const LogisticaEmpleadoTabla = () => {
                         className="w-full sm:w-auto"
                     />
                 </div>
-                <span className="bg-blue-100 text-blue-800 px-3 py-1 border-round align-self-start md:align-self-center">
-                    Pendientes: {viajes.length}
-                </span>
+                <div className="flex flex-wrap gap-2 align-items-center">
+                    {camionFull && (
+                        <span className="bg-green-100 text-purple-800 px-3 py-1 border-round text-sm">
+                            🚛 Modo Full
+                        </span>
+                    )}
+                    <span className="bg-blue-100 text-blue-800 px-3 py-1 border-round text-sm">
+                        Pendientes: {pendientesCount}
+                    </span>
+                </div>
             </div>
+
+            {camionFull && pendientesCount > 0 && pendientesCount < 2 && (
+                <div className="bg-yellow-50 border-1 border-yellow-200 border-round p-3 mb-3">
+                    <div className="flex align-items-center gap-2">
+                        <i className="pi pi-info-circle text-yellow-500 text-xl" />
+                        <span className="text-yellow-700 text-sm">
+                            <strong>Completa ambos viajes</strong> para que te aparezcan nuevos viajes asignados.
+                            <br className="block sm:hidden" />
+                            <span className="text-sm">Te falta completar {pendientesCount} viaje(s).</span>
+                        </span>
+                    </div>
+                </div>
+            )}
 
             <div className="block md:hidden">
                 {loading ? (
                     <div className="text-center py-4 text-500">Cargando viajes...</div>
                 ) : viajesVisibles.length === 0 ? (
-                    <div className="text-center py-4 text-500">No tienes viajes asignados para hoy</div>
+                    <div className="text-center py-4 text-500">
+                        {camionFull && viajes.filter(v => v.estado === 'completado').length > 0 ? 
+                            '✅ ¡Todos los viajes completados! Espera nuevos viajes.' :
+                            'No tienes viajes asignados para hoy'
+                        }
+                    </div>
                 ) : (
                     <div className="flex flex-column gap-3">
-                        {viajesVisibles.map((viajeItem) => (
+                        {viajesVisibles.map((viajeItem, index) => (
                             <div key={viajeItem.id} className="surface-card border-1 border-round p-3 shadow-1">
                                 <div className="flex justify-content-between align-items-start gap-2 mb-2">
-                                    <div>
-                                        <div className="font-bold text-lg">{viajeItem.folio || '-'}</div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-lg truncate">{viajeItem.folio || '-'}</div>
                                         <div className="text-sm text-500">
                                             {fechaAsignacionBodyTemplate(viajeItem)}
                                         </div>
                                     </div>
-                                    <span className={`px-3 py-1 border-round text-sm font-medium ${getEstadoChipClass(viajeItem.estado || '')}`}>
+                                    <span className={`px-2 py-1 border-round text-xs font-medium whitespace-nowrap ${getEstadoChipClass(viajeItem.estado || '')}`}>
                                         {getEstadoLabel(viajeItem.estado)}
                                     </span>
                                 </div>
 
                                 <div className="grid">
-                                    <div className="col-12">
+                                    <div className="col-6">
+                                        <div className="text-500 text-sm">No de viaje</div>
+                                        <div className="font-medium text-sm">{numeroviajesTempalte(viajeItem)}</div>
+                                    </div>
+                                    <div className="col-6">
                                         <div className="text-500 text-sm">Cliente</div>
-                                        <div className="font-medium">{clienteBodyTemplate(viajeItem)}</div>
+                                        <div className="font-medium text-sm">{clienteBodyTemplate(viajeItem)}</div>
                                     </div>
-                                    <div className="col-12 sm:col-6">
+                                    <div className="col-6">
                                         <div className="text-500 text-sm">Origen</div>
-                                        <div className="font-medium">{origenBodyTemplate(viajeItem)}</div>
+                                        <div className="font-medium text-sm">{origenBodyTemplate(viajeItem)}</div>
                                     </div>
-                                    <div className="col-12 sm:col-6">
+                                    <div className="col-6">
                                         <div className="text-500 text-sm">Destino</div>
-                                        <div className="font-medium">{destinoBodyTemplate(viajeItem)}</div>
+                                        <div className="font-medium text-sm">{destinoBodyTemplate(viajeItem)}</div>
                                     </div>
-                                    <div className="col-12 sm:col-6">
+                                    <div className="col-6">
                                         <div className="text-500 text-sm">Material</div>
-                                        <div className="font-medium">{materialBodyTemplate(viajeItem)}</div>
+                                        <div className="font-medium text-sm">{materialBodyTemplate(viajeItem)}</div>
                                     </div>
-                                    <div className="col-12 sm:col-6">
+                                    <div className="col-6">
                                         <div className="text-500 text-sm">Horario</div>
-                                        <div className="font-medium">{horarioBodyTemplate(viajeItem)}</div>
+                                        <div className="font-medium text-sm">{horarioBodyTemplate(viajeItem)}</div>
                                     </div>
                                 </div>
 
@@ -366,7 +390,11 @@ const LogisticaEmpleadoTabla = () => {
                     value={viajesVisibles}
                     dataKey="id"
                     className="datatable-responsive"
-                    emptyMessage="No tienes viajes asignados para hoy"
+                    emptyMessage={
+                        camionFull && viajes.filter(v => v.estado === 'completado').length > 0 ?
+                        '✅ ¡Todos los viajes completados! Espera nuevos viajes.' :
+                        'No tienes viajes asignados para hoy'
+                    }
                     responsiveLayout="scroll"
                     loading={loading}
                     globalFilterFields={['folio', 'cliente_nombre', 'operador_nombre', 'origen', 'destino']}
@@ -374,6 +402,7 @@ const LogisticaEmpleadoTabla = () => {
                     <Column field="folio" header="Folio" sortable body={folioBodyTemplate} />
                     <Column field="fecha_asignacion" header="Fecha Asignación" sortable body={fechaAsignacionBodyTemplate} />
                     <Column field="cliente_nombre" header="Cliente" sortable body={clienteBodyTemplate} />
+                    <Column field="numero_viaje" header="No de Viaje" sortable body={numeroviajesTempalte} />
                     <Column field="operador_nombre" header="Operador" sortable body={operadorBodyTemplate} />
                     <Column field="origen" header="Origen" sortable body={origenBodyTemplate} />
                     <Column field="destino" header="Destino" sortable body={destinoBodyTemplate} />

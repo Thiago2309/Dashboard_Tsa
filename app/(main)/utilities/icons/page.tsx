@@ -94,7 +94,8 @@ const FormularioNotaViaje = () => {
         horario: 'D',
         numero_viaje: null,
         cantidad_viajes: null,
-        total_materia: null
+        total_materia: null,
+        observaciones: null
     });
     const [clientes, setClientes] = useState<{ id?: number; empresa: string }[]>([]);
     const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; precio_unidad: number; precio_materia?: number }[]>([]);
@@ -105,6 +106,7 @@ const FormularioNotaViaje = () => {
     const toast = useRef<Toast>(null);
     const [folioError, setFolioError] = useState(false);
     const [invitados, setInvitados] = useState<{ id: number; empresa: string }[]>([]);
+    const [observaciones, setObservaciones] = useState('');
 
     // Cargar datos iniciales (clientes, precios, materiales, m3)
     useEffect(() => {
@@ -194,6 +196,7 @@ const FormularioNotaViaje = () => {
                 ...viaje,
                 caphrsviajes,
                 total_materia,
+                observaciones: observaciones || null // Guardar las observaciones en el viaje
             };
 
             // Guardar o actualizar el viaje
@@ -222,9 +225,11 @@ const FormularioNotaViaje = () => {
                 horario: 'D',
                 numero_viaje: null,
                 cantidad_viajes: null,
-                total_materia: null
+                total_materia: null,
+                observaciones: null
             });
             setSubmitted(false);
+            setObservaciones(''); 
             } else {
             toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se encontró el precio o los metros cúbicos', life: 3000 });
             }
@@ -462,6 +467,16 @@ const FormularioNotaViaje = () => {
                         className={submitted && !viaje.id_operador ? 'p-invalid' : ''}
                     />
                     {submitted && !viaje.id_operador && <small className="p-invalid">Operador es requerido.</small>}
+                    </div>
+
+                    <div className="field">
+                    <label htmlFor="observaciones">Observaciones</label>
+                    <InputText
+                        id="observaciones"
+                        value={observaciones}
+                        onChange={(e) => {setObservaciones(e.target.value);}}
+                        placeholder="Escriba alguna observación"
+                    />
                     </div>
                     
                     {/* NUEVO: Campos para renta */}

@@ -25,6 +25,7 @@ export interface Viaje {
     numero_viaje?: number | null;
     cantidad_viajes?: number | null;
     total_materia?: number | null;
+    observaciones?: string | null;
 }
 
 // Helper function to transform Supabase response to Viaje interface
@@ -52,7 +53,8 @@ const transformViajeData = (data: any): Viaje => ({
     horario: 'D',
     numero_viaje: data.numero_viaje || null,
     cantidad_viajes: data.cantidad_viajes || null,
-    total_materia: data.total_materia || null
+    total_materia: data.total_materia || null,
+    observaciones: data.observaciones || null
 });
 
 export const fetchViajes = async (): Promise<Viaje[]> => {
@@ -103,7 +105,8 @@ export const updateViaje = async (viaje: Viaje): Promise<Viaje> => {
             horario: viaje.horario,
             numero_viaje: viaje.numero_viaje,
             cantidad_viajes: viaje.cantidad_viajes,
-            total_materia: viaje.total_materia
+            total_materia: viaje.total_materia,
+            observaciones: viaje.observaciones
         })
         .eq('id', viaje.id)
         .select('*')
