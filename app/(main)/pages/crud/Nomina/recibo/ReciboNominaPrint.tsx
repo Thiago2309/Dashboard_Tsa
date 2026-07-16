@@ -11,103 +11,330 @@ export const ReciboNominaPrint = forwardRef<HTMLDivElement, ReciboNominaProps>((
     return new Intl.NumberFormat("es-MX", {
       style: "currency",
       currency: "MXN",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     }).format(amount || 0);
   };
 
-  // Lógica de pago por alcance de meta
-  let pagoAlcanceMeta = 0;
-  let rebaso = false;
+  // Calcular valores usando los datos reales de la nómina
+  const pagoAlcanceMeta = nomina.pago_alcance_meta || 0;
+  const bono = nomina.bono || 0;
+  const pagoBruto = nomina.pago_bruto || (pagoAlcanceMeta + bono);
+  
+  // Descuentos
+  const descuentoInfonavit = nomina.descuento_infonavit || 0;
+  const descuentoFonacot = nomina.descuento_fonacot || 0;
+  const otrosDescuentos = nomina.otros_descuentos || 0;
+  const descuentoPrestamo = nomina.prestamos || 0;
+  const descuentoAdministrativo = nomina.descuento_administrativo || 0;
+  
+  // Total de descuentos
+  const totalDescuentos = descuentoInfonavit + descuentoFonacot + otrosDescuentos + descuentoPrestamo + descuentoAdministrativo;
+  
+  // Pago neto (ya viene calculado en la nómina, pero lo recalculamos para estar seguros)
+  const netTotal = nomina.pago_neto || (pagoBruto - totalDescuentos);
 
-  if (nomina.total_viajes > 40000) {
-      pagoAlcanceMeta = nomina.total_viajes * 0.1;
-      rebaso = true;
-  } else {
-      pagoAlcanceMeta = 40000 * 0.1;
-      rebaso = false;
-  }
+  // Función para formatear el rango de fechas
+  const formatDateRange = () => {
+    if (!nomina.fecha_inicio || !nomina.fecha_fin) return "Fecha no disponible";
+    
+    try {
+      const [yearInicio, monthInicio, dayInicio] = nomina.fecha_inicio.split('-').map(Number);
+      const [yearFin, monthFin, dayFin] = nomina.fecha_fin.split('-').map(Number);
+      
+      const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+      const mes = meses[monthInicio - 1];
+      
+      return `${dayInicio} AL ${dayFin} ${mes} ${yearInicio}`;
+    } catch (error) {
+      return "Fecha no disponible";
+    }
+  };
 
-  const totalGross = pagoAlcanceMeta + (nomina.bono || 0);
-  const netTotal = totalGross - (nomina.prestamos || 0);
+  // Función para formatear fecha larga (para la parte inferior)
+  const formatDateLong = () => {
+    try {
+      const fecha = new Date();
+      return fecha.toLocaleDateString('es-ES', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
+    } catch (error) {
+      return new Date().toLocaleDateString('es-ES');
+    }
+  };
 
   return (
-    <div ref={ref} className="w-full max-w-md mx-auto bg-white p-4 font-sans text-xs print:p-2 print:max-w-none landscape-layout">
-      {/* Contenedor principal horizontal más estrecho */}
-      <div className="flex flex-row">
-        {/* Sección izquierda - Información principal */}
-        <div className="w-3/5 pr-3 border-r border-gray-300">
-          {/* Encabezado compacto */}
-          <div className="text-center mb-4">
-            <h1 className="text-lg font-bold uppercase">Recibo de Nómina</h1>
-            <p className="text-xs text-gray-600 mt-1">Transportes MX</p>
-          </div>
+    <div 
+      ref={ref} 
+      className="recibo-print-container"
+      style={{
+        width: '100%',
+        maxWidth: '850px',
+        margin: '0 auto',
+        backgroundColor: 'white',
+        padding: '25px 30px',
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '13px',
+        border: '1px solid #d1d5db',
+        borderRadius: '6px'
+      }}
+    >
+      {/* Encabezado con el nombre del empleado */}
+      <div style={{ 
+        textAlign: 'center', 
+        marginBottom: '15px',
+        borderBottom: '2px solid #000',
+        paddingBottom: '8px'
+      }}>
+        <h2 style={{ 
+          fontSize: '20px', 
+          fontWeight: 'bold', 
+          textTransform: 'uppercase',
+          margin: 0,
+          letterSpacing: '1px'
+        }}>
+          {nomina.empleado_nombre || "NOMBRE DEL EMPLEADO"}
+        </h2>
+      </div>
 
-          {/* Información del empleado compacta */}
-          <div className="mb-4">
-            <div className="flex justify-between mb-1">
-              <span className="font-semibold">Nombre:</span>
-              <span>{nomina.empleado_nombre || "MARCO BAEZA"}</span>
-            </div>
-            <div className="flex justify-between mb-1">
-              <span className="font-semibold">Semana:</span>
-              <span>Semana {nomina.semana || "33"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="font-semibold">Fecha:</span>
-              <span>8-14 ago 2025</span>
-            </div>
-          </div>
-
-          {/* Detalles de pago compactos */}
-          <div className="mb-4">
-            <div className="flex justify-between py-1 border-b border-gray-200">
-              <span>NÓMINA</span>
-              <span className="font-semibold">{formatCurrency(netTotal)}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-gray-200">
-              <span>DESCUENTO</span>
-              <span>{formatCurrency(nomina.prestamos || 0)}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-gray-200">
-              <span>SALDO PRÉSTAMO</span>
-              <span>{formatCurrency(0)}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-gray-200">
-              <span>FONACOT</span>
-              <span>{formatCurrency(0)}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-gray-200">
-              <span>VIÁTICOS</span>
-              <span>{formatCurrency(0)}</span>
-            </div>
-          </div>
-
-          {/* Total compacto */}
-          <div className="mb-4 text-center border-t border-b border-gray-300 py-2">
-            <div className="text-md font-bold">{formatCurrency(netTotal)}</div>
-            <div className="text-xs text-gray-600">16/ago/2025</div>
+      {/* Contenido principal en dos columnas */}
+      <div style={{ 
+        display: 'flex', 
+        gap: '30px',
+        marginBottom: '15px'
+      }}>
+        {/* Columna izquierda - Texto legal */}
+        <div style={{ 
+          flex: '0 0 60%',
+          fontSize: '12px',
+          lineHeight: '1.5'
+        }}>
+          <p style={{ margin: '0 0 8px 0' }}>
+            Este recibo es un comprobante que recibió de la empresa por la cantidad de
+          </p>
+          <p style={{ 
+            margin: '0 0 8px 0',
+            fontSize: '22px',
+            fontWeight: 'bold',
+            color: '#1a1a1a'
+          }}>
+            {formatCurrency(netTotal)}
+          </p>
+          <p style={{ margin: '0 0 8px 0' }}>
+            como pago correspondiente a la reserva número {nomina.semana || "N/A"} de fecha
+          </p>
+          <p style={{ 
+            margin: '0 0 8px 0',
+            fontWeight: '600'
+          }}>
+            {formatDateRange()}
+          </p>
+          <p style={{ margin: '8px 0 0 0' }}>
+            a continuación por las partes que se contrataron, por lo que con el cumplimiento
+            del pago a mi persona, no existe cantidad y reclamación alguna que quiera
+            realizar a la empresa.
+          </p>
+          
+          {/* Firma */}
+          <div style={{ 
+            marginTop: '20px',
+            borderTop: '1px solid #000',
+            paddingTop: '5px',
+            width: '80%'
+          }}>
+            <p style={{ 
+              fontWeight: 'bold', 
+              textTransform: 'uppercase',
+              fontSize: '13px',
+              margin: 0
+            }}>
+              {nomina.empleado_nombre || "NOMBRE DEL EMPLEADO"}
+            </p>
           </div>
         </div>
 
-        {/* Sección derecha - Texto legal y firma (más estrecha) */}
-        <div className="w-2/5 pl-3 flex flex-col justify-between">
-          {/* Texto de conformidad más compacto */}
-          <div className="text-xs leading-tight">
-            <p>Este recibo es un comprobante que recibí de la empresa por la cantidad de {formatCurrency(netTotal)} como pago correspondiente a la semana numero {nomina.semana || "33"} de fecha 8 AL 14 ago 2025</p>
-            <p className="mt-1">y consentido por las partes que se contrataron, por lo que con el cumplimiento del pago a mi persona, no existe cantidad y reclamación alguna que pueda realizar a la empresa.</p>
-          </div>
-
-          {/* Firma compacta */}
-          <div className="text-center mt-2">
-            <div className="border-t border-gray-400 mx-auto w-24 pt-1">
-              <p className="font-semibold uppercase text-xs">{nomina.empleado_nombre || "MARCO BAEZA"}</p>
+        {/* Columna derecha - Detalles de pago */}
+        <div style={{ 
+          flex: '1',
+          borderLeft: '2px solid #000',
+          paddingLeft: '20px'
+        }}>
+          {/* Detalles de nómina */}
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              padding: '3px 0',
+              borderBottom: '1px solid #e5e7eb'
+            }}>
+              <span style={{ fontWeight: 'bold' }}>NOMINA</span>
+              <span style={{ fontWeight: 'bold' }}>{formatCurrency(pagoBruto)}</span>
+            </div>
+            
+            {/* Pago por alcance de meta */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              padding: '3px 0',
+              fontSize: '11px',
+              color: '#4b5563'
+            }}>
+              <span>Pago Bruto</span>
+              <span>{formatCurrency(pagoAlcanceMeta)}</span>
+            </div>
+            
+            {/* Bono si tiene */}
+            {bono > 0 && (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                padding: '3px 0',
+                fontSize: '11px',
+                color: '#4b5563'
+              }}>
+                <span>Bono</span>
+                <span>{formatCurrency(bono)}</span>
+              </div>
+            )}
+            
+            {/* Línea separadora */}
+            <div style={{ 
+              borderTop: '1px dashed #d1d5db',
+              margin: '4px 0'
+            }}></div>
+            
+            {/* DESCUENTOS */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              padding: '3px 0',
+              color: '#4b5563'
+            }}>
+              <span style={{ fontWeight: 'bold' }}>DESCUENTOS</span>
+              <span style={{ fontWeight: 'bold' }}>{formatCurrency(totalDescuentos)}</span>
+            </div>
+            
+            {/* Infonavit */}
+            {descuentoInfonavit > 0 && (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                padding: '2px 0',
+                fontSize: '11px',
+                color: '#4b5563'
+              }}>
+                <span>Infonavit</span>
+                <span>{formatCurrency(descuentoInfonavit)}</span>
+              </div>
+            )}
+            
+            {/* Fonacot */}
+            {descuentoFonacot > 0 && (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                padding: '2px 0',
+                fontSize: '11px',
+                color: '#4b5563'
+              }}>
+                <span>Fonacot</span>
+                <span>{formatCurrency(descuentoFonacot)}</span>
+              </div>
+            )}
+            
+            {/* Otros descuentos */}
+            {otrosDescuentos > 0 && (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                padding: '2px 0',
+                fontSize: '11px',
+                color: '#4b5563'
+              }}>
+                <span>Otros Descuentos</span>
+                <span>{formatCurrency(otrosDescuentos)}</span>
+              </div>
+            )}
+            
+            {/* Préstamo */}
+            {descuentoPrestamo > 0 && (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                padding: '2px 0',
+                fontSize: '11px',
+                color: '#4b5563'
+              }}>
+                <span>Préstamo</span>
+                <span>{formatCurrency(descuentoPrestamo)}</span>
+              </div>
+            )}
+            
+            {/* Descuento administrativo */}
+            {descuentoAdministrativo > 0 && (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                padding: '2px 0',
+                fontSize: '11px',
+                color: '#4b5563'
+              }}>
+                <span>Desc. Administrativo</span>
+                <span>{formatCurrency(descuentoAdministrativo)}</span>
+              </div>
+            )}
+            
+            {/* Línea separadora */}
+            <div style={{ 
+              borderTop: '1px dashed #d1d5db',
+              margin: '4px 0'
+            }}></div>
+            
+            {/* TOTAL NETO */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              padding: '5px 0',
+              borderTop: '2px solid #000',
+              marginTop: '2px'
+            }}>
+              <span style={{ fontWeight: 'bold', fontSize: '14px' }}>TOTAL NETO</span>
+              <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#4b5563' }}>
+                {formatCurrency(netTotal)}
+              </span>
             </div>
           </div>
 
-          {/* Información adicional compacta */}
-          <div className="text-xs text-center mt-2 text-gray-600">
-            <p>Documento generado electrónicamente</p>
+          {/* Número de semana y fecha */}
+          <div style={{ 
+            borderTop: '1px solid #d1d5db',
+            paddingTop: '8px',
+            marginTop: '8px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+              {nomina.semana || "N/A"}
+            </div>
+            <div style={{ fontSize: '11px', color: '#6b7280' }}>
+              {formatDateLong()}
+            </div>
           </div>
         </div>
+      </div>
+
+      {/* Fecha en la parte inferior */}
+      <div style={{ 
+        textAlign: 'center',
+        fontSize: '11px',
+        color: '#6b7280',
+        borderTop: '1px solid #e5e7eb',
+        paddingTop: '8px',
+        marginTop: '5px'
+      }}>
+        Documento generado electrónicamente
       </div>
     </div>
   );

@@ -51,6 +51,7 @@ const LogisticaCrud = () => {
     const [viajeDialog, setViajeDialog] = useState(false);
     const [deleteViajeDialog, setDeleteViajeDialog] = useState(false);
     const [selectedViajes, setSelectedViajes] = useState<LogisticaViaje[]>([]);
+    const [viajesDiaActual, setViajesDiaActual] = useState<LogisticaViaje[]>([]);
     const [viaje, setViaje] = useState<LogisticaViaje>(emptyViaje);
     const [submitted, setSubmitted] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -122,14 +123,44 @@ const LogisticaCrud = () => {
                 fetchEstadisticasLogistica()
             ]);
 
+            // Filtrar viajes del día actual
+            const hoy = new Date();
+            hoy.setHours(0, 0, 0, 0);
+            const manana = new Date(hoy);
+            manana.setDate(manana.getDate() + 1);
+
+            const viajesHoy = viajesData.filter(viaje => {
+                if (!viaje.fecha_asignacion) return false;
+                const fechaViaje = new Date(viaje.fecha_asignacion);
+                return fechaViaje >= hoy && fechaViaje < manana;
+            });
+
+            console.log('Viajes del día actual:', viajesHoy);
+
+            // Calcular estadísticas solo con viajes del día actual
+            const total = viajesHoy.length;
+            const pendientes = viajesHoy.filter(v => v.estado === 'pendiente').length;
+            const asignados = viajesHoy.filter(v => v.estado === 'asignado').length;
+            const enCurso = viajesHoy.filter(v => v.estado === 'en_curso').length;
+            const completados = viajesHoy.filter(v => v.estado === 'completado').length;
+            const cancelados = viajesHoy.filter(v => v.estado === 'cancelado').length;
+
             setViajes(viajesData);
+            setViajesDiaActual(viajesHoy);
             setClientes(clientesData);
             setOperadores(operadoresData);
             setMateriales(materialesData);
             setM3Options(m3Data);
             setPreciosOrigenDestino(preciosData);
             setInvitados(invitadosData);
-            setEstadisticas(statsData);
+            setEstadisticas({
+                total,
+                pendientes,
+                asignados,
+                enCurso,
+                completados,
+                cancelados
+            });
         } catch (error) {
             console.error('Error cargando datos:', error);
             toast.current?.show({
@@ -145,7 +176,8 @@ const LogisticaCrud = () => {
 
     // Filtrar por rango de fechas y otros filtros
     const viajesFiltrados = useMemo(() => {
-        let resultado = viajes;
+        // Si hay filtros aplicados, usar todos los viajes; si no, solo los del día actual
+        let resultado = filtrosAplicados ? viajes : viajesDiaActual;
         
         // Filtro por folio
         if (filtros.folio) {
@@ -184,38 +216,40 @@ const LogisticaCrud = () => {
             resultado = resultado.filter(v => v.horario === filtros.horario);
         }
 
-        // Filtro por rango de fechas
-        if (filtros.fechaInicio && filtros.fechaFin) {
-            const inicio = new Date(filtros.fechaInicio);
-            inicio.setHours(0, 0, 0, 0);
-            const fin = new Date(filtros.fechaFin);
-            fin.setHours(23, 59, 59, 999);
-            
-            resultado = resultado.filter(v => {
-                if (!v.fecha_asignacion) return false;
-                const fecha = new Date(v.fecha_asignacion);
-                return fecha >= inicio && fecha <= fin;
-            });
-        } else if (filtros.fechaInicio) {
-            const inicio = new Date(filtros.fechaInicio);
-            inicio.setHours(0, 0, 0, 0);
-            resultado = resultado.filter(v => {
-                if (!v.fecha_asignacion) return false;
-                const fecha = new Date(v.fecha_asignacion);
-                return fecha >= inicio;
-            });
-        } else if (filtros.fechaFin) {
-            const fin = new Date(filtros.fechaFin);
-            fin.setHours(23, 59, 59, 999);
-            resultado = resultado.filter(v => {
-                if (!v.fecha_asignacion) return false;
-                const fecha = new Date(v.fecha_asignacion);
-                return fecha <= fin;
-            });
+        // Filtro por rango de fechas (solo si hay filtros aplicados)
+        if (filtrosAplicados) {
+            if (filtros.fechaInicio && filtros.fechaFin) {
+                const inicio = new Date(filtros.fechaInicio);
+                inicio.setHours(0, 0, 0, 0);
+                const fin = new Date(filtros.fechaFin);
+                fin.setHours(23, 59, 59, 999);
+                
+                resultado = resultado.filter(v => {
+                    if (!v.fecha_asignacion) return false;
+                    const fecha = new Date(v.fecha_asignacion);
+                    return fecha >= inicio && fecha <= fin;
+                });
+            } else if (filtros.fechaInicio) {
+                const inicio = new Date(filtros.fechaInicio);
+                inicio.setHours(0, 0, 0, 0);
+                resultado = resultado.filter(v => {
+                    if (!v.fecha_asignacion) return false;
+                    const fecha = new Date(v.fecha_asignacion);
+                    return fecha >= inicio;
+                });
+            } else if (filtros.fechaFin) {
+                const fin = new Date(filtros.fechaFin);
+                fin.setHours(23, 59, 59, 999);
+                resultado = resultado.filter(v => {
+                    if (!v.fecha_asignacion) return false;
+                    const fecha = new Date(v.fecha_asignacion);
+                    return fecha <= fin;
+                });
+            }
         }
         
         return resultado;
-    }, [viajes, filtros]);
+    }, [viajes, viajesDiaActual, filtros, filtrosAplicados]);
 
     // Función para obtener el filtro global (para DataTable)
     const obtenerFiltroGlobal = useCallback(() => {
@@ -1003,7 +1037,7 @@ const LogisticaCrud = () => {
                     <>
                         <Button label="Limpiar" icon="pi pi-times" severity="danger" text onClick={limpiarFiltros} />
                         <Button label="Cancelar" icon="pi pi-times" text onClick={() => setFiltroDialog(false)} />
-                        <Button label="Aplicar Filtros" icon="pi pi-check" onClick={aplicarFiltros} />
+                        <Button label="Mostrar viajes" icon="pi pi-check" onClick={aplicarFiltros} />
                     </>
                 } 
                 onHide={() => setFiltroDialog(false)}
@@ -1141,11 +1175,22 @@ const LogisticaCrud = () => {
                     </div>
                 </div>
 
+                {/* Modificar el mensaje de filtros activos */}
                 {filtrosAplicados && (
-                    <div className="mt-3 p-2 bg-blue-50 border-round">
+                    <div className="mb-3 p-2 bg-blue-50 border-round">
                         <span className="text-sm text-blue-700">
                             <i className="pi pi-info-circle mr-1" />
-                            Filtros activos: {obtenerFiltroGlobal() || 'Ninguno'}
+                            Filtros activos (aplicados a todos los viajes): {obtenerFiltroGlobal() || 'Ninguno'}
+                        </span>
+                    </div>
+                )}
+
+                {/* Indicador de viajes del día (solo cuando no hay filtros) */}
+                {!filtrosAplicados && viajesDiaActual.length > 0 && (
+                    <div className="mb-3 p-2 bg-green-50 border-round">
+                        <span className="text-sm text-green-700">
+                            <i className="pi pi-calendar mr-1" />
+                            Mostrando solo viajes del día actual ({viajesDiaActual.length} viajes)
                         </span>
                     </div>
                 )}

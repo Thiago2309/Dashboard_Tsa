@@ -21,6 +21,7 @@ import { createViaje } from '../../../../../Services/BD/viajeService';
 
 const LogisticaAdmin = () => {
     const [viajes, setViajes] = useState<LogisticaViaje[]>([]);
+    const [viajesDiaActual, setViajesDiaActual] = useState<LogisticaViaje[]>([]);
     const [estadisticas, setEstadisticas] = useState({
         total: 0,
         pendientes: 0,
@@ -49,15 +50,36 @@ const LogisticaAdmin = () => {
             const viajesData = await fetchViajesLogistica();
             setViajes(viajesData);
 
-            const stats = {
-                total: viajesData.length,
-                pendientes: viajesData.filter(v => v.estado === 'pendiente').length,
-                asignados: viajesData.filter(v => v.estado === 'asignado').length,
-                enCurso: viajesData.filter(v => v.estado === 'en_curso').length,
-                completados: viajesData.filter(v => v.estado === 'completado').length,
-                cancelados: viajesData.filter(v => v.estado === 'cancelado').length
-            };
-            setEstadisticas(stats);
+             // Filtrar viajes del día actual
+            const hoy = new Date();
+            hoy.setHours(0, 0, 0, 0);
+            const manana = new Date(hoy);
+            manana.setDate(manana.getDate() + 1);
+
+            const viajesHoy = viajesData.filter(viaje => {
+                if (!viaje.fecha_asignacion) return false;
+                const fechaViaje = new Date(viaje.fecha_asignacion);
+                return fechaViaje >= hoy && fechaViaje < manana;
+            });
+
+            console.log('Viajes del día actual:', viajesHoy);
+
+            // Calcular estadísticas solo con viajes del día actual
+            const total = viajesHoy.length;
+            const pendientes = viajesHoy.filter(v => v.estado === 'pendiente').length;
+            const asignados = viajesHoy.filter(v => v.estado === 'asignado').length;
+            const enCurso = viajesHoy.filter(v => v.estado === 'en_curso').length;
+            const completados = viajesHoy.filter(v => v.estado === 'completado').length;
+            const cancelados = viajesHoy.filter(v => v.estado === 'cancelado').length;
+
+            setEstadisticas({
+                total,
+                pendientes,
+                asignados,
+                enCurso,
+                completados,
+                cancelados
+            });
         } catch (error) {
             console.error('Error cargando datos:', error);
             toast.current?.show({
@@ -292,8 +314,21 @@ const LogisticaAdmin = () => {
         }
     }, [cargarDatos]);
 
-    // Ordenar viajes por prioridad de estado
+    // Ordenar viajes por prioridad de estado (solo los del día actual)
     const viajesOrdenados = useMemo(() => {
+        // Primero filtrar solo los viajes del día actual
+        const hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+        const manana = new Date(hoy);
+        manana.setDate(manana.getDate() + 1);
+
+        const viajesHoy = viajes.filter(viaje => {
+            if (!viaje.fecha_asignacion) return false;
+            const fechaViaje = new Date(viaje.fecha_asignacion);
+            return fechaViaje >= hoy && fechaViaje < manana;
+        });
+
+        // Luego ordenar los viajes filtrados
         const priority: Record<string, number> = {
             asignado: 1,
             en_curso: 2,
@@ -301,7 +336,8 @@ const LogisticaAdmin = () => {
             pendiente: 4,
             cancelado: 5
         };
-        return [...viajes].sort((a, b) => {
+        
+        return [...viajesHoy].sort((a, b) => {
             const pa = priority[a.estado] ?? 99;
             const pb = priority[b.estado] ?? 99;
             if (pa !== pb) return pa - pb;
