@@ -93,14 +93,28 @@ const Crud = () => {
     try {
         let resultados = viajes.slice();
 
-        // Filtrar por rango de fechas
-        if (filtros.fechaInicio) {
-            const inicio = new Date(filtros.fechaInicio);
-            resultados = resultados.filter(v => new Date(v.fecha) >= inicio);
-        }
-        if (filtros.fechaFin) {
-            const fin = new Date(filtros.fechaFin);
-            resultados = resultados.filter(v => new Date(v.fecha) <= fin);
+        // Filtrar por rango de fechas - USANDO STRINGS PARA COMPARAR
+        if (filtros.fechaInicio && filtros.fechaFin) {
+            const inicioStr = filtros.fechaInicio.toISOString().split('T')[0];
+            const finStr = filtros.fechaFin.toISOString().split('T')[0];
+            
+            resultados = resultados.filter(v => {
+                // Extraer solo la fecha en formato YYYY-MM-DD
+                const fechaViajeStr = v.fecha.split('T')[0] || v.fecha;
+                return fechaViajeStr >= inicioStr && fechaViajeStr <= finStr;
+            });
+        } else if (filtros.fechaInicio) {
+            const inicioStr = filtros.fechaInicio.toISOString().split('T')[0];
+            resultados = resultados.filter(v => {
+                const fechaViajeStr = v.fecha.split('T')[0] || v.fecha;
+                return fechaViajeStr >= inicioStr;
+            });
+        } else if (filtros.fechaFin) {
+            const finStr = filtros.fechaFin.toISOString().split('T')[0];
+            resultados = resultados.filter(v => {
+                const fechaViajeStr = v.fecha.split('T')[0] || v.fecha;
+                return fechaViajeStr <= finStr;
+            });
         }
 
         // Filtrar por cliente: algunos objetos `viajes` no contienen `id_cliente`, por eso

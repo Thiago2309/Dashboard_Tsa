@@ -4,7 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Tag } from 'primereact/tag';
+import { Button } from 'primereact/button';
 import { getMovimientosByProducto, MovimientoInventario } from '../../../Services/BD/inventario/inventarioService';
+import { ModalTicketSalida } from './ModalTicketSalida';
 
 interface HistorialMovimientosProps {
     productoId: number;
@@ -13,6 +15,8 @@ interface HistorialMovimientosProps {
 const HistorialMovimientos: React.FC<HistorialMovimientosProps> = ({ productoId }) => {
     const [movimientos, setMovimientos] = useState<MovimientoInventario[]>([]);
     const [loading, setLoading] = useState(true);
+    const [ticketDialog, setTicketDialog] = useState(false);
+    const [movimientoTicket, setMovimientoTicket] = useState<MovimientoInventario | null>(null);
 
     useEffect(() => {
         if (productoId > 0) {
@@ -33,6 +37,11 @@ const HistorialMovimientos: React.FC<HistorialMovimientosProps> = ({ productoId 
         }
     };
 
+    const abrirTicket = (movimiento: MovimientoInventario) => {
+        setMovimientoTicket(movimiento);
+        setTicketDialog(true);
+    };
+
     const tipoBodyTemplate = (rowData: MovimientoInventario) => {
         return (
             <Tag
@@ -46,21 +55,52 @@ const HistorialMovimientos: React.FC<HistorialMovimientosProps> = ({ productoId 
         return new Date(rowData.fecha).toLocaleString('es-MX');
     };
 
+    const detalleBodyTemplate = (rowData: MovimientoInventario) => {
+        if (rowData.tipo === 'entrada') {
+            return (
+                <div className="text-sm">
+                    {rowData.proveedor?.nombre && <div>Proveedor: {rowData.proveedor.nombre}</div>}
+                    {rowData.tipo_pago && <div>Pago: {rowData.tipo_pago === 'credito' ? 'Crédito' : 'Contado'}</div>}
+                    {rowData.folio && <div>Folio: {rowData.folio}</div>}
+                </div>
+            );
+        }
+        return <div className="text-sm">{rowData.orden_trabajo ? `OT: ${rowData.orden_trabajo}` : '—'}</div>;
+    };
+
+    const accionesBodyTemplate = (rowData: MovimientoInventario) => {
+        if (rowData.tipo !== 'salida') return null;
+        return (
+            <Button
+                icon="pi pi-file-pdf"
+                rounded
+                text
+                severity="info"
+                tooltip="Generar Ticket de Salida"
+                onClick={() => abrirTicket(rowData)}
+            />
+        );
+    };
+
     return (
-        <DataTable value={movimientos} loading={loading} size="small" emptyMessage="No hay movimientos registrados">
-            <Column field="id" header="#" style={{ width: '70px' }} />
-            <Column field="tipo" header="Tipo" body={tipoBodyTemplate} style={{ width: '120px' }} />
-            <Column field="cantidad" header="Cantidad" style={{ width: '100px' }} />
-            <Column field="motivo" header="Motivo" />
-            <Column field="camion_id" header="Camión" body={(rowData) => {
-                if (!rowData.camion_id) return '—';
-                return `ID: ${rowData.camion_id}`;
-            }} style={{ width: '120px' }} />
-            <Column field="usuario_id" header="Usuario" body={(rowData) => {
-                return rowData.usuario_id || '—';
-            }} style={{ width: '150px' }} />
-            <Column field="fecha" header="Fecha y Hora" body={fechaBodyTemplate} style={{ width: '200px' }} />
-        </DataTable>
+        <>
+            <DataTable value={movimientos} loading={loading} size="small" emptyMessage="No hay movimientos registrados">
+                <Column field="id" header="#" style={{ width: '60px' }} />
+                <Column field="tipo" header="Tipo" body={tipoBodyTemplate} style={{ width: '110px' }} />
+                <Column field="cantidad" header="Cantidad" style={{ width: '90px' }} />
+                <Column field="motivo" header="Motivo" />
+                <Column header="Detalle" body={detalleBodyTemplate} style={{ minWidth: '160px' }} />
+                <Column field="usuario_id" header="Usuario" body={(rowData) => rowData.usuario_id || '—'} style={{ width: '130px' }} />
+                <Column field="fecha" header="Fecha y Hora" body={fechaBodyTemplate} style={{ width: '180px' }} />
+                <Column header="Ticket" body={accionesBodyTemplate} style={{ width: '80px' }} />
+            </DataTable>
+
+            <ModalTicketSalida
+                visible={ticketDialog}
+                onHide={() => setTicketDialog(false)}
+                movimiento={movimientoTicket}
+            />
+        </>
     );
 };
 

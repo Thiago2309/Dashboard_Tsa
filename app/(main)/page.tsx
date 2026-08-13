@@ -15,6 +15,7 @@ import { Viaje, fetchViajes } from '../../Services/BD/viajeService';
 import { Gasto, fetchGastos } from '../../Services/BD/gastoService';
 import { CajaChica, fetchCajaChica } from '../../Services/BD/cajaChicaService';
 import { fetchTodosClientesConCuentas } from '../../Services/BD/cuentasPorCobrarService';
+import { getProductos, Inventario } from '../../Services/BD/inventario/inventarioService';
 import { getUserRoleIdFromLocalStorage } from '@/Services/BD/userService';
 import LogisticaTabla from '../../app/(main)/pages/crud/Logistica/LogisticaEmpleadoTabla';
 import LogisticaAdmin from '../../app/(main)/pages/crud/Logistica/LogisticaAdmin';
@@ -71,12 +72,20 @@ const calcularSaldoTotal = (cajaChicaList: CajaChica[]): number => {
     }, 0);
 };
 
+// Función para calcular el valor monetario total del inventario (stock actual x precio por unidad)
+const calcularValorInventario = (productos: Inventario[]): number => {
+    return productos.reduce((total, item) => {
+        return total + item.stock_actual * (item.precio_compra || 0);
+    }, 0);
+};
+
 const Dashboard = () => {
     const [products, setProducts] = useState<Demo.Product[]>([]);
     const [viajes, setViajes] = useState<Viaje[]>([]);
     const [gastos, setGastos] = useState<Gasto[]>([]);
     const [cajaChica, setCajaChica] = useState<CajaChica[]>([]);
     const [totalPorCobrar, setTotalPorCobrar] = useState<number>(0);
+    const [totalInventario, setTotalInventario] = useState<number>(0);
     const [loading, setLoading] = useState(true);
     const menu1 = useRef<Menu>(null);
     const menu2 = useRef<Menu>(null);
@@ -106,16 +115,18 @@ const Dashboard = () => {
     const loadDashboardData = async () => {
         try {
             setLoading(true);
-            const [viajesData, gastosData, cajaChicaData, cuentasData] = await Promise.all([
+            const [viajesData, gastosData, cajaChicaData, cuentasData, productosInventario] = await Promise.all([
                 fetchViajes(),
                 fetchGastos(),
                 fetchCajaChica(),
-                loadCuentasPorCobrar()
+                loadCuentasPorCobrar(),
+                getProductos()
             ]);
-            
+
             setViajes(viajesData);
             setGastos(gastosData);
             setCajaChica(cajaChicaData);
+            setTotalInventario(calcularValorInventario(productosInventario));
         } catch (error) {
             console.error('Error loading dashboard data:', error);
         } finally {
@@ -386,7 +397,36 @@ const Dashboard = () => {
                 </Link>
             </div>
 
-            {/* card 6: Seguimineto de viajes tirados */}
+            {/* Card 6: Total de Inventario - solo visible para el admin */}
+            {isAdmin && (
+                <div className="col-12 lg:col-6 xl:col-3">
+                    <Link href="/inventario" className="no-underline">
+                        <div className="card mb-0 cursor-pointer hover:shadow-2 transition-all transition-duration-300">
+                            <div className="flex justify-content-between mb-3">
+                                <div>
+                                    <span className="block text-500 font-medium mb-3">Total de Inventario</span>
+                                    <div className="text-900 font-medium text-xl">
+                                        {loading ? (
+                                            <i className="pi pi-spinner pi-spin"></i>
+                                        ) : (
+                                            `$ ${totalInventario.toLocaleString('en-US', {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2
+                                            })}`
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex align-items-center justify-content-center bg-blue-100 border-round" style={{ width: '2.5rem', height: '2.5rem' }}>
+                                    <i className="pi pi-box text-blue-500 text-xl" />
+                                </div>
+                            </div>
+                            <span className="text-500 text-blue-500">Click para ver detalles</span>
+                        </div>
+                    </Link>
+                </div>
+            )}
+
+            {/* card 7: Seguimineto de viajes tirados */}
             <div className="surface-border border-round p-3">
                 <LogisticaAdmin />
             </div>

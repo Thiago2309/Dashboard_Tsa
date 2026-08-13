@@ -3,8 +3,8 @@
 import { Column } from 'primereact/column';
 import { DataTable } from 'primereact/datatable';
 import { Toast } from 'primereact/toast';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { 
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
     LogisticaViaje,
     fetchViajesAsignadosPorOperador,
 } from '../../../../../Services/BD/logistica/logisticaService';
@@ -53,6 +53,7 @@ const LogisticaEmpleadoTabla = () => {
     };
 
     const cargarDatos = useCallback(async () => {
+        console.log('🔄 Cargando datos...');
         setLoading(true);
         try {
             const [viajesData, operadorData] = await Promise.all([
@@ -73,9 +74,18 @@ const LogisticaEmpleadoTabla = () => {
                 })()
             ]);
 
-            const viajesFiltrados = filtrarViajesPorFechaAsignacion(viajesData);
+            const viajesFiltrados = getEstadoLabel('completado') ? filtrarViajesPorFechaAsignacion(viajesData) : viajesData;
+            console.log('📊 Viajes cargados:', viajesFiltrados.length);
+            console.log('📋 Detalle de viajes:', viajesFiltrados.map(v => ({
+                id: v.id,
+                folio: v.folio,
+                estado: v.estado,
+                fecha_asignacion: v.fecha_asignacion
+            })));
+
             setViajes(viajesFiltrados);
             setCamionFull(operadorData);
+            console.log('🚛 Modo Full:', operadorData);
         } catch (error) {
             console.error('Error cargando datos:', error);
             toast.current?.show({
@@ -93,30 +103,68 @@ const LogisticaEmpleadoTabla = () => {
         cargarDatos();
     }, [cargarDatos]);
 
-    const obtenerViajesVisibles = useCallback(() => {
+    // CALCULAR VIAJES VISIBLES
+    // En modo Full: siempre mostrar los primeros 2 viajes (ordenados por fecha de asignación)
+    // En modo Normal: mostrar el primer viaje no completado o, si no hay, un completado
+    const viajesVisibles = useMemo(() => {
+        console.log('🔍 Calculando viajes visibles...');
+        console.log('📦 Total viajes:', viajes.length);
+        console.log('🚛 Modo Full:', camionFull);
+
         if (camionFull) {
+            // Ordenar por fecha de asignación (ascendente)
+            const sorted = [...viajes].sort((a, b) => {
+                const dateA = new Date(a.fecha_asignacion || '').getTime();
+                const dateB = new Date(b.fecha_asignacion || '').getTime();
+                return dateA - dateB;
+            });
+            const resultado = sorted.slice(0, 2);
+            console.log('📊 Modo Full - Mostrando primeros 2 viajes:', resultado.map(v => ({ id: v.id, folio: v.folio, estado: v.estado })));
+            return resultado;
+        } else {
+            // Modo normal: priorizar un no completado, si no, un completado
             const noCompletados = viajes.filter(v => v.estado !== 'completado');
             const completados = viajes.filter(v => v.estado === 'completado');
-            const todos = [...noCompletados, ...completados];
-            return todos.slice(0, 2);
-        } else {
-            return viajes.filter(v => v.estado !== 'completado').slice(0, 1);
+
+            if (noCompletados.length > 0) {
+                const resultado = noCompletados.slice(0, 1);
+                console.log('📊 Modo Normal - Mostrando 1 no completado:', resultado.map(v => ({ id: v.id, folio: v.folio, estado: v.estado })));
+                return resultado;
+            }
+            const resultado = completados.slice(0, 1);
+            console.log('📊 Modo Normal - Mostrando 1 completado:', resultado.map(v => ({ id: v.id, folio: v.folio, estado: v.estado })));
+            return resultado;
         }
     }, [viajes, camionFull]);
 
+    const noCompletados = useMemo(() => {
+        const result = viajes.filter(v => v.estado !== 'completado');
+        console.log('📊 Actualizando no completados:', result.length);
+        return result;
+    }, [viajes]);
+
+    const pendientesCount = noCompletados.length;
+
     const cambiarEstado = async (rowData: LogisticaViaje, nuevoEstado: string) => {
-        if (rowData.estado === nuevoEstado) return;
+        console.log('🔄 Cambiando estado del viaje:', rowData.id, rowData.folio);
+        console.log('📌 Estado actual:', rowData.estado, '-> Nuevo estado:', nuevoEstado);
+
+        if (rowData.estado === nuevoEstado) {
+            console.log('⚠️ El estado ya es el mismo, no se hace nada');
+            return;
+        }
 
         try {
             setUpdating(rowData.id!);
-            
+
+            console.log('📤 Enviando update a Supabase...');
             const { error } = await supabase
                 .from('logistica')
                 .update({ estado: nuevoEstado })
                 .eq('id', rowData.id);
 
             if (error) {
-                console.error('Error actualizando estado:', error);
+                console.error('❌ Error actualizando estado:', error);
                 toast.current?.show({
                     severity: 'error',
                     summary: 'Error',
@@ -126,11 +174,20 @@ const LogisticaEmpleadoTabla = () => {
                 return;
             }
 
-            setViajes((prevViajes) =>
-                prevViajes.map((v) =>
+            console.log('✅ Estado actualizado en Supabase');
+
+            // Actualizar el estado localmente
+            setViajes((prevViajes) => {
+                console.log('🔄 Actualizando estado localmente...');
+                console.log('📋 Viajes antes:', prevViajes.map(v => ({ id: v.id, folio: v.folio, estado: v.estado })));
+
+                const nuevosViajes = prevViajes.map((v) =>
                     v.id === rowData.id ? { ...v, estado: nuevoEstado as any } : v
-                )
-            );
+                );
+
+                console.log('📋 Viajes después:', nuevosViajes.map(v => ({ id: v.id, folio: v.folio, estado: v.estado })));
+                return nuevosViajes;
+            });
 
             const estadoLabel = estadoOptions.find(e => e.value === nuevoEstado)?.label || nuevoEstado;
             toast.current?.show({
@@ -140,24 +197,35 @@ const LogisticaEmpleadoTabla = () => {
                 life: 3000
             });
 
+            // DESPUÉS DE COMPLETAR UN VIAJE, VERIFICAR SI AMBOS ESTÁN COMPLETADOS (solo en modo Full)
             if (nuevoEstado === 'completado') {
-                const noCompletados = viajes.filter(v => v.id !== rowData.id && v.estado !== 'completado');
-                
-                if (camionFull) {
-                    if (noCompletados.length === 0) {
-                        setTimeout(() => {
+                console.log('🎯 Viaje completado, verificando si todos están completados...');
+
+                setTimeout(() => {
+                    setViajes((currentViajes) => {
+                        const noCompletadosActuales = currentViajes.filter(v => v.estado !== 'completado');
+                        console.log('📊 Viajes no completados actuales:', noCompletadosActuales.length);
+                        console.log('📋 Detalle no completados:', noCompletadosActuales.map(v => ({ id: v.id, folio: v.folio, estado: v.estado })));
+
+                        // Si no hay viajes no completados (todos completados)
+                        if (noCompletadosActuales.length === 0) {
+                            console.log('✅ TODOS los viajes completados, cargando nuevos...');
                             cargarDatos();
-                        }, 500);
-                    }
-                } else {
-                    setTimeout(() => {
-                        cargarDatos();
-                    }, 500);
-                }
+                        } else {
+                            console.log(`⏳ Aún hay ${noCompletadosActuales.length} viajes no completados`);
+                            console.log('📋 Viajes no completados:', noCompletadosActuales.map(v => ({ id: v.id, folio: v.folio, estado: v.estado })));
+
+                            if (camionFull && noCompletadosActuales.length === 1) {
+                                console.log('⚠️ Solo falta 1 viaje por completar');
+                            }
+                        }
+                        return currentViajes;
+                    });
+                }, 500);
             }
 
         } catch (error) {
-            console.error('Error:', error);
+            console.error('❌ Error:', error);
             toast.current?.show({
                 severity: 'error',
                 summary: 'Error',
@@ -247,11 +315,7 @@ const LogisticaEmpleadoTabla = () => {
 
     const numeroviajesTempalte = (rowData: LogisticaViaje) => {
         return rowData.numero_viaje !== null ? rowData.numero_viaje : '-';
-    }
-
-    const viajesVisibles = obtenerViajesVisibles();
-    const noCompletados = viajes.filter(v => v.estado !== 'completado');
-    const pendientesCount = noCompletados.length;
+    };
 
     return (
         <div className="card">
@@ -260,12 +324,12 @@ const LogisticaEmpleadoTabla = () => {
             <div className="flex flex-column md:flex-row justify-content-between md:align-items-center gap-2 mb-3">
                 <div className="flex flex-column sm:flex-row align-items-start sm:align-items-center gap-2">
                     <h3 className="m-0">Mis Viajes Asignados</h3>
-                    <Button 
-                        icon="pi pi-refresh" 
-                        severity="secondary" 
-                        rounded 
-                        label="Recargar" 
-                        onClick={cargarDatos} 
+                    <Button
+                        icon="pi pi-refresh"
+                        severity="secondary"
+                        rounded
+                        label="Recargar"
+                        onClick={cargarDatos}
                         loading={loading}
                         tooltip="Recargar datos"
                         tooltipOptions={{ position: 'top' }}
@@ -284,14 +348,25 @@ const LogisticaEmpleadoTabla = () => {
                 </div>
             </div>
 
-            {camionFull && pendientesCount > 0 && pendientesCount < 2 && (
+            {/* Mensaje de advertencia: siempre visible en modo Full */}
+            {camionFull && (
                 <div className="bg-yellow-50 border-1 border-yellow-200 border-round p-3 mb-3">
-                    <div className="flex align-items-center gap-2">
+                    <div className="flex align-items-center gap-2">     
                         <i className="pi pi-info-circle text-yellow-500 text-xl" />
                         <span className="text-yellow-700 text-sm">
-                            <strong>Completa ambos viajes</strong> para que te aparezcan nuevos viajes asignados.
-                            <br className="block sm:hidden" />
-                            <span className="text-sm">Te falta completar {pendientesCount} viaje(s).</span>
+                            <strong>Completa ambos viajes</strong> para que te aparezcan nuevos viajes asignados y una vez COMPLETADOS favor de Recargar.
+                            {pendientesCount > 0 && (
+                                <>
+                                    <br className="block sm:hidden" />
+                                    <span className="text-sm"> Te faltan {pendientesCount} viaje(s) por completar.</span>
+                                </>
+                            )}
+                            {pendientesCount === 0 && (
+                                <>
+                                    <br className="block sm:hidden" />
+                                    <span className="text-sm"> ✅ ¡Ya completaste ambos! Espera nuevos viajes.</span>
+                                </>
+                            )}
                         </span>
                     </div>
                 </div>
@@ -302,7 +377,7 @@ const LogisticaEmpleadoTabla = () => {
                     <div className="text-center py-4 text-500">Cargando viajes...</div>
                 ) : viajesVisibles.length === 0 ? (
                     <div className="text-center py-4 text-500">
-                        {camionFull && viajes.filter(v => v.estado === 'completado').length > 0 ? 
+                        {camionFull && viajes.filter(v => v.estado === 'completado').length > 0 ?
                             '✅ ¡Todos los viajes completados! Espera nuevos viajes.' :
                             'No tienes viajes asignados para hoy'
                         }
@@ -392,8 +467,8 @@ const LogisticaEmpleadoTabla = () => {
                     className="datatable-responsive"
                     emptyMessage={
                         camionFull && viajes.filter(v => v.estado === 'completado').length > 0 ?
-                        '✅ ¡Todos los viajes completados! Espera nuevos viajes.' :
-                        'No tienes viajes asignados para hoy'
+                            '✅ ¡Todos los viajes completados! Espera nuevos viajes.' :
+                            'No tienes viajes asignados para hoy'
                     }
                     responsiveLayout="scroll"
                     loading={loading}
@@ -409,10 +484,10 @@ const LogisticaEmpleadoTabla = () => {
                     <Column field="material_nombre" header="Material" sortable body={materialBodyTemplate} />
                     <Column field="m3_nombre" header="M3" sortable body={m3BodyTemplate} />
                     <Column field="horario" header="Horario" sortable body={horarioBodyTemplate} />
-                    <Column 
-                        field="estado" 
-                        header="Estado" 
-                        body={estadoEditableBodyTemplate} 
+                    <Column
+                        field="estado"
+                        header="Estado"
+                        body={estadoEditableBodyTemplate}
                         headerStyle={{ minWidth: '150px' }}
                     />
                 </DataTable>
