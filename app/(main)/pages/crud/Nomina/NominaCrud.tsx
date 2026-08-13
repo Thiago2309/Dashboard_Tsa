@@ -653,7 +653,7 @@ const NominaModule = () => {
         const nominasActualizadas = nominasCalculadas.map(n => {
             if (n.id_operador === prestamoSeleccionado.id_operador) {
                 const descuentoFinal = aplicarDescuento ? Math.min(montoDescuento, n.prestamos_disponibles) : 0;
-                const nuevoPagoNeto = n.pago_bruto - descuentoFinal;
+                const nuevoPagoNeto = n.pago_bruto - (n.total_descuentos_automaticos || 0) - descuentoFinal;
                 
                 return {
                     ...n,

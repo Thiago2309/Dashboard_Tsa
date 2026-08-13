@@ -6,6 +6,7 @@ import { InputText } from 'primereact/inputtext';
 import { Button } from 'primereact/button';
 import { Dropdown } from 'primereact/dropdown';
 import { registrarEntrada, registrarSalida, getCamionesActivos, Inventario, Camion } from '../../../Services/BD/inventario/inventarioService';
+import { fetchProveedores, Proveedor } from '../../../Services/BD/provedoresService';
 
 interface MovimientoFormProps {
     producto: Inventario | null;
@@ -13,6 +14,16 @@ interface MovimientoFormProps {
     onSuccess: () => void;
     onCancel: () => void;
 }
+
+const comprobanteOptions = [
+    { label: 'Nota', value: 'nota' },
+    { label: 'Factura', value: 'factura' }
+];
+
+const tipoPagoOptions = [
+    { label: 'Contado', value: 'contado' },
+    { label: 'Crédito', value: 'credito' }
+];
 
 const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSuccess, onCancel }) => {
     const [cantidad, setCantidad] = useState<number>(1);
@@ -23,10 +34,26 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
     const [camionSeleccionadoId, setCamionSeleccionadoId] = useState<number | null>(null);
     const [usuario, setUsuario] = useState('');
 
+    // Campos de entrada (compra)
+    const [costoUnitario, setCostoUnitario] = useState<number | null>(null);
+    const [tipoComprobante, setTipoComprobante] = useState<'nota' | 'factura' | null>(null);
+    const [folio, setFolio] = useState('');
+    const [tipoPago, setTipoPago] = useState<'credito' | 'contado' | null>(null);
+    const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+    const [proveedorId, setProveedorId] = useState<number | null>(null);
+
+    // Campo de salida
+    const [ordenTrabajo, setOrdenTrabajo] = useState('');
+
     useEffect(() => {
         if (tipo === 'salida') {
             cargarCamiones();
+            setCostoUnitario(producto?.precio_compra ?? null);
+        } else {
+            cargarProveedores();
+            setCostoUnitario(producto?.precio_compra ?? null);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tipo]);
 
     const cargarCamiones = async () => {
@@ -38,13 +65,33 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
         }
     };
 
+    const cargarProveedores = async () => {
+        try {
+            const data = await fetchProveedores();
+            setProveedores(data);
+        } catch (error) {
+            console.error('Error al cargar proveedores:', error);
+        }
+    };
+
+    const requiereFolio = tipo === 'entrada' && !!tipoComprobante;
+
     const handleSubmit = async () => {
         setSubmitted(true);
 
         if (cantidad <= 0) return;
         if (!motivo.trim()) return;
-        
-        if (tipo === 'salida' && !usuario.trim()) return;
+
+        if (tipo === 'entrada') {
+            if (!proveedorId) return;
+            if (!tipoPago) return;
+            if (requiereFolio && !folio.trim()) return;
+        }
+
+        if (tipo === 'salida') {
+            if (!usuario.trim()) return;
+            if (!ordenTrabajo.trim()) return;
+        }
 
         if (tipo === 'salida' && cantidad > producto!.stock_actual) {
             alert(`Stock insuficiente. Solo hay ${producto!.stock_actual} ${producto!.unidad} disponibles`);
@@ -54,15 +101,26 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
         setLoading(true);
         try {
             if (tipo === 'entrada') {
-                await registrarEntrada(producto!.id, cantidad, motivo);
+                await registrarEntrada({
+                    producto_id: producto!.id,
+                    cantidad,
+                    motivo,
+                    costo_unitario: costoUnitario,
+                    tipo_comprobante: tipoComprobante,
+                    folio: requiereFolio ? folio.trim() : null,
+                    tipo_pago: tipoPago,
+                    proveedor_id: proveedorId
+                });
             } else {
-                await registrarSalida(
-                    producto!.id, 
-                    cantidad, 
-                    motivo, 
-                    camionSeleccionadoId || undefined,
-                    usuario.trim()
-                );
+                await registrarSalida({
+                    producto_id: producto!.id,
+                    cantidad,
+                    motivo,
+                    orden_trabajo: ordenTrabajo.trim(),
+                    camion_id: camionSeleccionadoId || undefined,
+                    usuario_id: usuario.trim(),
+                    costo_unitario: costoUnitario
+                });
             }
             onSuccess();
         } catch (error: any) {
@@ -71,7 +129,7 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
             setLoading(false);
         }
     };
-    
+
     if (!producto) return null;
 
     return (
@@ -110,8 +168,125 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
                 )}
             </div>
 
+            {tipo === 'entrada' && (
+                <>
+                    <div className="field">
+                        <label htmlFor="proveedor">Proveedor <span style={{ color: 'red' }}> *</span></label>
+                        <Dropdown
+                            id="proveedor"
+                            value={proveedorId}
+                            onChange={(e) => setProveedorId(e.value)}
+                            options={proveedores}
+                            optionLabel="nombre"
+                            optionValue="id"
+                            placeholder="Seleccionar proveedor"
+                            className={`w-full ${submitted && !proveedorId ? 'p-invalid' : ''}`}
+                            filter
+                        />
+                        {submitted && !proveedorId && (
+                            <small className="p-error">El proveedor es requerido.</small>
+                        )}
+                    </div>
+
+                    <div className="grid">
+                        <div className="col-6">
+                            <div className="field">
+                                <label htmlFor="tipoComprobante">Comprobante (opcional)</label>
+                                <Dropdown
+                                    id="tipoComprobante"
+                                    value={tipoComprobante}
+                                    onChange={(e) => setTipoComprobante(e.value)}
+                                    options={comprobanteOptions}
+                                    placeholder="Nota o Factura"
+                                    className="w-full"
+                                    showClear
+                                />
+                            </div>
+                        </div>
+                        <div className="col-6">
+                            <div className="field">
+                                <label htmlFor="folio">Folio {requiereFolio && <span style={{ color: 'red' }}>*</span>}</label>
+                                <InputText
+                                    id="folio"
+                                    value={folio}
+                                    onChange={(e) => setFolio(e.target.value)}
+                                    placeholder="Folio de la nota/factura"
+                                    disabled={!tipoComprobante}
+                                    className={`w-full ${submitted && requiereFolio && !folio.trim() ? 'p-invalid' : ''}`}
+                                />
+                                {submitted && requiereFolio && !folio.trim() && (
+                                    <small className="p-error">El folio es requerido.</small>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="field">
+                        <label htmlFor="tipoPago">Forma de Pago <span style={{ color: 'red' }}> *</span></label>
+                        <Dropdown
+                            id="tipoPago"
+                            value={tipoPago}
+                            onChange={(e) => setTipoPago(e.value)}
+                            options={tipoPagoOptions}
+                            placeholder="Contado o Crédito"
+                            className={`w-full ${submitted && !tipoPago ? 'p-invalid' : ''}`}
+                        />
+                        {submitted && !tipoPago && (
+                            <small className="p-error">La forma de pago es requerida.</small>
+                        )}
+                        {tipoPago === 'credito' && (
+                            <small className="text-gray-500">Se generará una cuenta por pagar al proveedor.</small>
+                        )}
+                    </div>
+
+                    <div className="field">
+                        <label htmlFor="costoUnitarioEntrada">Precio por Unidad</label>
+                        <InputNumber
+                            id="costoUnitarioEntrada"
+                            value={costoUnitario}
+                            onValueChange={(e) => setCostoUnitario(e.value ?? null)}
+                            mode="currency"
+                            currency="MXN"
+                            locale="es-MX"
+                            min={0}
+                            className="w-full"
+                        />
+                    </div>
+                </>
+            )}
+
             {tipo === 'salida' && (
                 <>
+                    <div className="field">
+                        <label htmlFor="ordenTrabajo">Orden de Trabajo <span style={{ color: 'red' }}> *</span></label>
+                        <InputText
+                            id="ordenTrabajo"
+                            value={ordenTrabajo}
+                            onChange={(e) => setOrdenTrabajo(e.target.value)}
+                            placeholder="Ej: OT-0025"
+                            className={`w-full ${submitted && !ordenTrabajo.trim() ? 'p-invalid' : ''}`}
+                        />
+                        {submitted && !ordenTrabajo.trim() && (
+                            <small className="p-error">La orden de trabajo es requerida.</small>
+                        )}
+                    </div>
+
+                    <div className="field">
+                        <label htmlFor="costoUnitarioSalida">Costo por Unidad que Sale</label>
+                        <InputNumber
+                            id="costoUnitarioSalida"
+                            value={costoUnitario}
+                            onValueChange={(e) => setCostoUnitario(e.value ?? null)}
+                            mode="currency"
+                            currency="MXN"
+                            locale="es-MX"
+                            min={0}
+                            className="w-full"
+                            disabled
+                        />
+                        <small className="text-gray-500">Por defecto toma el precio por unidad del producto.</small>
+                    </div>
+
                     <div className="field">
                         <label htmlFor="camion">Camión (opcional)</label>
                         <Dropdown
@@ -125,7 +300,6 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
                             className="w-full"
                             showClear
                         />
-                        {/* <small className="text-gray-500">Nota: La unidad debe estar en Mantenimiento</small> */}
                     </div>
 
                     <div className="field">

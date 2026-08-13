@@ -70,8 +70,16 @@ const AppMenu = () => {
             {
                 label: 'Mantenimiento',
                 items: [
-                    { label: 'Inventario', icon: 'pi pi-fw pi-box', to: '/inventario' },
-                    { label: 'Taller', icon: 'pi pi-fw pi-wrench', to: '/pages/empty' }
+                    { label: 'Taller', icon: 'pi pi-fw pi-wrench', to: '/pages/empty' },
+                    {
+                        label: 'Almacen',
+                        icon: 'pi pi-fw pi-box',
+                        items: [
+                            { label: 'Inventario', icon: 'pi pi-fw pi-box', to: '/inventario' },
+                            { label: 'Estadisticos', icon: 'pi pi-fw pi-chart-bar', to: '/inventario/estadisticos' },
+                            { label: 'Validacion de Inventario', icon: 'pi pi-fw pi-check-square', to: '/inventario/validacion' },
+                        ]
+                    },
                 ]
             },
         ] : []),

@@ -18,6 +18,10 @@ export interface Operador {
     user_id?: number | null;
     rol_id?: number | null;
     camion_full?: boolean;
+    departamento_id?: number | null;
+    jefe_inmediato_id?: number | null;
+    es_ceo?: boolean;
+    departamento_nombre?: string;
 }
 
 export const fetchOperadores = async (): Promise<Operador[]> => {
@@ -35,6 +39,7 @@ export const fetchOperadores = async (): Promise<Operador[]> => {
 
     // Si hay operadores vinculados a user_id, traer email y password desde la tabla 'user'
     const userIds = Array.from(new Set(operadores.map(o => o.user_id).filter(Boolean)));
+    const usersMap = new Map<number, any>();
 
     if (userIds.length > 0) {
         const { data: users, error: usersError } = await supabase
@@ -46,19 +51,49 @@ export const fetchOperadores = async (): Promise<Operador[]> => {
             console.error('Error fetching users for operadores:', usersError);
         }
 
-        const usersMap = new Map<number, any>();
         (users || []).forEach((u: any) => usersMap.set(u.id, u));
-
-        return operadores.map(op => ({
-            ...op,
-            email: op.user_id ? usersMap.get(op.user_id)?.email ?? op.email : op.email,
-            password: op.user_id ? usersMap.get(op.user_id)?.pass ?? op.pass ?? op.password : op.password
-        }));
     }
 
-    return operadores;
+    // Traer nombre del departamento de cada operador
+    const departamentoIds = Array.from(new Set(operadores.map(o => o.departamento_id).filter(Boolean)));
+    const departamentosMap = new Map<number, any>();
+
+    if (departamentoIds.length > 0) {
+        const { data: departamentos, error: departamentosError } = await supabase
+            .from('departamento')
+            .select('id, nombre')
+            .in('id', departamentoIds as any[]);
+
+        if (departamentosError) {
+            console.error('Error fetching departamentos for operadores:', departamentosError);
+        }
+
+        (departamentos || []).forEach((d: any) => departamentosMap.set(d.id, d));
+    }
+
+    return operadores.map(op => ({
+        ...op,
+        email: op.user_id ? usersMap.get(op.user_id)?.email ?? op.email : op.email,
+        password: op.user_id ? usersMap.get(op.user_id)?.pass ?? op.pass ?? op.password : op.password,
+        departamento_nombre: op.departamento_id ? departamentosMap.get(op.departamento_id)?.nombre : undefined
+    }));
 };
 
+
+export const fetchDepartamentosParaSelect = async (): Promise<{ id: number; nombre: string }[]> => {
+    const { data, error } = await supabase
+        .from('departamento')
+        .select('id, nombre')
+        .eq('estatus', true)
+        .order('nombre');
+
+    if (error) {
+        console.error('Error fetching departamentos:', error);
+        throw error;
+    }
+
+    return data || [];
+};
 
 export const fetchRoles = async (): Promise<{ id: number; nombre: string; descripcion: string }[]> => {
     const { data, error } = await supabase
@@ -90,7 +125,10 @@ export const createOperador = async (operador: Omit<Operador, 'id'>): Promise<Op
                 fecha_contratacion: operador.fecha_contratacion,
                 acceso_sistema: operador.acceso_sistema || false,
                 rol_id: operador.rol_id || null,
-                camion_full: operador.camion_full || false
+                camion_full: operador.camion_full || false,
+                departamento_id: operador.departamento_id || null,
+                jefe_inmediato_id: operador.jefe_inmediato_id || null,
+                es_ceo: operador.es_ceo || false
             }])
             .select()
             .single();
@@ -282,7 +320,10 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
             fecha_contratacion: operador.fecha_contratacion,
             acceso_sistema: operador.acceso_sistema || false,
             rol_id: operador.rol_id || null,
-            camion_full: operador.camion_full || false
+            camion_full: operador.camion_full || false,
+            departamento_id: operador.departamento_id || null,
+            jefe_inmediato_id: operador.jefe_inmediato_id || null,
+            es_ceo: operador.es_ceo || false
         })
         .eq('id', operador.id)
         .select()

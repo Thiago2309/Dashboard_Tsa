@@ -213,7 +213,7 @@ const ProductoForm: React.FC<ProductoFormProps> = ({ producto, modoEdicion, onSu
             </div>
 
             <div className="field">
-                <label htmlFor="precio_compra">Precio de Compra</label>
+                <label htmlFor="precio_compra">Precio por Unidad</label>
                 <InputNumber
                     id="precio_compra"
                     value={formData.precio_compra}

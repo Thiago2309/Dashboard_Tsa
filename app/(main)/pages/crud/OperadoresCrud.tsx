@@ -13,14 +13,15 @@ import { Checkbox } from 'primereact/checkbox';
 import { Password } from 'primereact/password';
 import { DataTableFilterMeta } from 'primereact/datatable';
 import React, { useEffect, useRef, useState, useCallback } from 'react'; // ← Agregar useCallback
-import { 
-  fetchOperadores, 
-  createOperador, 
-  updateOperador, 
-  deleteOperador, 
+import {
+  fetchOperadores,
+  createOperador,
+  updateOperador,
+  deleteOperador,
   toggleEstatusOperador,
   fetchRoles,
-  Operador 
+  fetchDepartamentosParaSelect,
+  Operador
 } from '../../../../Services/BD/operadoresService';
 
 const OperadoresCrud = () => {
@@ -41,7 +42,10 @@ const OperadoresCrud = () => {
       email: '',
       pass: '',
       rol_id: null,
-      camion_full: false
+      camion_full: false,
+      departamento_id: null,
+      jefe_inmediato_id: null,
+      es_ceo: false
     });
     const [selectedOperadores, setSelectedOperadores] = useState<Operador[]>([]);
     const [submitted, setSubmitted] = useState(false);
@@ -50,6 +54,7 @@ const OperadoresCrud = () => {
     });
     const [loading, setLoading] = useState(false);
     const [roles, setRoles] = useState<{ id: number; nombre: string; descripcion: string }[]>([]);
+    const [departamentos, setDepartamentos] = useState<{ id: number; nombre: string }[]>([]);
     const toast = useRef<Toast>(null);
     const dt = useRef<DataTable<any>>(null);
 
@@ -77,12 +82,14 @@ const OperadoresCrud = () => {
     // Usar useCallback para evitar recreación
     const cargarDatos = useCallback(async () => {
         try {
-            const [operadoresData, rolesData] = await Promise.all([
+            const [operadoresData, rolesData, departamentosData] = await Promise.all([
                 fetchOperadores(),
-                fetchRoles()
+                fetchRoles(),
+                fetchDepartamentosParaSelect()
             ]);
             setOperadores(operadoresData);
             setRoles(rolesData);
+            setDepartamentos(departamentosData);
         } catch (error) {
             console.error('Error cargando datos:', error);
             toast.current?.show({ 
@@ -112,7 +119,10 @@ const OperadoresCrud = () => {
             email: '',
             pass: '',
             rol_id: null,
-            camion_full: false
+            camion_full: false,
+            departamento_id: null,
+            jefe_inmediato_id: null,
+            es_ceo: false
         });
         setSubmitted(false);
         setOperadorDialog(true);
@@ -373,6 +383,10 @@ const OperadoresCrud = () => {
     }, []);
 
     // Template para camion_full
+    const departamentoBodyTemplate = useCallback((rowData: Operador) => {
+        return <span>{rowData.departamento_nombre || '-'}</span>;
+    }, []);
+
     const camionFullBodyTemplate = useCallback((rowData: Operador) => {
         const isFull = rowData.camion_full === true;
         return isFull ? (
@@ -473,6 +487,7 @@ const OperadoresCrud = () => {
                                             <div className="flex-1 min-w-0">
                                                 <div className="font-bold text-lg">{operadorItem.nombre || '-'}</div>
                                                 <div className="text-sm text-500">{operadorItem.puesto || '-'}</div>
+                                                <div className="text-sm text-500">{operadorItem.departamento_nombre || 'Sin departamento'}</div>
                                             </div>
                                             <span className={`px-3 py-1 border-round text-sm font-medium ${getStatusBadgeClass(operadorItem.estatus)}`}>
                                                 {operadorItem.estatus ? 'Activo' : 'Inactivo'}
@@ -553,6 +568,7 @@ const OperadoresCrud = () => {
                             <Column field="id" header="ID" sortable body={idBodyTemplate}></Column>
                             <Column field="nombre" header="Nombre" sortable body={nombreBodyTemplate}></Column>
                             <Column field="puesto" header="Puesto" sortable body={puestoBodyTemplate}></Column>
+                            <Column field="departamento_nombre" header="Departamento" sortable body={departamentoBodyTemplate}></Column>
                             <Column field="salario_base" header="Salario" sortable body={salarioBodyTemplate}></Column>
                             <Column field="telefono" header="Teléfono" body={telefonoBodyTemplate}></Column>
                             <Column field="fecha_contratacion" header="Fecha Alta" body={fechaContratacionBodyTemplate}></Column>
@@ -676,6 +692,21 @@ const OperadoresCrud = () => {
                                         id="descripcion"
                                         value={operador.descripcion || ''}
                                         onChange={(e) => setOperador({ ...operador, descripcion: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="col-12 md:col-6">
+                                <div className="field">
+                                    <label htmlFor="departamento_id">Departamento</label>
+                                    <Dropdown
+                                        id="departamento_id"
+                                        value={operador.departamento_id}
+                                        options={departamentos.map(d => ({ label: d.nombre, value: d.id }))}
+                                        onChange={(e) => setOperador({ ...operador, departamento_id: e.value })}
+                                        placeholder="Selecciona un departamento"
+                                        showClear
+                                        filter
                                     />
                                 </div>
                             </div>
