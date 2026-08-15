@@ -1,7 +1,7 @@
 import { supabase } from '../superbase.service';
 import { PostgrestError } from '@supabase/supabase-js';
 
-export type TipoEntidad = 'Proveedor' | 'Cliente' | 'Colaborador';
+export type TipoEntidad = 'Proveedor' | 'Cliente' | 'Colaborador' | 'Invitado' | string;
 
 export interface CuentaPorPagarBase {
     id?: number;
@@ -85,6 +85,20 @@ export const fetchTodosProveedores = async (): Promise<{id: number, nombre: stri
     })) || [];
 };
 
+export const fetchTodosInvitados = async (): Promise<{id: number, nombre: string}[]> => {
+    const { data, error } = await supabase
+        .from('invitados')
+        .select('id, empresa')
+        .order('empresa', { ascending: true });
+
+    if (error) throw error;
+
+    return data?.map(invitado => ({
+        id: invitado.id,
+        nombre: invitado.empresa
+    })) || [];
+};
+
 export const fetchEntidadesConCuentas = async (tipo?: TipoEntidad): Promise<ResumenEntidad[]> => {
     if (tipo === 'Colaborador') {
         const { data, error } = await supabase
@@ -151,6 +165,36 @@ export const fetchEntidadesConCuentas = async (tipo?: TipoEntidad): Promise<Resu
     }) || [];
 
     if (tipo === 'Proveedor') return resumenProveedores;
+
+    // Para invitados
+    if (tipo === 'Invitado') {
+        const { data: invitados, error: errorInvitados } = await supabase
+            .from('invitados')
+            .select('id, empresa');
+
+        if (errorInvitados) throw errorInvitados;
+
+        const { data: cuentasInvitado } = await supabase
+            .from('cuentas_por_pagar')
+            .select('*')
+            .eq('tipo_entidad', 'Invitado');
+
+        return invitados?.map(invitado => {
+            const cuentas = cuentasInvitado?.filter(c => c.id_entidad === invitado.id) || [];
+            const totalAdeudado = cuentas.reduce((sum, c) => sum + (c.saldo - (c.monto || 0)), 0);
+            const totalPagado = cuentas.reduce((sum, c) => sum + (c.monto || 0), 0);
+            const pendientes = cuentas.filter(c => c.estatus === 'Pendiente').length;
+
+            return {
+                id_entidad: invitado.id,
+                entidad_nombre: invitado.empresa,
+                total_adeudado: totalAdeudado,
+                total_monto_pagado: totalPagado,
+                cuentas_pendientes: pendientes,
+                tipo: 'Invitado' as TipoEntidad
+            };
+        }) || [];
+    }
 
     // Para clientes
     const { data: clientes, error: errorClientes } = await supabase
@@ -220,6 +264,14 @@ export const fetchCuentasPorEntidad = async (tipo: TipoEntidad, id_entidad?: num
                     .eq('id', cuenta.id_entidad)
                     .single();
                 entidad_nombre = cliente?.empresa || 'Cliente no encontrado';
+            }
+            else if (cuenta.tipo_entidad === 'Invitado' && cuenta.id_entidad) {
+                const { data: invitado } = await supabase
+                    .from('invitados')
+                    .select('empresa')
+                    .eq('id', cuenta.id_entidad)
+                    .single();
+                entidad_nombre = invitado?.empresa || 'Invitado no encontrado';
             }
             else if (cuenta.tipo_entidad === 'Colaborador') {
                 entidad_nombre = cuenta.nombre_colaborador || 'Colaborador';

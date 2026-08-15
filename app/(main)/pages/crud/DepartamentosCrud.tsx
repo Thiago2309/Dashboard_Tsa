@@ -7,8 +7,6 @@ import { InputText } from 'primereact/inputtext';
 import { InputTextarea } from 'primereact/inputtextarea';
 import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
-import { Dropdown } from 'primereact/dropdown';
-import { MultiSelect } from 'primereact/multiselect';
 import { ToggleButton } from 'primereact/togglebutton';
 import { Tag } from 'primereact/tag';
 import { OrganizationChart } from 'primereact/organizationchart';
@@ -22,16 +20,12 @@ import {
     updateDepartamento,
     deleteDepartamento,
     fetchEmpleadosDeDepartamento,
-    sincronizarEmpleadosDepartamento,
     fetchCeo,
-    definirCeo,
-    fetchOrganigramaEmpresa,
+    fetchJerarquiaEmpleados,
     Departamento,
     EmpleadoResumen,
-    DepartamentoOrganigrama,
-    OrganigramaEmpresa
+    OperadorJerarquia
 } from '../../../../Services/BD/departamentoService';
-import { fetchOperadores, Operador } from '../../../../Services/BD/operadoresService';
 
 interface OrgNode {
     label: string;
@@ -43,25 +37,17 @@ interface OrgNode {
 
 const DepartamentosCrud = () => {
     const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
-    const [operadores, setOperadores] = useState<Operador[]>([]);
     const [departamentoDialog, setDepartamentoDialog] = useState(false);
     const [deleteDepartamentoDialog, setDeleteDepartamentoDialog] = useState(false);
+    const [empleadosDialog, setEmpleadosDialog] = useState(false);
+    const [empleadosDepartamentoActual, setEmpleadosDepartamentoActual] = useState<{ nombre: string; empleados: EmpleadoResumen[] }>({ nombre: '', empleados: [] });
     const [organigramaDialog, setOrganigramaDialog] = useState(false);
-    const [ceoDialog, setCeoDialog] = useState(false);
     const [ceoActual, setCeoActual] = useState<EmpleadoResumen | null>(null);
-    const [ceoSeleccionado, setCeoSeleccionado] = useState<number | null>(null);
-    const [organigrama, setOrganigrama] = useState<OrganigramaEmpresa>({ ceo: null, departamentos: [] });
+    const [jerarquia, setJerarquia] = useState<OperadorJerarquia[]>([]);
+    const [departamento, setDepartamento] = useState<Departamento>({ nombre: '', descripcion: '', estatus: true });
     const [zoomOrganigrama, setZoomOrganigrama] = useState(1);
     const [generandoPdf, setGenerandoPdf] = useState(false);
     const organigramaRef = useRef<HTMLDivElement>(null);
-    const [departamento, setDepartamento] = useState<Departamento>({
-        nombre: '',
-        descripcion: '',
-        departamento_padre_id: null,
-        jefe_operador_id: null,
-        estatus: true
-    });
-    const [empleadosACargo, setEmpleadosACargo] = useState<number[]>([]);
     const [submitted, setSubmitted] = useState(false);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState<DataTableFilterMeta>({
@@ -72,13 +58,11 @@ const DepartamentosCrud = () => {
 
     const cargarDatos = useCallback(async () => {
         try {
-            const [departamentosData, operadoresData, ceoData] = await Promise.all([
+            const [departamentosData, ceoData] = await Promise.all([
                 fetchDepartamentos(),
-                fetchOperadores(),
                 fetchCeo()
             ]);
             setDepartamentos(departamentosData);
-            setOperadores(operadoresData);
             setCeoActual(ceoData);
         } catch (error) {
             console.error('Error cargando datos:', error);
@@ -91,8 +75,7 @@ const DepartamentosCrud = () => {
     }, [cargarDatos]);
 
     const openNew = useCallback(() => {
-        setDepartamento({ nombre: '', descripcion: '', departamento_padre_id: null, jefe_operador_id: null, estatus: true });
-        setEmpleadosACargo([]);
+        setDepartamento({ nombre: '', descripcion: '', estatus: true });
         setSubmitted(false);
         setDepartamentoDialog(true);
     }, []);
@@ -112,49 +95,28 @@ const DepartamentosCrud = () => {
             return;
         }
 
-        if (departamento.id && departamento.departamento_padre_id === departamento.id) {
-            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Un departamento no puede ser su propio padre', life: 3000 });
-            return;
-        }
-
         try {
             setLoading(true);
-            const guardado = departamento.id
-                ? await updateDepartamento(departamento)
-                : await createDepartamento(departamento);
-
-            // Los empleados a cargo incluyen siempre al jefe (si se eligió uno)
-            const idsACargo = new Set(empleadosACargo);
-            if (departamento.jefe_operador_id) idsACargo.add(departamento.jefe_operador_id);
-            await sincronizarEmpleadosDepartamento(guardado.id!, Array.from(idsACargo));
-
-            toast.current?.show({
-                severity: 'success',
-                summary: 'Éxito',
-                detail: departamento.id ? 'Departamento actualizado correctamente' : 'Departamento creado correctamente',
-                life: 3000
-            });
-
+            if (departamento.id) {
+                await updateDepartamento(departamento);
+                toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Departamento actualizado correctamente', life: 3000 });
+            } else {
+                await createDepartamento(departamento);
+                toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Departamento creado correctamente', life: 3000 });
+            }
             setDepartamentoDialog(false);
-            const [departamentosActualizados, operadoresActualizados] = await Promise.all([fetchDepartamentos(), fetchOperadores()]);
+            const departamentosActualizados = await fetchDepartamentos();
             setDepartamentos(departamentosActualizados);
-            setOperadores(operadoresActualizados);
         } catch (error: any) {
             console.error('Error:', error);
             toast.current?.show({ severity: 'error', summary: 'Error', detail: error.message || 'Error al guardar el departamento', life: 3000 });
         } finally {
             setLoading(false);
         }
-    }, [departamento, empleadosACargo]);
+    }, [departamento]);
 
-    const editDepartamento = useCallback(async (dep: Departamento) => {
+    const editDepartamento = useCallback((dep: Departamento) => {
         setDepartamento({ ...dep });
-        try {
-            const empleadosActuales = await fetchEmpleadosDeDepartamento(dep.id!);
-            setEmpleadosACargo(empleadosActuales.map(e => e.id));
-        } catch (error) {
-            setEmpleadosACargo([]);
-        }
         setDepartamentoDialog(true);
     }, []);
 
@@ -171,35 +133,25 @@ const DepartamentosCrud = () => {
             const departamentosActualizados = await fetchDepartamentos();
             setDepartamentos(departamentosActualizados);
         } catch (error) {
-            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo eliminar. Verifica que no tenga empleados o sub-departamentos asignados.', life: 4000 });
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo eliminar. Verifica que no tenga empleados asignados.', life: 4000 });
         }
     }, [departamento]);
 
-    const abrirCeoDialog = useCallback(() => {
-        setCeoSeleccionado(ceoActual?.id ?? null);
-        setCeoDialog(true);
-    }, [ceoActual]);
-
-    const guardarCeo = useCallback(async () => {
+    const verEmpleadosDepartamento = useCallback(async (dep: Departamento) => {
         try {
-            setLoading(true);
-            await definirCeo(ceoSeleccionado);
-            const nuevoCeo = await fetchCeo();
-            setCeoActual(nuevoCeo);
-            setCeoDialog(false);
-            toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'CEO actualizado correctamente', life: 3000 });
+            const empleados = await fetchEmpleadosDeDepartamento(dep.id!);
+            setEmpleadosDepartamentoActual({ nombre: dep.nombre, empleados });
+            setEmpleadosDialog(true);
         } catch (error) {
-            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo definir el CEO', life: 3000 });
-        } finally {
-            setLoading(false);
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar la lista de empleados', life: 3000 });
         }
-    }, [ceoSeleccionado]);
+    }, []);
 
     const abrirOrganigrama = useCallback(async () => {
         try {
             setLoading(true);
-            const data = await fetchOrganigramaEmpresa();
-            setOrganigrama(data);
+            const data = await fetchJerarquiaEmpleados();
+            setJerarquia(data);
             setZoomOrganigrama(1);
             setOrganigramaDialog(true);
         } catch (error) {
@@ -219,7 +171,6 @@ const DepartamentosCrud = () => {
         const zoomPrevio = zoomOrganigrama;
         try {
             setGenerandoPdf(true);
-            // Renderizamos a escala 1 para capturar el árbol completo, sin recortes por el zoom en pantalla
             setZoomOrganigrama(1);
             await new Promise(resolve => setTimeout(resolve, 150));
 
@@ -234,7 +185,6 @@ const DepartamentosCrud = () => {
             const pdf = new jsPDF(orientacion, 'pt', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
-            // Ajustamos la imagen completa dentro de la página, conservando proporción
             const margen = 20;
             const anchoDisponible = pageWidth - margen * 2;
             const altoDisponible = pageHeight - margen * 2;
@@ -256,44 +206,44 @@ const DepartamentosCrud = () => {
     }, [zoomOrganigrama]);
 
     const arbolOrganigrama: OrgNode[] = useMemo(() => {
-        const nodoEmpleado = (emp: EmpleadoResumen): OrgNode => ({
-            label: emp.nombre,
-            className: 'org-node-empleado',
-            data: { subtitulo: emp.puesto }
+        if (jerarquia.length === 0) return [];
+
+        const porId = new Map(jerarquia.map(e => [e.id, e]));
+        const hijosDe = new Map<number, OperadorJerarquia[]>();
+        jerarquia.forEach(e => {
+            if (e.jefe_inmediato_id && porId.has(e.jefe_inmediato_id)) {
+                const lista = hijosDe.get(e.jefe_inmediato_id) || [];
+                lista.push(e);
+                hijosDe.set(e.jefe_inmediato_id, lista);
+            }
         });
 
-        const nodoDepartamento = (dep: DepartamentoOrganigrama): OrgNode => ({
-            label: dep.nombre,
-            expanded: true,
-            className: 'org-node-departamento',
-            data: { subtitulo: dep.jefe ? `Jefe: ${dep.jefe.nombre}` : 'Sin jefe asignado' },
-            children: [
-                ...dep.subdepartamentos.map(nodoDepartamento),
-                ...dep.empleados.map(nodoEmpleado)
-            ]
-        });
-
-        const nodosDepartamentos = organigrama.departamentos.map(nodoDepartamento);
-
-        if (organigrama.ceo) {
-            return [{
-                label: organigrama.ceo.nombre,
+        const construirNodo = (emp: OperadorJerarquia, visitados: Set<number>): OrgNode => {
+            visitados.add(emp.id);
+            const hijos = (hijosDe.get(emp.id) || []).filter(h => !visitados.has(h.id));
+            const subtitulo = [emp.puesto, emp.departamento_nombre].filter(Boolean).join(' · ');
+            return {
+                label: emp.nombre,
                 expanded: true,
-                className: 'org-node-ceo',
-                data: { subtitulo: organigrama.ceo.puesto },
-                children: nodosDepartamentos
-            }];
-        }
+                className: emp.es_ceo ? 'org-node-ceo' : 'org-node-empleado',
+                data: { subtitulo },
+                children: hijos.map(h => construirNodo(h, visitados))
+            };
+        };
 
-        if (nodosDepartamentos.length <= 1) return nodosDepartamentos;
+        const visitados = new Set<number>();
+        const raices = jerarquia.filter(e => e.es_ceo || !e.jefe_inmediato_id || !porId.has(e.jefe_inmediato_id));
+        const nodosRaiz = raices.map(r => construirNodo(r, visitados));
+
+        if (nodosRaiz.length === 1) return nodosRaiz;
 
         return [{
             label: 'Empresa',
             expanded: true,
             className: 'org-node-empresa',
-            children: nodosDepartamentos
+            children: nodosRaiz
         }];
-    }, [organigrama]);
+    }, [jerarquia]);
 
     const nodeTemplate = useCallback((node: any) => {
         return (
@@ -309,9 +259,16 @@ const DepartamentosCrud = () => {
     }, []);
 
     const nombreBodyTemplate = useCallback((rowData: Departamento) => <span>{rowData.nombre}</span>, []);
-    const padreBodyTemplate = useCallback((rowData: Departamento) => <span>{rowData.departamento_padre_nombre || 'CEO (directo)'}</span>, []);
-    const jefeBodyTemplate = useCallback((rowData: Departamento) => <span>{rowData.jefe_nombre || '-'}</span>, []);
-    const empleadosBodyTemplate = useCallback((rowData: Departamento) => <span>{rowData.total_empleados ?? 0}</span>, []);
+    const descripcionBodyTemplate = useCallback((rowData: Departamento) => <span>{rowData.descripcion || '-'}</span>, []);
+
+    const empleadosBodyTemplate = useCallback((rowData: Departamento) => (
+        <Button
+            label={String(rowData.total_empleados ?? 0)}
+            icon="pi pi-users"
+            text
+            onClick={() => verEmpleadosDepartamento(rowData)}
+        />
+    ), [verEmpleadosDepartamento]);
 
     const estatusBodyTemplate = useCallback((rowData: Departamento) => (
         <span className={`px-3 py-1 border-round text-sm font-medium ${rowData.estatus ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
@@ -330,10 +287,9 @@ const DepartamentosCrud = () => {
         <div className="my-2 flex flex-wrap align-items-center gap-2">
             <Button label="Nuevo Departamento" icon="pi pi-plus" severity="info" onClick={openNew} />
             <Button label="Ver Organigrama" icon="pi pi-sitemap" severity="help" onClick={abrirOrganigrama} loading={loading} />
-            <Button label={ceoActual ? 'Cambiar CEO' : 'Definir CEO'} icon="pi pi-star" severity="warning" onClick={abrirCeoDialog} />
             {ceoActual && <Tag severity="warning" value={`CEO actual: ${ceoActual.nombre}`} />}
         </div>
-    ), [openNew, abrirOrganigrama, abrirCeoDialog, loading, ceoActual]);
+    ), [openNew, abrirOrganigrama, loading, ceoActual]);
 
     const rightToolbarTemplate = useCallback(() => (
         <Button label="Exportar" icon="pi pi-upload" severity="help" onClick={exportCSV} />
@@ -367,30 +323,6 @@ const DepartamentosCrud = () => {
         </>
     ), [hideDeleteDepartamentoDialog, deleteDepartamentoConfirmado]);
 
-    const ceoDialogFooter = useCallback(() => (
-        <>
-            <Button label="Cancelar" icon="pi pi-times" text onClick={() => setCeoDialog(false)} />
-            <Button label="Guardar" icon="pi pi-check" text onClick={guardarCeo} loading={loading} />
-        </>
-    ), [guardarCeo, loading]);
-
-    const opcionesDepartamentoPadre = useMemo(
-        () => departamentos.filter(d => d.id !== departamento.id).map(d => ({ label: d.nombre, value: d.id })),
-        [departamentos, departamento.id]
-    );
-
-    const opcionesOperadores = useMemo(
-        () => operadores.map(o => ({ label: `${o.nombre} (${o.puesto})`, value: o.id })),
-        [operadores]
-    );
-
-    const opcionesEmpleadosACargo = useMemo(
-        () => operadores
-            .filter(o => o.id !== departamento.jefe_operador_id)
-            .map(o => ({ label: `${o.nombre} (${o.puesto})`, value: o.id })),
-        [operadores, departamento.jefe_operador_id]
-    );
-
     return (
         <div className="grid crud-demo">
             <div className="col-12">
@@ -398,7 +330,6 @@ const DepartamentosCrud = () => {
                     <Toast ref={toast} />
                     <style jsx global>{`
                         .org-node-ceo { background: var(--primary-color); color: var(--primary-color-text); border-radius: 6px; }
-                        .org-node-departamento { background: var(--surface-200); border-radius: 6px; font-weight: 600; }
                         .org-node-empleado { background: var(--surface-card); border-radius: 6px; }
                         .org-node-empresa { background: var(--surface-300); border-radius: 6px; }
                     `}</style>
@@ -420,8 +351,7 @@ const DepartamentosCrud = () => {
                         responsiveLayout="scroll"
                     >
                         <Column field="nombre" header="Departamento" sortable body={nombreBodyTemplate}></Column>
-                        <Column field="departamento_padre_nombre" header="Depende de" body={padreBodyTemplate}></Column>
-                        <Column field="jefe_nombre" header="Jefe de Departamento" body={jefeBodyTemplate}></Column>
+                        <Column field="descripcion" header="Descripción" body={descripcionBodyTemplate}></Column>
                         <Column field="total_empleados" header="Empleados" body={empleadosBodyTemplate}></Column>
                         <Column field="estatus" header="Estatus" body={estatusBodyTemplate}></Column>
                         <Column header="Acciones" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }}></Column>
@@ -429,7 +359,7 @@ const DepartamentosCrud = () => {
 
                     <Dialog
                         visible={departamentoDialog}
-                        style={{ width: '600px' }}
+                        style={{ width: '500px' }}
                         header={departamento.id ? 'Editar Departamento' : 'Nuevo Departamento'}
                         modal
                         className="p-fluid"
@@ -461,53 +391,6 @@ const DepartamentosCrud = () => {
                                         onChange={(e) => setDepartamento({ ...departamento, descripcion: e.target.value })}
                                         rows={3}
                                     />
-                                </div>
-                            </div>
-
-                            <div className="col-12 md:col-6">
-                                <div className="field">
-                                    <label htmlFor="departamento_padre_id">Depende de</label>
-                                    <Dropdown
-                                        id="departamento_padre_id"
-                                        value={departamento.departamento_padre_id}
-                                        options={opcionesDepartamentoPadre}
-                                        onChange={(e) => setDepartamento({ ...departamento, departamento_padre_id: e.value })}
-                                        placeholder="Depende directamente del CEO"
-                                        showClear
-                                        filter
-                                    />
-                                    <small className="text-500">Déjalo vacío si el departamento depende directamente del CEO.</small>
-                                </div>
-                            </div>
-
-                            <div className="col-12 md:col-6">
-                                <div className="field">
-                                    <label htmlFor="jefe_operador_id">Jefe de departamento</label>
-                                    <Dropdown
-                                        id="jefe_operador_id"
-                                        value={departamento.jefe_operador_id}
-                                        options={opcionesOperadores}
-                                        onChange={(e) => setDepartamento({ ...departamento, jefe_operador_id: e.value })}
-                                        placeholder="Selecciona un empleado"
-                                        showClear
-                                        filter
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="col-12">
-                                <div className="field">
-                                    <label htmlFor="empleados_a_cargo">Empleados a cargo</label>
-                                    <MultiSelect
-                                        id="empleados_a_cargo"
-                                        value={empleadosACargo}
-                                        options={opcionesEmpleadosACargo}
-                                        onChange={(e) => setEmpleadosACargo(e.value)}
-                                        placeholder="Selecciona los empleados de este departamento"
-                                        display="chip"
-                                        filter
-                                    />
-                                    <small className="text-500">Al guardar, estos empleados quedarán asignados a este departamento (se reasignan si pertenecían a otro).</small>
                                 </div>
                             </div>
 
@@ -546,27 +429,16 @@ const DepartamentosCrud = () => {
                     </Dialog>
 
                     <Dialog
-                        visible={ceoDialog}
-                        style={{ width: '450px' }}
-                        header="Definir CEO de la empresa"
+                        visible={empleadosDialog}
+                        style={{ width: '500px' }}
+                        header={`Empleados de ${empleadosDepartamentoActual.nombre}`}
                         modal
-                        className="p-fluid"
-                        footer={ceoDialogFooter}
-                        onHide={() => setCeoDialog(false)}
+                        onHide={() => setEmpleadosDialog(false)}
                     >
-                        <div className="field">
-                            <label htmlFor="ceo_id">Empleado</label>
-                            <Dropdown
-                                id="ceo_id"
-                                value={ceoSeleccionado}
-                                options={opcionesOperadores}
-                                onChange={(e) => setCeoSeleccionado(e.value)}
-                                placeholder="Selecciona al CEO"
-                                showClear
-                                filter
-                            />
-                            <small className="text-500">Es la cabeza de la jerarquía: de él dependen directamente todos los departamentos raíz.</small>
-                        </div>
+                        <DataTable value={empleadosDepartamentoActual.empleados} emptyMessage="Este departamento no tiene empleados asignados">
+                            <Column field="nombre" header="Nombre"></Column>
+                            <Column field="puesto" header="Puesto"></Column>
+                        </DataTable>
                     </Dialog>
 
                     <Dialog
@@ -579,7 +451,7 @@ const DepartamentosCrud = () => {
                     >
                         {arbolOrganigrama.length === 0 ? (
                             <div className="text-center py-5 text-500">
-                                No hay datos suficientes para generar el organigrama. Define un CEO y crea al menos un departamento con empleados asignados.
+                                No hay datos suficientes para generar el organigrama. Define un CEO y asigna gerentes a los empleados desde el módulo de Empleados.
                             </div>
                         ) : (
                             <>

@@ -23,13 +23,19 @@ import {
     fetchHistorialPagosCxP,
     actualizarPagoCxP,
     fetchTodosProveedores,
+    fetchTodosInvitados,
     ResumenEntidad,
-    CuentaPorPagar
+    CuentaPorPagar,
+    TipoEntidad
 } from '../../../../Services/BD/CxPService';
 
-const TIPO_ENTIDAD = 'Proveedor';
+const TIPOS_DISPONIBLES: { label: string; value: TipoEntidad }[] = [
+    { label: 'Proveedores', value: 'Proveedor' },
+    { label: 'Invitados', value: 'Invitado' }
+];
 
 const CxpCrud = () => {
+    const [tipoEntidad, setTipoEntidad] = useState<TipoEntidad>('Proveedor');
     const [resumenEntidades, setResumenEntidades] = useState<ResumenEntidad[]>([]);
     const [cuentasEntidad, setCuentasEntidad] = useState<CuentaPorPagar[]>([]);
     const [entidadSeleccionada, setEntidadSeleccionada] = useState<ResumenEntidad | null>(null);
@@ -52,9 +58,10 @@ const CxpCrud = () => {
     const [nuevoMonto, setNuevoMonto] = useState<number>(0);
     const [nuevaCuentaDialog, setNuevaCuentaDialog] = useState(false);
     const [proveedores, setProveedores] = useState<{id: number, nombre: string}[]>([]);
+    const [invitados, setInvitados] = useState<{id: number, nombre: string}[]>([]);
     const [nuevaCuenta, setNuevaCuenta] = useState<Omit<CuentaPorPagar, 'id'>>({
         id_entidad: 0,
-        tipo_entidad: TIPO_ENTIDAD,
+        tipo_entidad: tipoEntidad,
         id_compra: null,
         fecha: new Date().toISOString().split('T')[0],
         monto: 0,
@@ -67,13 +74,18 @@ const CxpCrud = () => {
     useEffect(() => {
         const cargarDatosIniciales = async () => {
             setLoading(prev => ({...prev, entidades: true}));
+            setEntidadSeleccionada(null);
+            setCuentasEntidad([]);
+            setHistorialPagos([]);
             try {
-                const [entidades, proveedoresData] = await Promise.all([
-                    fetchEntidadesConCuentas(TIPO_ENTIDAD),
-                    fetchTodosProveedores()
+                const [entidades, proveedoresData, invitadosData] = await Promise.all([
+                    fetchEntidadesConCuentas(tipoEntidad),
+                    fetchTodosProveedores(),
+                    fetchTodosInvitados()
                 ]);
                 setResumenEntidades(entidades);
                 setProveedores(proveedoresData);
+                setInvitados(invitadosData);
                 setTotalGeneral(entidades.reduce((sum, e) => sum + e.total_adeudado, 0));
             } catch (error) {
                 mostrarError('Error al cargar datos iniciales');
@@ -83,7 +95,7 @@ const CxpCrud = () => {
         };
 
         cargarDatosIniciales();
-    }, []);
+    }, [tipoEntidad]);
 
     const handleEntidadClick = async (entidad: ResumenEntidad) => {
         if (entidadSeleccionada?.id_entidad === entidad.id_entidad) {
@@ -97,7 +109,7 @@ const CxpCrud = () => {
         setEntidadSeleccionada(entidad);
 
         try {
-            const cuentas = await fetchCuentasPorEntidad(TIPO_ENTIDAD, entidad.id_entidad);
+            const cuentas = await fetchCuentasPorEntidad(tipoEntidad, entidad.id_entidad);
             setCuentasEntidad(cuentas);
 
             if (cuentas.length > 0) {
@@ -116,7 +128,7 @@ const CxpCrud = () => {
 
     const actualizarDatos = () => {
         setLoading({ entidades: true, detalles: false });
-        fetchEntidadesConCuentas(TIPO_ENTIDAD)
+        fetchEntidadesConCuentas(tipoEntidad)
             .then(data => {
                 setResumenEntidades(data);
                 setTotalGeneral(data.reduce((sum, e) => sum + e.total_adeudado, 0));
@@ -143,8 +155,8 @@ const CxpCrud = () => {
 
             // Actualizar datos
             const [resumen, cuentas, historial] = await Promise.all([
-                fetchEntidadesConCuentas(TIPO_ENTIDAD),
-                entidadSeleccionada ? fetchCuentasPorEntidad(TIPO_ENTIDAD, entidadSeleccionada.id_entidad) : [],
+                fetchEntidadesConCuentas(tipoEntidad),
+                entidadSeleccionada ? fetchCuentasPorEntidad(tipoEntidad, entidadSeleccionada.id_entidad) : [],
                 fetchHistorialPagosCxP(cuentaSeleccionada.id!)
             ]);
 
@@ -175,7 +187,7 @@ const CxpCrud = () => {
             );
 
             if (entidadSeleccionada) {
-                const cuentas = await fetchCuentasPorEntidad(TIPO_ENTIDAD, entidadSeleccionada.id_entidad);
+                const cuentas = await fetchCuentasPorEntidad(tipoEntidad, entidadSeleccionada.id_entidad);
                 setCuentasEntidad(cuentas);
             }
 
@@ -201,13 +213,13 @@ const CxpCrud = () => {
             await crearCuentaPorPagar(nuevaCuenta);
 
             // Actualizar lista de entidades
-            const entidades = await fetchEntidadesConCuentas(TIPO_ENTIDAD);
+            const entidades = await fetchEntidadesConCuentas(tipoEntidad);
             setResumenEntidades(entidades);
             setTotalGeneral(entidades.reduce((sum, e) => sum + e.total_adeudado, 0));
 
             // Si la entidad está seleccionada, actualizar sus cuentas
             if (entidadSeleccionada && entidadSeleccionada.id_entidad === nuevaCuenta.id_entidad) {
-                const cuentas = await fetchCuentasPorEntidad(TIPO_ENTIDAD, nuevaCuenta.id_entidad);
+                const cuentas = await fetchCuentasPorEntidad(tipoEntidad, nuevaCuenta.id_entidad);
                 setCuentasEntidad(cuentas);
             }
 
@@ -221,7 +233,7 @@ const CxpCrud = () => {
             // Resetear formulario
             setNuevaCuenta({
                 id_entidad: 0,
-                tipo_entidad: TIPO_ENTIDAD,
+                tipo_entidad: tipoEntidad,
                 id_compra: null,
                 fecha: new Date().toISOString().split('T')[0],
                 monto: 0,
@@ -255,8 +267,8 @@ const CxpCrud = () => {
 
             // Actualizar datos
             const [resumen, cuentas, historial] = await Promise.all([
-                fetchEntidadesConCuentas(TIPO_ENTIDAD),
-                entidadSeleccionada ? fetchCuentasPorEntidad(TIPO_ENTIDAD, entidadSeleccionada.id_entidad) : [],
+                fetchEntidadesConCuentas(tipoEntidad),
+                entidadSeleccionada ? fetchCuentasPorEntidad(tipoEntidad, entidadSeleccionada.id_entidad) : [],
                 fetchHistorialPagosCxP(pagoEditado.id_cuenta)
             ]);
 
@@ -363,9 +375,23 @@ const CxpCrud = () => {
                             icon="pi pi-plus"
                             label="Nueva Cuenta"
                             className="p-button-success"
-                            onClick={() => setNuevaCuentaDialog(true)}
+                            onClick={() => {
+                                setNuevaCuenta(prev => ({ ...prev, tipo_entidad: tipoEntidad, id_entidad: 0 }));
+                                setNuevaCuentaDialog(true);
+                            }}
                         />
                     </div>
+                </div>
+
+                <div className="flex gap-2 mb-4">
+                    {TIPOS_DISPONIBLES.map(t => (
+                        <Button
+                            key={t.value as string}
+                            label={t.label}
+                            className={tipoEntidad === t.value ? 'p-button-sm' : 'p-button-sm p-button-outlined'}
+                            onClick={() => setTipoEntidad(t.value)}
+                        />
+                    ))}
                 </div>
 
                 {loading.entidades ? (
@@ -381,21 +407,21 @@ const CxpCrud = () => {
                             onSelectionChange={(e) => handleEntidadClick(e.value as ResumenEntidad)}
                             dataKey="id_entidad"
                             className="p-datatable-sm mb-4"
-                            emptyMessage="No se encontraron proveedores con cuentas"
+                            emptyMessage={`No se encontraron ${tipoEntidad === 'Invitado' ? 'invitados' : 'proveedores'} con cuentas`}
                             paginator
                             rows={5}
                             rowsPerPageOptions={[5, 10, 25]}
                         >
                             <Column
                                 field="id_entidad"
-                                header="ID Proveedor"
+                                header={tipoEntidad === 'Invitado' ? 'ID Invitado' : 'ID Proveedor'}
                                 body={(row) => (
                                     <span className="font-medium">{row.id_entidad}</span>
                                 )}
                             />
                             <Column
                                 field="entidad_nombre"
-                                header="Proveedor"
+                                header={tipoEntidad === 'Invitado' ? 'Invitado' : 'Proveedor'}
                                 body={(row) => (
                                     <span className="font-medium">{row.entidad_nombre}</span>
                                 )}
@@ -546,10 +572,10 @@ const CxpCrud = () => {
                 >
                     <div className="p-fluid">
                         <div className="field">
-                            <label htmlFor="entidad">Proveedor *</label>
+                            <label htmlFor="entidad">{tipoEntidad === 'Invitado' ? 'Invitado' : 'Proveedor'} *</label>
                             <Dropdown
                                 id="entidad"
-                                options={proveedores.map(p => ({
+                                options={(tipoEntidad === 'Invitado' ? invitados : proveedores).map(p => ({
                                     label: p.nombre,
                                     value: p.id
                                 }))}
@@ -558,7 +584,7 @@ const CxpCrud = () => {
                                     ...nuevaCuenta,
                                     id_entidad: e.value
                                 })}
-                                placeholder="Seleccione un proveedor"
+                                placeholder={`Seleccione un ${tipoEntidad === 'Invitado' ? 'invitado' : 'proveedor'}`}
                                 filter
                                 filterBy="label"
                                 required

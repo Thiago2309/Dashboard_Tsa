@@ -20,9 +20,19 @@ import {
   deleteOperador,
   toggleEstatusOperador,
   fetchRoles,
-  fetchDepartamentosParaSelect,
   Operador
 } from '../../../../Services/BD/operadoresService';
+import {
+  fetchDepartamentosActivos,
+  createDepartamento,
+  fetchCeo,
+  definirCeo,
+  EmpleadoResumen
+} from '../../../../Services/BD/departamentoService';
+import {
+  fetchPuestosActivos,
+  createPuesto
+} from '../../../../Services/BD/puestoService';
 
 const OperadoresCrud = () => {
     const [operadores, setOperadores] = useState<Operador[]>([]);
@@ -45,7 +55,8 @@ const OperadoresCrud = () => {
       camion_full: false,
       departamento_id: null,
       jefe_inmediato_id: null,
-      es_ceo: false
+      es_ceo: false,
+      puesto_id: null
     });
     const [selectedOperadores, setSelectedOperadores] = useState<Operador[]>([]);
     const [submitted, setSubmitted] = useState(false);
@@ -55,6 +66,13 @@ const OperadoresCrud = () => {
     const [loading, setLoading] = useState(false);
     const [roles, setRoles] = useState<{ id: number; nombre: string; descripcion: string }[]>([]);
     const [departamentos, setDepartamentos] = useState<{ id: number; nombre: string }[]>([]);
+    const [puestos, setPuestos] = useState<{ id: number; nombre: string }[]>([]);
+    const [ceoActual, setCeoActual] = useState<EmpleadoResumen | null>(null);
+    const [nuevoDepartamentoDialog, setNuevoDepartamentoDialog] = useState(false);
+    const [nuevoDepartamentoNombre, setNuevoDepartamentoNombre] = useState('');
+    const [nuevoPuestoDialog, setNuevoPuestoDialog] = useState(false);
+    const [nuevoPuestoNombre, setNuevoPuestoNombre] = useState('');
+    const [guardandoCatalogo, setGuardandoCatalogo] = useState(false);
     const toast = useRef<Toast>(null);
     const dt = useRef<DataTable<any>>(null);
 
@@ -66,37 +84,28 @@ const OperadoresCrud = () => {
         return acceso ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800';
     };
 
-    const puestos = [
-      'Operador Góndola',
-      'Operador Volquete',
-      'Operador Maquinaria',
-      'Mecánico',
-      'Soldador',
-      'Vigilante',
-      'Encargado de Obra',
-      'Supervisor',
-      'Gerente de Operaciones',
-      'Ayudante'
-    ];
-
     // Usar useCallback para evitar recreación
     const cargarDatos = useCallback(async () => {
         try {
-            const [operadoresData, rolesData, departamentosData] = await Promise.all([
+            const [operadoresData, rolesData, departamentosData, puestosData, ceoData] = await Promise.all([
                 fetchOperadores(),
                 fetchRoles(),
-                fetchDepartamentosParaSelect()
+                fetchDepartamentosActivos(),
+                fetchPuestosActivos(),
+                fetchCeo()
             ]);
             setOperadores(operadoresData);
             setRoles(rolesData);
             setDepartamentos(departamentosData);
+            setPuestos(puestosData);
+            setCeoActual(ceoData);
         } catch (error) {
             console.error('Error cargando datos:', error);
-            toast.current?.show({ 
-                severity: 'error', 
-                summary: 'Error', 
-                detail: 'Error al cargar los datos', 
-                life: 3000 
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Error al cargar los datos',
+                life: 3000
             });
         }
     }, []);
@@ -122,7 +131,8 @@ const OperadoresCrud = () => {
             camion_full: false,
             departamento_id: null,
             jefe_inmediato_id: null,
-            es_ceo: false
+            es_ceo: false,
+            puesto_id: null
         });
         setSubmitted(false);
         setOperadorDialog(true);
@@ -145,12 +155,42 @@ const OperadoresCrud = () => {
         setSubmitted(true);
 
         // Validaciones básicas
-        if (!operador.nombre.trim() || !operador.puesto.trim()) {
-            toast.current?.show({ 
-                severity: 'error', 
-                summary: 'Error', 
-                detail: 'Nombre y puesto son requeridos', 
-                life: 3000 
+        if (!operador.nombre.trim()) {
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'El nombre es requerido',
+                life: 3000
+            });
+            return;
+        }
+
+        if (!operador.puesto_id) {
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'El puesto es requerido',
+                life: 3000
+            });
+            return;
+        }
+
+        if (!operador.departamento_id) {
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'El departamento es requerido',
+                life: 3000
+            });
+            return;
+        }
+
+        if (!operador.es_ceo && !operador.jefe_inmediato_id) {
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Debes seleccionar quién es su gerente (o marcarlo como CEO)',
+                life: 3000
             });
             return;
         }
@@ -209,48 +249,65 @@ const OperadoresCrud = () => {
 
         try {
             setLoading(true);
-            
-            // Asegurar que camion_full sea booleano
+
+            const eraCeo = ceoActual?.id === operador.id;
+
+            // Asegurar que camion_full sea booleano y que el texto de puesto quede sincronizado con el catálogo
             const operadorToSave = {
                 ...operador,
-                camion_full: operador.camion_full ?? false
+                camion_full: operador.camion_full ?? false,
+                puesto: puestos.find(p => p.id === operador.puesto_id)?.nombre || operador.puesto,
+                jefe_inmediato_id: operador.es_ceo ? null : operador.jefe_inmediato_id
             };
+
+            let idGuardado: number | undefined;
 
             if (operador.id) {
                 const updatedOperador = await updateOperador(operadorToSave);
                 setOperadores(prev => prev.map(o => o.id === updatedOperador.id ? updatedOperador : o));
-                toast.current?.show({ 
-                    severity: 'success', 
-                    summary: 'Éxito', 
-                    detail: 'Empleado actualizado correctamente', 
-                    life: 3000 
+                idGuardado = updatedOperador.id;
+                toast.current?.show({
+                    severity: 'success',
+                    summary: 'Éxito',
+                    detail: 'Empleado actualizado correctamente',
+                    life: 3000
                 });
             } else {
                 // Crear nuevo operador
-                const newOperador = await createOperador(operador);
+                const newOperador = await createOperador(operadorToSave);
                 setOperadores([...operadores, newOperador]);
-                
+                idGuardado = newOperador.id;
+
                 if (operador.acceso_sistema) {
                     const rolNombre = roles.find(r => r.id === operador.rol_id)?.nombre || '';
-                    toast.current?.show({ 
-                        severity: 'success', 
-                        summary: 'Éxito', 
-                        detail: `Empleado creado con acceso al sistema. Email: ${operador.email} - Rol: ${rolNombre}`, 
-                        life: 5000 
+                    toast.current?.show({
+                        severity: 'success',
+                        summary: 'Éxito',
+                        detail: `Empleado creado con acceso al sistema. Email: ${operador.email} - Rol: ${rolNombre}`,
+                        life: 5000
                     });
                 } else {
-                    toast.current?.show({ 
-                        severity: 'success', 
-                        summary: 'Éxito', 
-                        detail: 'Empleado creado correctamente (sin acceso al sistema)', 
-                        life: 3000 
+                    toast.current?.show({
+                        severity: 'success',
+                        summary: 'Éxito',
+                        detail: 'Empleado creado correctamente (sin acceso al sistema)',
+                        life: 3000
                     });
                 }
             }
+
+            // Sincronizar la designación de CEO
+            if (operador.es_ceo && idGuardado) {
+                await definirCeo(idGuardado);
+            } else if (eraCeo && !operador.es_ceo) {
+                await definirCeo(null);
+            }
+
             setOperadorDialog(false);
             // Recargar lista
-            const operadoresActualizados = await fetchOperadores();
+            const [operadoresActualizados, ceoActualizado] = await Promise.all([fetchOperadores(), fetchCeo()]);
             setOperadores(operadoresActualizados);
+            setCeoActual(ceoActualizado);
         } catch (error: any) {
             console.error('Error:', error);
             toast.current?.show({ 
@@ -262,15 +319,65 @@ const OperadoresCrud = () => {
         } finally {
             setLoading(false);
         }
-    }, [operador, roles]);
+    }, [operador, roles, puestos, ceoActual, operadores]);
 
-    const editOperador = useCallback((operador: Operador) => {
-        setOperador({ 
-            ...operador,
-            camion_full: operador.camion_full ?? false
+    const editOperador = useCallback((operadorSeleccionado: Operador) => {
+        setOperador({
+            ...operadorSeleccionado,
+            camion_full: operadorSeleccionado.camion_full ?? false
         });
         setOperadorDialog(true);
     }, []);
+
+    const abrirNuevoDepartamento = useCallback(() => {
+        setNuevoDepartamentoNombre('');
+        setNuevoDepartamentoDialog(true);
+    }, []);
+
+    const guardarNuevoDepartamento = useCallback(async () => {
+        if (!nuevoDepartamentoNombre.trim()) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'El nombre del departamento es requerido', life: 3000 });
+            return;
+        }
+        try {
+            setGuardandoCatalogo(true);
+            const nuevo = await createDepartamento({ nombre: nuevoDepartamentoNombre.trim(), estatus: true });
+            const departamentosActualizados = await fetchDepartamentosActivos();
+            setDepartamentos(departamentosActualizados);
+            setOperador(prev => ({ ...prev, departamento_id: nuevo.id! }));
+            setNuevoDepartamentoDialog(false);
+            toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Departamento creado y seleccionado', life: 3000 });
+        } catch (error) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo crear el departamento', life: 3000 });
+        } finally {
+            setGuardandoCatalogo(false);
+        }
+    }, [nuevoDepartamentoNombre]);
+
+    const abrirNuevoPuesto = useCallback(() => {
+        setNuevoPuestoNombre('');
+        setNuevoPuestoDialog(true);
+    }, []);
+
+    const guardarNuevoPuesto = useCallback(async () => {
+        if (!nuevoPuestoNombre.trim()) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'El nombre del puesto es requerido', life: 3000 });
+            return;
+        }
+        try {
+            setGuardandoCatalogo(true);
+            const nuevo = await createPuesto(nuevoPuestoNombre.trim());
+            const puestosActualizados = await fetchPuestosActivos();
+            setPuestos(puestosActualizados);
+            setOperador(prev => ({ ...prev, puesto_id: nuevo.id!, puesto: nuevo.nombre }));
+            setNuevoPuestoDialog(false);
+            toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Puesto creado y seleccionado', life: 3000 });
+        } catch (error) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo crear el puesto', life: 3000 });
+        } finally {
+            setGuardandoCatalogo(false);
+        }
+    }, [nuevoPuestoNombre]);
 
     const confirmDeleteOperador = useCallback((operador: Operador) => {
         setOperador(operador);
@@ -606,20 +713,94 @@ const OperadoresCrud = () => {
                                 </div>
                             </div>
 
-                            <div className="col-12 md:col-6">
+                            {(!ceoActual || ceoActual.id === operador.id) && (
+                                <div className="col-12">
+                                    <div className="field">
+                                        <div className="flex align-items-center">
+                                            <Checkbox
+                                                id="es_ceo"
+                                                checked={operador.es_ceo === true}
+                                                onChange={(e) => {
+                                                    const checked = e.checked || false;
+                                                    setOperador({
+                                                        ...operador,
+                                                        es_ceo: checked,
+                                                        ...(checked ? { jefe_inmediato_id: null } : {})
+                                                    });
+                                                }}
+                                            />
+                                            <label htmlFor="es_ceo" className="ml-2">
+                                                Es el CEO / máximo nivel jerárquico de la empresa
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {!operador.es_ceo && (
+                                <div className="col-12">
+                                    <div className="field">
+                                        <label htmlFor="jefe_inmediato_id">Gerente *</label>
+                                        <Dropdown
+                                            id="jefe_inmediato_id"
+                                            value={operador.jefe_inmediato_id}
+                                            options={operadores
+                                                .filter(o => o.id !== operador.id)
+                                                .map(o => ({ label: `${o.nombre} (${o.puesto})`, value: o.id }))}
+                                            onChange={(e) => setOperador({ ...operador, jefe_inmediato_id: e.value })}
+                                            placeholder="Busca y selecciona su gerente"
+                                            filter
+                                            required
+                                            className={submitted && !operador.jefe_inmediato_id ? 'p-invalid' : ''}
+                                        />
+                                        {submitted && !operador.jefe_inmediato_id && (
+                                            <small className="p-invalid">El gerente es requerido.</small>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="col-12">
                                 <div className="field">
-                                    <label htmlFor="puesto">Puesto *</label>
-                                    <Dropdown
-                                        id="puesto"
-                                        value={operador.puesto}
-                                        options={puestos.map(p => ({ label: p, value: p }))}
-                                        onChange={(e) => setOperador({ ...operador, puesto: e.value })}
-                                        placeholder="Selecciona un puesto"
-                                        required
-                                        className={submitted && !operador.puesto ? 'p-invalid' : ''}
-                                    />
-                                    {submitted && !operador.puesto && (
-                                        <small className="p-invalid">Puesto es requerido.</small>
+                                    <label htmlFor="departamento_id">Departamento *</label>
+                                    <div className="flex gap-2">
+                                        <Dropdown
+                                            id="departamento_id"
+                                            value={operador.departamento_id}
+                                            options={departamentos.map(d => ({ label: d.nombre, value: d.id }))}
+                                            onChange={(e) => setOperador({ ...operador, departamento_id: e.value })}
+                                            placeholder="Busca un departamento"
+                                            filter
+                                            className={`flex-1 ${submitted && !operador.departamento_id ? 'p-invalid' : ''}`}
+                                        />
+                                        <Button type="button" icon="pi pi-plus" tooltip="Crear departamento nuevo" onClick={abrirNuevoDepartamento} />
+                                    </div>
+                                    {submitted && !operador.departamento_id && (
+                                        <small className="p-invalid">El departamento es requerido.</small>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="col-12">
+                                <div className="field">
+                                    <label htmlFor="puesto_id">Puesto *</label>
+                                    <div className="flex gap-2">
+                                        <Dropdown
+                                            id="puesto_id"
+                                            value={operador.puesto_id}
+                                            options={puestos.map(p => ({ label: p.nombre, value: p.id }))}
+                                            onChange={(e) => {
+                                                const puestoSeleccionado = puestos.find(p => p.id === e.value);
+                                                setOperador({ ...operador, puesto_id: e.value, puesto: puestoSeleccionado?.nombre || operador.puesto });
+                                            }}
+                                            placeholder="Busca un puesto"
+                                            filter
+                                            className={`flex-1 ${submitted && !operador.puesto_id ? 'p-invalid' : ''}`}
+                                        />
+                                        <Button type="button" icon="pi pi-plus" tooltip="Crear puesto nuevo" onClick={abrirNuevoPuesto} />
+                                    </div>
+                                    {submitted && !operador.puesto_id && (
+                                        <small className="p-invalid">El puesto es requerido.</small>
                                     )}
                                 </div>
                             </div>
@@ -692,21 +873,6 @@ const OperadoresCrud = () => {
                                         id="descripcion"
                                         value={operador.descripcion || ''}
                                         onChange={(e) => setOperador({ ...operador, descripcion: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="col-12 md:col-6">
-                                <div className="field">
-                                    <label htmlFor="departamento_id">Departamento</label>
-                                    <Dropdown
-                                        id="departamento_id"
-                                        value={operador.departamento_id}
-                                        options={departamentos.map(d => ({ label: d.nombre, value: d.id }))}
-                                        onChange={(e) => setOperador({ ...operador, departamento_id: e.value })}
-                                        placeholder="Selecciona un departamento"
-                                        showClear
-                                        filter
                                     />
                                 </div>
                             </div>
@@ -875,6 +1041,56 @@ const OperadoresCrud = () => {
                                     ¿Estás seguro de eliminar los {selectedOperadores.length} empleados seleccionados?
                                 </span>
                             )}
+                        </div>
+                    </Dialog>
+
+                    <Dialog
+                        visible={nuevoDepartamentoDialog}
+                        style={{ width: '400px' }}
+                        header="Nuevo Departamento"
+                        modal
+                        className="p-fluid"
+                        onHide={() => setNuevoDepartamentoDialog(false)}
+                        footer={
+                            <>
+                                <Button label="Cancelar" icon="pi pi-times" text onClick={() => setNuevoDepartamentoDialog(false)} />
+                                <Button label="Guardar" icon="pi pi-check" text onClick={guardarNuevoDepartamento} loading={guardandoCatalogo} />
+                            </>
+                        }
+                    >
+                        <div className="field">
+                            <label htmlFor="nuevo_departamento_nombre">Nombre del departamento *</label>
+                            <InputText
+                                id="nuevo_departamento_nombre"
+                                value={nuevoDepartamentoNombre}
+                                onChange={(e) => setNuevoDepartamentoNombre(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                    </Dialog>
+
+                    <Dialog
+                        visible={nuevoPuestoDialog}
+                        style={{ width: '400px' }}
+                        header="Nuevo Puesto"
+                        modal
+                        className="p-fluid"
+                        onHide={() => setNuevoPuestoDialog(false)}
+                        footer={
+                            <>
+                                <Button label="Cancelar" icon="pi pi-times" text onClick={() => setNuevoPuestoDialog(false)} />
+                                <Button label="Guardar" icon="pi pi-check" text onClick={guardarNuevoPuesto} loading={guardandoCatalogo} />
+                            </>
+                        }
+                    >
+                        <div className="field">
+                            <label htmlFor="nuevo_puesto_nombre">Nombre del puesto *</label>
+                            <InputText
+                                id="nuevo_puesto_nombre"
+                                value={nuevoPuestoNombre}
+                                onChange={(e) => setNuevoPuestoNombre(e.target.value)}
+                                autoFocus
+                            />
                         </div>
                     </Dialog>
                 </div>

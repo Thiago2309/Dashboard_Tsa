@@ -1,4 +1,5 @@
 import { supabase } from '../superbase.service';
+import { crearCuentaPorPagar } from './CxPService';
 
 export interface Invitado {
     id?: number;
@@ -40,6 +41,19 @@ export const createInvitado = async (invitado: Omit<Invitado, 'id'>): Promise<In
         .single();
 
     if (error) throw error;
+
+    await crearCuentaPorPagar({
+        id_entidad: data.id,
+        tipo_entidad: 'Invitado',
+        id_compra: null,
+        fecha: new Date().toISOString().split('T')[0],
+        monto: 0,
+        saldo: 0,
+        estatus: 'Pendiente',
+        fecha_pago_esperado: null,
+        notas: `Cuenta generada automáticamente al registrar el invitado: ${data.empresa}`
+    });
+
     return data;
 };
 
