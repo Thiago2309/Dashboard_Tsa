@@ -84,6 +84,22 @@ const AppMenu = () => {
             },
         ] : []),
 
+            // ========== SECCIÓN CONTROL DE OBRAS ==========
+            {
+                label: 'Control de Obras',
+                items: [
+                    { label: 'Obras', icon: 'pi pi-building', to: '/pages/empty' },
+                ]
+            },
+
+            // ========== SECCIÓN SOPORTE ==========
+            {
+                label: 'Soporte',
+                items: [
+                    { label: 'Reportar Incidencia', icon: 'pi pi-exclamation-circle', to: '/uikit/Soporte/Incidencias' },
+                ]
+            },
+
         // ========== SECCIÓN ADMINISTRACIÓN ==========
         // Visible para: Admin (viajes y administración), Logistica (solo su sección)
         {

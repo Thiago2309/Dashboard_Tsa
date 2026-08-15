@@ -21,6 +21,7 @@ export interface Operador {
     departamento_id?: number | null;
     jefe_inmediato_id?: number | null;
     es_ceo?: boolean;
+    puesto_id?: number | null;
     departamento_nombre?: string;
 }
 
@@ -80,21 +81,6 @@ export const fetchOperadores = async (): Promise<Operador[]> => {
 };
 
 
-export const fetchDepartamentosParaSelect = async (): Promise<{ id: number; nombre: string }[]> => {
-    const { data, error } = await supabase
-        .from('departamento')
-        .select('id, nombre')
-        .eq('estatus', true)
-        .order('nombre');
-
-    if (error) {
-        console.error('Error fetching departamentos:', error);
-        throw error;
-    }
-
-    return data || [];
-};
-
 export const fetchRoles = async (): Promise<{ id: number; nombre: string; descripcion: string }[]> => {
     const { data, error } = await supabase
         .from('rol')
@@ -128,7 +114,8 @@ export const createOperador = async (operador: Omit<Operador, 'id'>): Promise<Op
                 camion_full: operador.camion_full || false,
                 departamento_id: operador.departamento_id || null,
                 jefe_inmediato_id: operador.jefe_inmediato_id || null,
-                es_ceo: operador.es_ceo || false
+                es_ceo: operador.es_ceo || false,
+                puesto_id: operador.puesto_id || null
             }])
             .select()
             .single();
@@ -323,7 +310,8 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
             camion_full: operador.camion_full || false,
             departamento_id: operador.departamento_id || null,
             jefe_inmediato_id: operador.jefe_inmediato_id || null,
-            es_ceo: operador.es_ceo || false
+            es_ceo: operador.es_ceo || false,
+            puesto_id: operador.puesto_id || null
         })
         .eq('id', operador.id)
         .select()

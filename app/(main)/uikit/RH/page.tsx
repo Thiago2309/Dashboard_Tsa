@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Button } from 'primereact/button';
 import OperadoresCrud from '../../uikit/formlayout/operador';
 import DepartamentosCrud from '../../pages/crud/DepartamentosCrud';
+import PuestosCrud from '../../pages/crud/PuestosCrud';
 
 const TableModule = () => {
     const [activeModule, setActiveModule] = useState('Empleados'); // El que renderiza al cargar la pagina
@@ -14,6 +15,8 @@ const TableModule = () => {
                 return <OperadoresCrud/>;
             case 'Departamentos':
                 return <DepartamentosCrud/>;
+            case 'Puestos':
+                return <PuestosCrud/>;
             default:
                 return <div>Selecciona un módulo</div>;
         }
@@ -36,6 +39,12 @@ const TableModule = () => {
                             onClick={() => setActiveModule('Departamentos')}
                         >
                             Departamentos
+                        </div>
+                        <div
+                            style={activeModule === 'Puestos' ? styles.activeMenuItem : styles.menuItem}
+                            onClick={() => setActiveModule('Puestos')}
+                        >
+                            Puestos
                         </div>
                     </div>
                     <div style={styles.tableContainer}>
