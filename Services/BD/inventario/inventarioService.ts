@@ -275,18 +275,46 @@ export const registrarEntrada = async (params: RegistrarEntradaParams): Promise<
         throw new Error(error.message);
     }
 
-    // 4. Si la compra fue a crédito y hay proveedor, generar la cuenta por pagar
+    // 4. Si la compra fue a crédito y hay proveedor, generar (o acumular) la cuenta por pagar
     if (tipo_pago === 'credito' && proveedor_id && costo_unitario) {
-        await crearCuentaPorPagar({
-            id_entidad: proveedor_id,
-            tipo_entidad: 'Proveedor',
-            id_compra: null,
-            fecha: new Date().toISOString(),
-            monto: 0,
-            saldo: costo_unitario * cantidad,
-            estatus: 'Pendiente',
-            notas: `Compra de inventario: ${producto.nombre} (${cantidad} ${producto.unidad})${folio ? ` - Folio ${folio}` : ''}`
-        });
+        const montoCompra = costo_unitario * cantidad;
+        const notaCompra = `Compra de inventario: ${producto.nombre} (${cantidad} ${producto.unidad})${folio ? ` - Folio ${folio}` : ''}`;
+
+        // Si el proveedor ya tiene una cuenta por pagar pendiente, se acumula el monto ahí en lugar de crear una nueva
+        const { data: cuentaExistente, error: errorCuenta } = await supabase
+            .from('cuentas_por_pagar')
+            .select('id, saldo, notas')
+            .eq('tipo_entidad', 'Proveedor')
+            .eq('id_entidad', proveedor_id)
+            .eq('estatus', 'Pendiente')
+            .order('fecha', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+        if (errorCuenta) throw errorCuenta;
+
+        if (cuentaExistente) {
+            const { error: errorUpdate } = await supabase
+                .from('cuentas_por_pagar')
+                .update({
+                    saldo: (cuentaExistente.saldo || 0) + montoCompra,
+                    notas: cuentaExistente.notas ? `${cuentaExistente.notas} | ${notaCompra}` : notaCompra
+                })
+                .eq('id', cuentaExistente.id);
+
+            if (errorUpdate) throw errorUpdate;
+        } else {
+            await crearCuentaPorPagar({
+                id_entidad: proveedor_id,
+                tipo_entidad: 'Proveedor',
+                id_compra: null,
+                fecha: new Date().toISOString(),
+                monto: 0,
+                saldo: montoCompra,
+                estatus: 'Pendiente',
+                notas: notaCompra
+            });
+        }
     }
 };
 

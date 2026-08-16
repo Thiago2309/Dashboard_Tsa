@@ -1,4 +1,5 @@
 import { supabase } from '../superbase.service';
+import { crearCuentaPorPagar } from './CxPService';
 
 export interface Viaje {
     id?: number;
@@ -83,7 +84,68 @@ export const createViaje = async (viaje: Omit<Viaje, 'id'>): Promise<Viaje> => {
         throw error;
     }
 
-    return transformViajeData(data);
+    const viajeCreado = transformViajeData(data);
+
+    if (viajeCreado.id_invitado) {
+        await generarCxPInvitadoPorViaje(viajeCreado);
+    }
+
+    return viajeCreado;
+};
+
+// Genera automáticamente la cuenta por pagar del invitado con el % que le corresponde del total del viaje
+const generarCxPInvitadoPorViaje = async (viaje: Viaje): Promise<void> => {
+    try {
+        const { data: invitado, error } = await supabase
+            .from('invitados')
+            .select('porcentaje_participacion')
+            .eq('id', viaje.id_invitado)
+            .single();
+
+        if (error || !invitado || !invitado.porcentaje_participacion) return;
+
+        const totalViaje = (viaje.caphrsviajes || 0) + (viaje.total_materia || 0);
+        const montoInvitado = totalViaje * (invitado.porcentaje_participacion / 100);
+
+        if (montoInvitado <= 0) return;
+
+        // Si el invitado ya tiene una cuenta por pagar pendiente, se acumula el monto ahí en lugar de crear una nueva
+        const { data: cuentaExistente, error: errorCuenta } = await supabase
+            .from('cuentas_por_pagar')
+            .select('id, saldo')
+            .eq('tipo_entidad', 'Invitado')
+            .eq('id_entidad', Number(viaje.id_invitado))
+            .eq('estatus', 'Pendiente')
+            .order('fecha', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+        if (errorCuenta) throw errorCuenta;
+
+        if (cuentaExistente) {
+            const { error: errorUpdate } = await supabase
+                .from('cuentas_por_pagar')
+                .update({ saldo: (cuentaExistente.saldo || 0) + montoInvitado })
+                .eq('id', cuentaExistente.id);
+
+            if (errorUpdate) throw errorUpdate;
+            return;
+        }
+
+        await crearCuentaPorPagar({
+            id_entidad: Number(viaje.id_invitado),
+            tipo_entidad: 'Invitado',
+            id_compra: null,
+            fecha: viaje.fecha,
+            monto: 0,
+            saldo: montoInvitado,
+            estatus: 'Pendiente',
+            fecha_pago_esperado: null,
+            notas: `Pago acumulado del ${invitado.porcentaje_participacion}% por viajes con participación`
+        });
+    } catch (error) {
+        console.error('Error generando la cuenta por pagar del invitado:', error);
+    }
 };
 
 export const updateViaje = async (viaje: Viaje): Promise<Viaje> => {

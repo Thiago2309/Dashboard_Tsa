@@ -978,32 +978,159 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
 // };
 
 // =============================================
+// COLUMNAS PERSONALIZABLES DE LA HOJA "VIAJES DETALLADOS"
+// =============================================
+interface DefinicionColumnaExportacion {
+  header: string;
+  width: number;
+  getValue: (viaje: ViajeEstimacion, index: number) => string | number;
+}
+
+const DEFINICIONES_COLUMNAS: Record<string, DefinicionColumnaExportacion> = {
+  numero_viaje: { header: 'No. Viaje', width: 10, getValue: (v, i) => v.numero_viaje || i + 1 },
+  fecha: { header: 'Fecha', width: 12, getValue: (v) => v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : '' },
+  folio: { header: 'Folio', width: 12, getValue: (v) => v.folio || '' },
+  folio_bco: { header: 'Folio BCO', width: 12, getValue: (v) => v.folio_bco || '' },
+  origen: { header: 'Origen', width: 20, getValue: (v) => v.origen || '' },
+  destino: { header: 'Destino', width: 20, getValue: (v) => v.destino || '' },
+  material: { header: 'Material', width: 15, getValue: (v) => v.material || '' },
+  operador: { header: 'Operador', width: 20, getValue: (v) => v.operador || '' },
+  horas_renta: { header: 'Hrs Renta', width: 12, getValue: (v) => v.horas_renta || 0 },
+  m3: { header: 'M3', width: 10, getValue: (v) => Number(v.m3.toFixed(2)) },
+  precio: { header: 'Precio Unitario', width: 15, getValue: (v) => formatCurrencyForExport(v.precio) },
+  total_viaje: { header: 'Total Viaje', width: 15, getValue: (v) => formatCurrencyForExport(v.total_viaje) }
+};
+
+// Orden y selección de columnas que se usa cuando no se personaliza la exportación
+export const COLUMNAS_EXPORTACION_ESTANDAR = [
+  'numero_viaje', 'fecha', 'folio', 'folio_bco', 'origen', 'destino', 'material', 'operador', 'm3', 'precio', 'total_viaje'
+];
+
+// Catálogo de columnas disponibles para que el usuario elija/ordene en el diálogo de exportación
+export const COLUMNAS_DISPONIBLES_EXPORTACION = Object.entries(DEFINICIONES_COLUMNAS).map(([key, def]) => ({
+  key,
+  label: def.header
+}));
+
+export interface OpcionesExportacionExcel {
+  columnas?: string[]; // claves de DEFINICIONES_COLUMNAS, en el orden en que deben aparecer
+  incluirResumen?: boolean;
+  incluirDetalle?: boolean;
+  incluirResumenPorMaterial?: boolean;
+}
+
+// =============================================
+// CONFIGURACIONES DE EXPORTACIÓN GUARDADAS (por cliente, ej. "Exportación CEMEX")
+// =============================================
+export interface ConfiguracionExportacion {
+  id?: number;
+  nombre: string;
+  columnas: string[];
+  incluir_resumen: boolean;
+  incluir_detalle: boolean;
+  incluir_resumen_material: boolean;
+  created_at?: string;
+}
+
+const transformConfiguracionExportacionData = (row: any): ConfiguracionExportacion => ({
+  id: row.id,
+  nombre: row.nombre,
+  columnas: row.columnas ?? COLUMNAS_EXPORTACION_ESTANDAR,
+  incluir_resumen: row.incluir_resumen,
+  incluir_detalle: row.incluir_detalle,
+  incluir_resumen_material: row.incluir_resumen_material,
+  created_at: row.created_at
+});
+
+export const fetchConfiguracionesExportacion = async (): Promise<ConfiguracionExportacion[]> => {
+  const { data, error } = await supabase
+    .from('estimaciones_config_exportacion')
+    .select('*')
+    .order('nombre', { ascending: true });
+
+  if (error) throw error;
+  return (data || []).map(transformConfiguracionExportacionData);
+};
+
+export const guardarConfiguracionExportacion = async (
+  config: Omit<ConfiguracionExportacion, 'id' | 'created_at'>
+): Promise<ConfiguracionExportacion> => {
+  const { data, error } = await supabase
+    .from('estimaciones_config_exportacion')
+    .insert([config])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return transformConfiguracionExportacionData(data);
+};
+
+export const eliminarConfiguracionExportacion = async (id: number): Promise<void> => {
+  const { error } = await supabase
+    .from('estimaciones_config_exportacion')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+};
+
+// =============================================
 // FUNCIÓN PRINCIPAL DE EXPORTACIÓN CON EXCELJS
 // =============================================
 // Variable global para el número consecutivo de estimación
 let contadorEstimacion = 1;
 
 export const exportarEstimacionExcel = async (
-  viajes: ViajeEstimacion[], 
-  cliente: EstimacionCliente, 
+  viajes: ViajeEstimacion[],
+  cliente: EstimacionCliente,
   filtros: FiltrosEstimacion,
-  logoBase64?: string // Opcional: logo en base64
+  logoBase64?: string, // Opcional: logo en base64
+  opcionesExportacion?: OpcionesExportacionExcel
 ) => {
+  const incluirResumen = opcionesExportacion?.incluirResumen ?? true;
+  const incluirDetalle = opcionesExportacion?.incluirDetalle ?? true;
+  const incluirResumenPorMaterial = opcionesExportacion?.incluirResumenPorMaterial ?? true;
+  const columnasSeleccionadas = (opcionesExportacion?.columnas && opcionesExportacion.columnas.length > 0)
+    ? opcionesExportacion.columnas
+    : COLUMNAS_EXPORTACION_ESTANDAR;
   try {
     // Crear nuevo libro de Excel
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Sistema de Estimaciones - Tsa';
     workbook.created = new Date();
     
-    // ===== HOJA 1: RESUMEN PROFESIONAL =====
-    const worksheet = workbook.addWorksheet('Resumen');
-    
-    // Calcular totales
+    // Calcular totales (se usan en varias hojas)
     const totalViajes = viajes.length;
     const totalM3 = viajes.reduce((sum, viaje) => sum + viaje.m3, 0);
     const totalCobrar = viajes.reduce((sum, viaje) => sum + viaje.total_viaje, 0);
     const iva = totalCobrar * 0.16; // 16% de IVA
     const totalConIva = totalCobrar + iva;
+
+    // Agrupar viajes por material (se usa en Resumen y Resumen por Material)
+    const materialesMap = new Map<string, { viajes: number, m3: number, precioPromedio: number, total: number }>();
+    viajes.forEach(viaje => {
+      const material = viaje.material || 'No especificado';
+      if (materialesMap.has(material)) {
+        const current = materialesMap.get(material)!;
+        materialesMap.set(material, {
+          viajes: current.viajes + 1,
+          m3: current.m3 + viaje.m3,
+          precioPromedio: ((current.precioPromedio * current.viajes) + viaje.precio) / (current.viajes + 1),
+          total: current.total + viaje.total_viaje
+        });
+      } else {
+        materialesMap.set(material, {
+          viajes: 1,
+          m3: viaje.m3,
+          precioPromedio: viaje.precio,
+          total: viaje.total_viaje
+        });
+      }
+    });
+
+    // ===== HOJA 1: RESUMEN PROFESIONAL =====
+    if (incluirResumen) {
+    const worksheet = workbook.addWorksheet('Resumen');
 
     // 1. AGREGAR LOGO (si se proporciona)
     let startRow = 1; // Fila inicial (1-based en ExcelJS)
@@ -1127,29 +1254,6 @@ export const exportarEstimacionExcel = async (
         pattern: 'solid',
         fgColor: { argb: 'F2F2F2' } // Gris claro
       };
-    });
-    
-    // Agrupar viajes por material para el resumen
-    const materialesMap = new Map<string, { viajes: number, m3: number, precioPromedio: number, total: number }>();
-    
-    viajes.forEach(viaje => {
-      const material = viaje.material || 'No especificado';
-      if (materialesMap.has(material)) {
-        const current = materialesMap.get(material)!;
-        materialesMap.set(material, {
-          viajes: current.viajes + 1,
-          m3: current.m3 + viaje.m3,
-          precioPromedio: ((current.precioPromedio * current.viajes) + viaje.precio) / (current.viajes + 1),
-          total: current.total + viaje.total_viaje
-        });
-      } else {
-        materialesMap.set(material, {
-          viajes: 1,
-          m3: viaje.m3,
-          precioPromedio: viaje.precio,
-          total: viaje.total_viaje
-        });
-      }
     });
     
     // Datos del resumen por material
@@ -1295,15 +1399,16 @@ export const exportarEstimacionExcel = async (
     
     // 9. AJUSTAR ALTURAS DE FILA
     worksheet.getRow(tableStartRow).height = 25; // Encabezados de tabla
-    
-    // ===== HOJA 2: VIAJES DETALLADOS (SE MANTIENE IGUAL) =====
+    } // fin if (incluirResumen)
+
+    // ===== HOJA 2: VIAJES DETALLADOS (columnas y orden personalizables) =====
+    if (incluirDetalle) {
     const wsViajes = workbook.addWorksheet('Viajes Detallados');
-    
+    const columnasHoja2 = columnasSeleccionadas.filter(key => DEFINICIONES_COLUMNAS[key]);
+
     // Encabezados
-    wsViajes.addRow([
-      'No. Viaje', 'Fecha', 'Folio', 'Folio BCO', 'Origen', 'Destino', 'Material', 'Operador', 'M3', 'Precio Unitario', 'Total Viaje'
-    ]);
-    
+    wsViajes.addRow(columnasHoja2.map(key => DEFINICIONES_COLUMNAS[key].header));
+
     // Aplicar estilo a encabezados
     const headerRowViajes = wsViajes.getRow(1);
     headerRowViajes.font = { bold: true };
@@ -1312,39 +1417,29 @@ export const exportarEstimacionExcel = async (
       pattern: 'solid',
       fgColor: { argb: 'E6F3FF' } // Azul claro
     };
-    
+
     // Datos
     viajes.forEach((viaje, index) => {
-      wsViajes.addRow([
-        viaje.numero_viaje || index + 1,
-        viaje.fecha ? new Date(viaje.fecha).toLocaleDateString('es-MX') : '',
-        viaje.folio || '',
-        viaje.folio_bco || '',
-        viaje.origen || '',
-        viaje.destino || '',
-        viaje.material || '',
-        viaje.operador || '',
-        viaje.m3.toFixed(2),
-        formatCurrencyForExport(viaje.precio),
-        formatCurrencyForExport(viaje.total_viaje)
-      ]);
+      wsViajes.addRow(columnasHoja2.map(key => DEFINICIONES_COLUMNAS[key].getValue(viaje, index)));
     });
-    
-    // Totales
-    const totalRowViajes = wsViajes.addRow([
-      'TOTALES', '', '', '', '', '', '', '',
-      totalM3.toFixed(2),
-      '',
-      formatCurrencyForExport(totalCobrar)
-    ]);
-    
+
+    // Totales (solo se llenan las columnas de M3 y Total Viaje, si están presentes)
+    const totalesPorColumna: Record<string, string> = {
+      m3: totalM3.toFixed(2),
+      total_viaje: formatCurrencyForExport(totalCobrar)
+    };
+    const totalRowViajes = wsViajes.addRow(columnasHoja2.map((key, idx) => {
+      if (idx === 0) return 'TOTALES';
+      return totalesPorColumna[key] ?? '';
+    }));
+
     // Resaltar totales
     totalRowViajes.font = { bold: true };
-    
+
     // Aplicar bordes a toda la hoja de viajes
     for (let i = 1; i <= wsViajes.rowCount; i++) {
       const row = wsViajes.getRow(i);
-      for (let j = 1; j <= 11; j++) {
+      for (let j = 1; j <= columnasHoja2.length; j++) {
         const cell = row.getCell(j);
         cell.border = {
           top: { style: 'thin', color: { argb: '000000' } },
@@ -1354,24 +1449,22 @@ export const exportarEstimacionExcel = async (
         };
       }
     }
-    
+
     // Ajustar anchos
-    wsViajes.columns = [
-      { width: 10 }, { width: 12 }, { width: 12 }, { width: 12 },
-      { width: 20 }, { width: 20 }, { width: 15 }, { width: 20 },
-      { width: 10 }, { width: 15 }, { width: 15 }
-    ];
-    
-    // ===== HOJA 3: RESUMEN POR MATERIAL (ACTUALIZADA) =====
+    wsViajes.columns = columnasHoja2.map(key => ({ width: DEFINICIONES_COLUMNAS[key].width }));
+    } // fin if (incluirDetalle)
+
+    // ===== HOJA 3: RESUMEN POR MATERIAL =====
+    if (incluirResumenPorMaterial) {
     const wsMateriales = workbook.addWorksheet('Resumen por Material');
-    
+
     // Título
     wsMateriales.addRow(['RESUMEN POR MATERIAL']);
     wsMateriales.mergeCells('A1:E1');
     const titleRow = wsMateriales.getRow(1);
     titleRow.getCell(1).font = { bold: true, size: 14 };
     titleRow.getCell(1).alignment = { horizontal: 'center' };
-    
+
     // Encabezados mejorados
     wsMateriales.addRow(['Material', 'Viajes', 'Total M3', 'Precio Promedio', 'Total a Cobrar']);
     const headerRowMat = wsMateriales.getRow(2);
@@ -1381,7 +1474,7 @@ export const exportarEstimacionExcel = async (
       pattern: 'solid',
       fgColor: { argb: 'F2F2F2' }
     };
-    
+
     // Datos del mapa de materiales
     Array.from(materialesMap.entries()).forEach(([material, datos]) => {
       wsMateriales.addRow([
@@ -1392,7 +1485,7 @@ export const exportarEstimacionExcel = async (
         formatCurrencyForExport(datos.total)
       ]);
     });
-    
+
     // Total general
     const totalRowMat = wsMateriales.addRow([
       'TOTAL GENERAL',
@@ -1402,7 +1495,7 @@ export const exportarEstimacionExcel = async (
       formatCurrencyForExport(totalCobrar)
     ]);
     totalRowMat.font = { bold: true };
-    
+
     // Aplicar bordes
     for (let i = 1; i <= wsMateriales.rowCount; i++) {
       const row = wsMateriales.getRow(i);
@@ -1416,12 +1509,17 @@ export const exportarEstimacionExcel = async (
         };
       }
     }
-    
+
     // Ajustar anchos
     wsMateriales.columns = [
       { width: 25 }, { width: 10 }, { width: 15 }, { width: 18 }, { width: 20 }
     ];
-    
+    } // fin if (incluirResumenPorMaterial)
+
+    if (workbook.worksheets.length === 0) {
+      throw new Error('Debes incluir al menos una hoja en la exportación');
+    }
+
     // 10. GENERAR Y DESCARGAR ARCHIVO
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { 
