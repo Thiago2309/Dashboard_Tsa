@@ -427,7 +427,7 @@ const Dashboard = () => {
             )}
 
             {/* card 7: Seguimineto de viajes tirados */}
-            <div className="surface-border border-round p-3">
+            <div className="col-12 surface-border border-round p-3">
                 <LogisticaAdmin />
             </div>
 
