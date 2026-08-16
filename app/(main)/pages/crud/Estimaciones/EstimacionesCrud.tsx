@@ -12,16 +12,27 @@ import { Dropdown } from 'primereact/dropdown';
 import { InputText } from 'primereact/inputtext'; 
 import { Divider } from 'primereact/divider'; 
 import { Dialog } from 'primereact/dialog';
+import { PickList } from 'primereact/picklist';
+import { Checkbox } from 'primereact/checkbox';
+import { RadioButton } from 'primereact/radiobutton';
 import * as XLSX from 'xlsx';
-import { 
-  fetchClientesConViajesUltraRapido as fetchClientesConViajes, 
+import {
+  fetchClientesConViajesUltraRapido as fetchClientesConViajes,
   fetchViajesConFiltrosOptimizado as fetchViajesConFiltros,
-  exportarEstimacionExcel, 
-  fetchOpcionesFiltros, 
-  EstimacionCliente, 
-  ViajeEstimacion, 
-  FiltrosEstimacion 
+  exportarEstimacionExcel,
+  fetchOpcionesFiltros,
+  fetchConfiguracionesExportacion,
+  guardarConfiguracionExportacion,
+  eliminarConfiguracionExportacion,
+  COLUMNAS_DISPONIBLES_EXPORTACION,
+  COLUMNAS_EXPORTACION_ESTANDAR,
+  EstimacionCliente,
+  ViajeEstimacion,
+  FiltrosEstimacion,
+  ConfiguracionExportacion
 } from '../../../../../Services/BD/estimacionesService';
+
+type ColumnaExportacion = { key: string; label: string };
 
 const EstimacionesCrud = () => { 
   const [clientes, setClientes] = useState<EstimacionCliente[]>([]); 
@@ -46,7 +57,21 @@ const EstimacionesCrud = () => {
   });
   const [showFiltros, setShowFiltros] = useState(false);
   const [exportDialog, setExportDialog] = useState(false);
-  const toast = useRef<Toast>(null); 
+
+  // --- Personalización de la exportación a Excel ---
+  const [configuraciones, setConfiguraciones] = useState<ConfiguracionExportacion[]>([]);
+  const [configSeleccionadaId, setConfigSeleccionadaId] = useState<number | null>(null); // null = Estándar
+  const [modoExportacion, setModoExportacion] = useState<'estandar' | 'personalizado'>('estandar');
+  const [columnasDisponibles, setColumnasDisponibles] = useState<ColumnaExportacion[]>([]);
+  const [columnasSeleccionadas, setColumnasSeleccionadas] = useState<ColumnaExportacion[]>([]);
+  const [incluirResumen, setIncluirResumen] = useState(true);
+  const [incluirDetalle, setIncluirDetalle] = useState(true);
+  const [incluirResumenPorMaterial, setIncluirResumenPorMaterial] = useState(true);
+  const [guardarConfigDialog, setGuardarConfigDialog] = useState(false);
+  const [nombreNuevaConfig, setNombreNuevaConfig] = useState('');
+  const [guardandoConfig, setGuardandoConfig] = useState(false);
+
+  const toast = useRef<Toast>(null);
 
   useEffect(() => { 
     const cargarDatosIniciales = async () => { 
@@ -63,9 +88,103 @@ const EstimacionesCrud = () => {
       } finally { 
         setLoading(prev => ({...prev, clientes: false, opciones: false})); 
       } 
-    }; 
-    cargarDatosIniciales(); 
-  }, []); 
+    };
+    const cargarConfiguracionesExportacion = async () => {
+      try {
+        const data = await fetchConfiguracionesExportacion();
+        setConfiguraciones(data);
+      } catch (error) {
+        mostrarError('Error al cargar las configuraciones de exportación guardadas');
+      }
+    };
+    cargarDatosIniciales();
+    cargarConfiguracionesExportacion();
+  }, []);
+
+  // Prepara las listas de columnas disponibles/seleccionadas a partir de un arreglo de claves
+  const construirListasColumnas = (clavesSeleccionadas: string[]) => {
+    const seleccionadas = clavesSeleccionadas
+      .map(key => COLUMNAS_DISPONIBLES_EXPORTACION.find(c => c.key === key))
+      .filter((c): c is ColumnaExportacion => !!c);
+    const disponibles = COLUMNAS_DISPONIBLES_EXPORTACION.filter(
+      c => !clavesSeleccionadas.includes(c.key)
+    );
+    setColumnasSeleccionadas(seleccionadas);
+    setColumnasDisponibles(disponibles);
+  };
+
+  const abrirDialogoExportacion = () => {
+    setConfigSeleccionadaId(null);
+    setModoExportacion('estandar');
+    construirListasColumnas(COLUMNAS_EXPORTACION_ESTANDAR);
+    setIncluirResumen(true);
+    setIncluirDetalle(true);
+    setIncluirResumenPorMaterial(true);
+    setExportDialog(true);
+  };
+
+  const aplicarConfiguracionGuardada = (id: number | null) => {
+    setConfigSeleccionadaId(id);
+    if (id === null) {
+      construirListasColumnas(COLUMNAS_EXPORTACION_ESTANDAR);
+      setIncluirResumen(true);
+      setIncluirDetalle(true);
+      setIncluirResumenPorMaterial(true);
+      return;
+    }
+    const config = configuraciones.find(c => c.id === id);
+    if (!config) return;
+    construirListasColumnas(config.columnas);
+    setIncluirResumen(config.incluir_resumen);
+    setIncluirDetalle(config.incluir_detalle);
+    setIncluirResumenPorMaterial(config.incluir_resumen_material);
+  };
+
+  const guardarConfigActual = async () => {
+    if (!nombreNuevaConfig.trim()) {
+      mostrarError('Ponle un nombre a la configuración');
+      return;
+    }
+    if (columnasSeleccionadas.length === 0) {
+      mostrarError('Selecciona al menos una columna para guardar la configuración');
+      return;
+    }
+    setGuardandoConfig(true);
+    try {
+      const nuevaConfig = await guardarConfiguracionExportacion({
+        nombre: nombreNuevaConfig.trim(),
+        columnas: columnasSeleccionadas.map(c => c.key),
+        incluir_resumen: incluirResumen,
+        incluir_detalle: incluirDetalle,
+        incluir_resumen_material: incluirResumenPorMaterial
+      });
+      setConfiguraciones(prev => [...prev, nuevaConfig].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      setConfigSeleccionadaId(nuevaConfig.id ?? null);
+      setGuardarConfigDialog(false);
+      setNombreNuevaConfig('');
+      mostrarExito(`Configuración "${nuevaConfig.nombre}" guardada`);
+    } catch (error) {
+      mostrarError('Error al guardar la configuración');
+    } finally {
+      setGuardandoConfig(false);
+    }
+  };
+
+  const eliminarConfigSeleccionada = async () => {
+    if (configSeleccionadaId === null) return;
+    const config = configuraciones.find(c => c.id === configSeleccionadaId);
+    if (!config) return;
+    if (!window.confirm(`¿Eliminar la configuración "${config.nombre}"?`)) return;
+
+    try {
+      await eliminarConfiguracionExportacion(configSeleccionadaId);
+      setConfiguraciones(prev => prev.filter(c => c.id !== configSeleccionadaId));
+      aplicarConfiguracionGuardada(null);
+      mostrarExito('Configuración eliminada');
+    } catch (error) {
+      mostrarError('Error al eliminar la configuración');
+    }
+  };
 
   const aplicarFiltros = async () => {
     if (!clienteSeleccionado) {
@@ -174,6 +293,14 @@ const EstimacionesCrud = () => {
       mostrarError('No hay datos para exportar');
       return;
     }
+    if (!incluirResumen && !incluirDetalle && !incluirResumenPorMaterial) {
+      mostrarError('Selecciona al menos una hoja para exportar');
+      return;
+    }
+    if (incluirDetalle && columnasSeleccionadas.length === 0) {
+      mostrarError('Selecciona al menos una columna para la hoja de Viajes Detallados');
+      return;
+    }
 
     setLoading(prev => ({...prev, viajes: true}));
     try {
@@ -193,7 +320,13 @@ const EstimacionesCrud = () => {
         viajesFiltrados,
         clienteSeleccionado,
         filtros,
-        // logoBase64 // FALTA POR DEFINIR SI SE USA O NO
+        undefined, // logoBase64 // FALTA POR DEFINIR SI SE USA O NO
+        {
+          columnas: columnasSeleccionadas.map(c => c.key),
+          incluirResumen,
+          incluirDetalle,
+          incluirResumenPorMaterial
+        }
       );
       
       mostrarExito('Estimación exportada a Excel correctamente');
@@ -325,10 +458,10 @@ const EstimacionesCrud = () => {
                           disabled={loading.viajes}
                         />
                         <Button 
-                          icon="pi pi-download" 
-                          label="Exportar Excel" 
+                          icon="pi pi-download"
+                          label="Exportar Excel"
                           className="p-button-success"
-                          onClick={() => setExportDialog(true)}
+                          onClick={abrirDialogoExportacion}
                           disabled={viajesFiltrados.length === 0 || loading.viajes}
                         />
                       </div>
@@ -519,30 +652,30 @@ const EstimacionesCrud = () => {
         </Dialog>
 
         {/* Diálogo de Exportación */}
-        <Dialog 
-          visible={exportDialog} 
-          onHide={() => setExportDialog(false)} 
+        <Dialog
+          visible={exportDialog}
+          onHide={() => setExportDialog(false)}
           header="Exportar Estimación"
+          style={{ width: '750px' }}
           footer={
             <div>
-              <Button 
-                label="Cancelar" 
-                icon="pi pi-times" 
-                onClick={() => setExportDialog(false)} 
-                className="p-button-text" 
+              <Button
+                label="Cancelar"
+                icon="pi pi-times"
+                onClick={() => setExportDialog(false)}
+                className="p-button-text"
                 disabled={loading.viajes}
               />
-              <Button 
-                label="Exportar" 
-                icon="pi pi-download" 
-                onClick={exportarAExcel} 
+              <Button
+                label="Exportar"
+                icon="pi pi-download"
+                onClick={exportarAExcel}
                 loading={loading.viajes}
               />
             </div>
           }
         >
-          <p>¿Estás seguro de que quieres exportar la estimación a Excel?</p>
-          <div className="mt-3 p-3 surface-100 border-round">
+          <div className="p-3 surface-100 border-round mb-4">
             <strong>Resumen de la estimación:</strong>
             <ul className="mt-2 mb-0">
               <li><strong>Cliente:</strong> {clienteSeleccionado?.cliente_nombre}</li>
@@ -557,10 +690,150 @@ const EstimacionesCrud = () => {
               )}
             </ul>
           </div>
+
+          <Divider />
+
+          <div className="field">
+            <label className="font-medium">¿Cómo quieres exportar la información?</label>
+            <div className="flex gap-4 mt-2">
+              <div className="flex align-items-center">
+                <RadioButton
+                  inputId="modoEstandar"
+                  name="modoExportacion"
+                  value="estandar"
+                  checked={modoExportacion === 'estandar'}
+                  onChange={() => {
+                    setModoExportacion('estandar');
+                    aplicarConfiguracionGuardada(null);
+                  }}
+                />
+                <label htmlFor="modoEstandar" className="ml-2">Formato estándar</label>
+              </div>
+              <div className="flex align-items-center">
+                <RadioButton
+                  inputId="modoPersonalizado"
+                  name="modoExportacion"
+                  value="personalizado"
+                  checked={modoExportacion === 'personalizado'}
+                  onChange={() => setModoExportacion('personalizado')}
+                />
+                <label htmlFor="modoPersonalizado" className="ml-2">Personalizar columnas y hojas</label>
+              </div>
+            </div>
+          </div>
+
+          {modoExportacion === 'personalizado' && (
+            <div className="mt-4">
+              <div className="field">
+                <label className="font-medium">Configuración guardada</label>
+                <div className="flex gap-2 align-items-center mt-2">
+                  <Dropdown
+                    value={configSeleccionadaId}
+                    onChange={(e) => aplicarConfiguracionGuardada(e.value)}
+                    options={[
+                      { label: 'Personalizado (sin guardar)', value: null },
+                      ...configuraciones.map(c => ({ label: c.nombre, value: c.id }))
+                    ]}
+                    placeholder="Selecciona una configuración guardada"
+                    className="flex-1"
+                  />
+                  <Button
+                    icon="pi pi-save"
+                    className="p-button-outlined"
+                    tooltip="Guardar esta configuración con un nombre"
+                    onClick={() => setGuardarConfigDialog(true)}
+                    disabled={columnasSeleccionadas.length === 0}
+                  />
+                  <Button
+                    icon="pi pi-trash"
+                    className="p-button-outlined p-button-danger"
+                    tooltip="Eliminar la configuración seleccionada"
+                    onClick={eliminarConfigSeleccionada}
+                    disabled={configSeleccionadaId === null}
+                  />
+                </div>
+              </div>
+
+              <div className="field mt-3">
+                <label className="font-medium">Hojas a incluir en el archivo</label>
+                <div className="flex flex-column gap-2 mt-2">
+                  <div className="flex align-items-center">
+                    <Checkbox inputId="chkResumen" checked={incluirResumen} onChange={(e) => setIncluirResumen(!!e.checked)} />
+                    <label htmlFor="chkResumen" className="ml-2">Resumen (hoja tipo estimación con logo y totales)</label>
+                  </div>
+                  <div className="flex align-items-center">
+                    <Checkbox inputId="chkDetalle" checked={incluirDetalle} onChange={(e) => setIncluirDetalle(!!e.checked)} />
+                    <label htmlFor="chkDetalle" className="ml-2">Viajes Detallados (listado de viajes, columnas personalizables)</label>
+                  </div>
+                  <div className="flex align-items-center">
+                    <Checkbox inputId="chkResumenMat" checked={incluirResumenPorMaterial} onChange={(e) => setIncluirResumenPorMaterial(!!e.checked)} />
+                    <label htmlFor="chkResumenMat" className="ml-2">Resumen por Material</label>
+                  </div>
+                </div>
+              </div>
+
+              {incluirDetalle && (
+                <div className="field mt-3">
+                  <label className="font-medium">Columnas de &quot;Viajes Detallados&quot; (elige y ordena con las flechas)</label>
+                  <PickList
+                    dataKey="key"
+                    source={columnasDisponibles}
+                    target={columnasSeleccionadas}
+                    onChange={(e) => {
+                      setColumnasDisponibles(e.source);
+                      setColumnasSeleccionadas(e.target);
+                    }}
+                    itemTemplate={(item: ColumnaExportacion) => <span>{item.label}</span>}
+                    sourceHeader="Disponibles"
+                    targetHeader="A exportar (en este orden)"
+                    sourceStyle={{ height: '220px' }}
+                    targetStyle={{ height: '220px' }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </Dialog>
-      </div> 
-    </div> 
-  ); 
-}; 
+
+        {/* Diálogo para guardar configuración de exportación */}
+        <Dialog
+          visible={guardarConfigDialog}
+          onHide={() => setGuardarConfigDialog(false)}
+          header="Guardar configuración de exportación"
+          style={{ width: '450px' }}
+          footer={
+            <div>
+              <Button
+                label="Cancelar"
+                icon="pi pi-times"
+                className="p-button-text"
+                onClick={() => setGuardarConfigDialog(false)}
+                disabled={guardandoConfig}
+              />
+              <Button
+                label="Guardar"
+                icon="pi pi-save"
+                onClick={guardarConfigActual}
+                loading={guardandoConfig}
+              />
+            </div>
+          }
+        >
+          <div className="field">
+            <label htmlFor="nombreConfig">Nombre de la configuración</label>
+            <InputText
+              id="nombreConfig"
+              value={nombreNuevaConfig}
+              onChange={(e) => setNombreNuevaConfig(e.target.value)}
+              placeholder="Ej. Exportación CEMEX"
+              className="w-full"
+              autoFocus
+            />
+          </div>
+        </Dialog>
+      </div>
+    </div>
+  );
+};
 
 export default EstimacionesCrud;
