@@ -32,7 +32,7 @@ interface OrgNode {
     className?: string;
     expanded?: boolean;
     children?: OrgNode[];
-    data?: { subtitulo?: string };
+    data?: { puesto?: string; departamentoNombre?: string };
 }
 
 const DepartamentosCrud = () => {
@@ -180,21 +180,60 @@ const DepartamentosCrud = () => {
                 useCORS: true
             });
 
-            const imgData = canvas.toDataURL('image/png');
             const orientacion = canvas.width >= canvas.height ? 'l' : 'p';
             const pdf = new jsPDF(orientacion, 'pt', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
-            const margen = 20;
+            const margen = 24;
             const anchoDisponible = pageWidth - margen * 2;
             const altoDisponible = pageHeight - margen * 2;
-            const escala = Math.min(anchoDisponible / canvas.width, altoDisponible / canvas.height);
-            const imgWidth = canvas.width * escala;
-            const imgHeight = canvas.height * escala;
-            const x = (pageWidth - imgWidth) / 2;
-            const y = (pageHeight - imgHeight) / 2;
 
-            pdf.addImage(imgData, 'PNG', x, y, imgWidth, imgHeight);
+            // Si el organigrama tiene muchos empleados, forzar todo en una sola página lo encoge
+            // hasta hacer ilegibles los nombres y puestos. Se fija una escala mínima legible y,
+            // cuando no cabe completo a esa escala, se reparte en varias páginas tipo póster.
+            const ESCALA_MINIMA_LEGIBLE = 0.62;
+            const escalaUnaPagina = Math.min(anchoDisponible / canvas.width, altoDisponible / canvas.height);
+
+            if (escalaUnaPagina >= ESCALA_MINIMA_LEGIBLE) {
+                const imgWidth = canvas.width * escalaUnaPagina;
+                const imgHeight = canvas.height * escalaUnaPagina;
+                const x = (pageWidth - imgWidth) / 2;
+                const y = (pageHeight - imgHeight) / 2;
+                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, imgWidth, imgHeight);
+            } else {
+                const escala = ESCALA_MINIMA_LEGIBLE;
+                const anchoTilePx = Math.floor(anchoDisponible / escala);
+                const altoTilePx = Math.floor(altoDisponible / escala);
+                const columnas = Math.max(1, Math.ceil(canvas.width / anchoTilePx));
+                const filas = Math.max(1, Math.ceil(canvas.height / altoTilePx));
+
+                const tileCanvas = document.createElement('canvas');
+                const tileCtx = tileCanvas.getContext('2d')!;
+
+                let primera = true;
+                for (let fila = 0; fila < filas; fila++) {
+                    for (let col = 0; col < columnas; col++) {
+                        const sx = col * anchoTilePx;
+                        const sy = fila * altoTilePx;
+                        const sw = Math.min(anchoTilePx, canvas.width - sx);
+                        const sh = Math.min(altoTilePx, canvas.height - sy);
+
+                        tileCanvas.width = sw;
+                        tileCanvas.height = sh;
+                        tileCtx.clearRect(0, 0, sw, sh);
+                        tileCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+                        if (!primera) pdf.addPage('a4', orientacion);
+                        primera = false;
+
+                        pdf.addImage(tileCanvas.toDataURL('image/png'), 'PNG', margen, margen, sw * escala, sh * escala);
+                        pdf.setFontSize(8);
+                        pdf.setTextColor(150);
+                        pdf.text(`Fila ${fila + 1} de ${filas} · Columna ${col + 1} de ${columnas}`, margen, pageHeight - 8);
+                    }
+                }
+            }
+
             pdf.save('organigrama-empresa.pdf');
         } catch (error) {
             console.error('Error generando PDF del organigrama:', error);
@@ -218,22 +257,22 @@ const DepartamentosCrud = () => {
             }
         });
 
-        const construirNodo = (emp: OperadorJerarquia, visitados: Set<number>): OrgNode => {
+        const construirNodo = (emp: OperadorJerarquia, visitados: Set<number>, nivel: number): OrgNode => {
             visitados.add(emp.id);
             const hijos = (hijosDe.get(emp.id) || []).filter(h => !visitados.has(h.id));
-            const subtitulo = [emp.puesto, emp.departamento_nombre].filter(Boolean).join(' · ');
+            const claseNivel = emp.es_ceo ? 'org-node-ceo' : nivel === 1 ? 'org-node-gerente' : 'org-node-empleado';
             return {
                 label: emp.nombre,
                 expanded: true,
-                className: emp.es_ceo ? 'org-node-ceo' : 'org-node-empleado',
-                data: { subtitulo },
-                children: hijos.map(h => construirNodo(h, visitados))
+                className: claseNivel,
+                data: { puesto: emp.puesto, departamentoNombre: emp.departamento_nombre },
+                children: hijos.map(h => construirNodo(h, visitados, nivel + 1))
             };
         };
 
         const visitados = new Set<number>();
         const raices = jerarquia.filter(e => e.es_ceo || !e.jefe_inmediato_id || !porId.has(e.jefe_inmediato_id));
-        const nodosRaiz = raices.map(r => construirNodo(r, visitados));
+        const nodosRaiz = raices.map(r => construirNodo(r, visitados, 0));
 
         if (nodosRaiz.length === 1) return nodosRaiz;
 
@@ -245,14 +284,33 @@ const DepartamentosCrud = () => {
         }];
     }, [jerarquia]);
 
+    const inicialesDe = useCallback((nombre: string) => {
+        return nombre
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map(p => p[0]?.toUpperCase())
+            .join('');
+    }, []);
+
     const nodeTemplate = useCallback((node: any) => {
+        if (!node.data) {
+            return (
+                <div className="org-card org-card-empresa">
+                    <div className="org-card-nombre">{node.label}</div>
+                </div>
+            );
+        }
         return (
-            <div className="p-2 text-center">
-                <div className="font-bold">{node.label}</div>
-                {node.data?.subtitulo && <div className="text-sm text-500">{node.data.subtitulo}</div>}
+            <div className="org-card">
+                <div className="org-card-avatar">{inicialesDe(node.label)}</div>
+                <div className="org-card-nombre">{node.label}</div>
+                {node.data.puesto && <div className="org-card-puesto">{node.data.puesto}</div>}
+                {node.data.departamentoNombre && <div className="org-card-departamento">{node.data.departamentoNombre}</div>}
             </div>
         );
-    }, []);
+    }, [inicialesDe]);
 
     const exportCSV = useCallback(() => {
         dt.current?.exportCSV();
@@ -329,9 +387,95 @@ const DepartamentosCrud = () => {
                 <div className="card">
                     <Toast ref={toast} />
                     <style jsx global>{`
-                        .org-node-ceo { background: var(--primary-color); color: var(--primary-color-text); border-radius: 6px; }
-                        .org-node-empleado { background: var(--surface-card); border-radius: 6px; }
-                        .org-node-empresa { background: var(--surface-300); border-radius: 6px; }
+                        .p-organizationchart .p-organizationchart-node-content {
+                            border: none;
+                            background: transparent;
+                            padding: 0.4rem;
+                        }
+                        .p-organizationchart .p-organizationchart-line-down {
+                            background: var(--surface-300);
+                            width: 2px;
+                        }
+                        .p-organizationchart .p-organizationchart-line-left,
+                        .p-organizationchart .p-organizationchart-line-top {
+                            border-color: var(--surface-300);
+                            border-width: 2px;
+                        }
+
+                        .org-card {
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            min-width: 170px;
+                            max-width: 210px;
+                            padding: 1rem 0.75rem 0.85rem;
+                            background: var(--surface-card);
+                            border-radius: 12px;
+                            border-top: 4px solid var(--surface-400);
+                            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+                            transition: transform 0.15s ease, box-shadow 0.15s ease;
+                        }
+                        .org-card:hover {
+                            transform: translateY(-2px);
+                            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+                        }
+                        .org-card-empresa {
+                            border-top-color: var(--surface-500);
+                            padding: 0.6rem 1rem;
+                            min-width: auto;
+                        }
+
+                        .org-card-avatar {
+                            width: 48px;
+                            height: 48px;
+                            border-radius: 50%;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-weight: 700;
+                            font-size: 0.95rem;
+                            color: #ffffff;
+                            background: var(--surface-400);
+                            margin-bottom: 0.4rem;
+                        }
+                        .org-card-nombre {
+                            font-weight: 700;
+                            font-size: 0.92rem;
+                            line-height: 1.2;
+                            text-align: center;
+                            color: var(--text-color);
+                            word-break: break-word;
+                        }
+                        .org-card-puesto {
+                            font-size: 0.78rem;
+                            line-height: 1.2;
+                            text-align: center;
+                            color: var(--text-color-secondary);
+                            margin-top: 0.15rem;
+                            word-break: break-word;
+                        }
+                        .org-card-departamento {
+                            font-size: 0.68rem;
+                            text-align: center;
+                            color: var(--primary-color);
+                            background: var(--primary-50, rgba(99, 102, 241, 0.12));
+                            padding: 1px 8px;
+                            border-radius: 10px;
+                            margin-top: 0.35rem;
+                        }
+
+                        .org-node-ceo .org-card {
+                            border-top-color: var(--primary-color);
+                        }
+                        .org-node-ceo .org-card-avatar {
+                            background: var(--primary-color);
+                        }
+                        .org-node-gerente .org-card {
+                            border-top-color: #3b82f6;
+                        }
+                        .org-node-gerente .org-card-avatar {
+                            background: #3b82f6;
+                        }
                     `}</style>
                     <Toolbar className="mb-4" left={leftToolbarTemplate} right={rightToolbarTemplate}></Toolbar>
 
