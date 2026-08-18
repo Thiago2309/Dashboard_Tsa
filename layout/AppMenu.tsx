@@ -88,7 +88,24 @@ const AppMenu = () => {
             {
                 label: 'Control de Obras',
                 items: [
-                    { label: 'Obras', icon: 'pi pi-building', to: '/pages/empty' },
+                    {
+                        label: 'Infraestructura',
+                        icon: 'pi pi-building',
+                        items: [
+                            {
+                                label: 'Analisis de Precios Unitarios',
+                                icon: 'pi pi-fw pi-box',
+                                items: [
+                                    { label: 'Catálogo de Insumos', icon: 'pi pi-fw pi-tags', to: '/control-obras/apu/insumos' },
+                                    { label: 'Costo Horario de Maquinaria', icon: 'pi pi-fw pi-cog', to: '/control-obras/apu/maquinaria' },
+                                    { label: 'Catálogo de Conceptos', icon: 'pi pi-fw pi-list', to: '/control-obras/apu/conceptos' },
+                                    { label: 'Tarjetas de Precio Unitario', icon: 'pi pi-fw pi-id-card', to: '/control-obras/apu/tarjetas' },
+                                    { label: 'Matriz de Precios Unitarios', icon: 'pi pi-fw pi-table', to: '/control-obras/apu/matriz' },
+                                    { label: 'Explosión de Insumos', icon: 'pi pi-fw pi-sitemap', to: '/control-obras/apu/explosion-insumos' },
+                                ]
+                            },
+                        ]
+                    },
                 ]
             },
 
