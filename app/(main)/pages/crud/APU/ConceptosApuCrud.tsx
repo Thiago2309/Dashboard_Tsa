@@ -5,6 +5,7 @@ import { DataTable, DataTableFilterMeta } from 'primereact/datatable';
 import { Dialog } from 'primereact/dialog';
 import { Dropdown } from 'primereact/dropdown';
 import { InputText } from 'primereact/inputtext';
+import { InputTextarea } from 'primereact/inputtextarea';
 import { Tag } from 'primereact/tag';
 import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
@@ -198,7 +199,7 @@ const ConceptosApuCrud = () => {
                         <Column body={actionBodyTemplate} headerStyle={{ minWidth: '9rem' }}></Column>
                     </DataTable>
 
-                    <Dialog visible={conceptoDialog} style={{ width: '480px' }} header="Detalles de Concepto" modal className="p-fluid" footer={conceptoDialogFooter} onHide={hideDialog}>
+                    <Dialog visible={conceptoDialog} style={{ width: '95vw', maxWidth: '650px' }} header="Detalles de Concepto" modal className="p-fluid" footer={conceptoDialogFooter} onHide={hideDialog}>
                         <div className="field">
                             <label htmlFor="clave">Clave</label>
                             <InputText id="clave" value={concepto.clave} onChange={(e) => setConcepto({ ...concepto, clave: e.target.value })} className={submitted && !concepto.clave ? 'p-invalid' : ''} />
@@ -206,7 +207,7 @@ const ConceptosApuCrud = () => {
                         </div>
                         <div className="field">
                             <label htmlFor="descripcion">Descripción</label>
-                            <InputText id="descripcion" value={concepto.descripcion} onChange={(e) => setConcepto({ ...concepto, descripcion: e.target.value })} className={submitted && !concepto.descripcion ? 'p-invalid' : ''} />
+                            <InputTextarea id="descripcion" value={concepto.descripcion} onChange={(e) => setConcepto({ ...concepto, descripcion: e.target.value })} rows={5} autoResize className={submitted && !concepto.descripcion ? 'p-invalid' : ''} />
                             {submitted && !concepto.descripcion && <small className="p-invalid">Descripción es requerida.</small>}
                         </div>
                         <div className="field">
