@@ -6,16 +6,20 @@ import { Dropdown } from 'primereact/dropdown';
 import { InputText } from 'primereact/inputtext';
 import { Toast } from 'primereact/toast';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { exportarMatrizApuExcel, fetchMatrizApu } from '../../../../../Services/BD/apu/matrizApuService';
+import { exportarMatrizApuExcelDetallado, fetchMatrizApu } from '../../../../../Services/BD/apu/matrizApuService';
 import { TarjetaApu } from '../../../../../Services/BD/apu/tarjetasApuService';
+import { TarjetaApuDetalleModal } from './TarjetaApuDetalleModal';
 
-const formatMoney = (v = 0) => `$ ${v.toFixed(2)}`;
+const formatMoney = (v = 0) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
 const formatPct = (v = 0) => `${v.toFixed(1)} %`;
 
 const MatrizApuReport = () => {
     const [tarjetas, setTarjetas] = useState<TarjetaApu[]>([]);
     const [loading, setLoading] = useState(false);
     const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
+    const [exportando, setExportando] = useState(false);
+    const [idTarjetaDetalle, setIdTarjetaDetalle] = useState<number | null>(null);
+    const [detalleVisible, setDetalleVisible] = useState(false);
     const toast = useRef<Toast>(null);
     const [filters, setFilters] = useState<DataTableFilterMeta>({
         global: { value: null, matchMode: 'contains' as const }
@@ -43,6 +47,24 @@ const MatrizApuReport = () => {
 
     const tarjetasFiltradas = useMemo(() => (categoriaFiltro ? tarjetas.filter((t) => t.categoria_nombre === categoriaFiltro) : tarjetas), [tarjetas, categoriaFiltro]);
 
+    const verDetalle = (row: TarjetaApu) => {
+        setIdTarjetaDetalle(row.id!);
+        setDetalleVisible(true);
+    };
+
+    const exportar = async () => {
+        setExportando(true);
+        try {
+            await exportarMatrizApuExcelDetallado(tarjetasFiltradas);
+        } catch (error) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Error al exportar la Matriz a Excel', life: 3000 });
+        } finally {
+            setExportando(false);
+        }
+    };
+
+    const detalleBodyTemplate = (row: TarjetaApu) => <Button icon="pi pi-eye" label="Detalle" text onClick={() => verDetalle(row)} />;
+
     const header = (
         <div className="flex flex-column md:flex-row md:justify-content-between md:align-items-center gap-3">
             <div>
@@ -55,7 +77,7 @@ const MatrizApuReport = () => {
                     <i className="pi pi-search" />
                     <InputText type="search" onInput={(e) => setFilters({ ...filters, global: { value: e.currentTarget.value, matchMode: 'contains' } })} placeholder="Buscar..." />
                 </span>
-                <Button label="Exportar a Excel" icon="pi pi-file-excel" severity="success" onClick={() => exportarMatrizApuExcel(tarjetasFiltradas)} disabled={tarjetasFiltradas.length === 0} />
+                <Button label="Exportar a Excel" icon="pi pi-file-excel" severity="success" onClick={exportar} loading={exportando} disabled={tarjetasFiltradas.length === 0} />
             </div>
         </div>
     );
@@ -94,7 +116,10 @@ const MatrizApuReport = () => {
                         <Column field="pct_mano_obra" header="% M.O." sortable body={(r: TarjetaApu) => formatPct(r.pct_mano_obra)} style={{ width: '100px' }}></Column>
                         <Column field="pct_maquinaria" header="% Maq." sortable body={(r: TarjetaApu) => formatPct(r.pct_maquinaria)} style={{ width: '100px' }}></Column>
                         <Column field="precio_unitario" header="Precio Unitario" sortable body={(r: TarjetaApu) => formatMoney(r.precio_unitario)} style={{ width: '150px' }}></Column>
+                        <Column body={detalleBodyTemplate} headerStyle={{ minWidth: '9rem' }}></Column>
                     </DataTable>
+
+                    <TarjetaApuDetalleModal visible={detalleVisible} idTarjeta={idTarjetaDetalle} onHide={() => setDetalleVisible(false)} />
                 </div>
             </div>
         </div>

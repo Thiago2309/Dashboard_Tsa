@@ -27,7 +27,7 @@ import {
     updateTarjetaApu
 } from '../../../../../Services/BD/apu/tarjetasApuService';
 
-const formatMoney = (v = 0) => `$ ${v.toFixed(2)}`;
+const formatMoney = (v = 0) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
 const formatPct = (v = 0) => `${v.toFixed(1)} %`;
 
 const tipoLabel: Record<TipoInsumoApu, string> = {

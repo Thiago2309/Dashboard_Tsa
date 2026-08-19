@@ -127,7 +127,7 @@ const InsumosApuCrud = () => {
 
     const tipoBodyTemplate = (row: InsumoApu) => <Tag value={row.tipo === 'MANO_OBRA' ? 'Mano de Obra' : 'Material'} severity={tipoSeverity[row.tipo]} />;
 
-    const precioBodyTemplate = (row: InsumoApu) => `$ ${row.precio_unitario.toFixed(2)}`;
+    const precioBodyTemplate = (row: InsumoApu) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(row.precio_unitario || 0);
 
     const statusBodyTemplate = (row: InsumoApu) => <Tag value={row.status ? 'Activo' : 'Inactivo'} severity={row.status ? 'success' : 'danger'} />;
 
