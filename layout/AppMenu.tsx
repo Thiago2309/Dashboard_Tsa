@@ -104,6 +104,14 @@ const AppMenu = () => {
                                     { label: 'Explosión de Insumos', icon: 'pi pi-fw pi-sitemap', to: '/control-obras/apu/explosion-insumos' },
                                 ]
                             },
+                            {
+                                label: 'Presupuesto',
+                                icon: 'pi pi-fw pi-file-o',
+                                items: [
+                                    { label: 'Presupuestos', icon: 'pi pi-fw pi-file-o', to: '/control-obras/apu/presupuestos' },
+                                    { label: 'Tarjetas por Presupuesto', icon: 'pi pi-fw pi-id-card', to: '/control-obras/apu/presupuestos/tarjetas' },
+                                ]
+                            },
                         ]
                     },
                 ]

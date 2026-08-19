@@ -126,7 +126,7 @@ const MaquinariaApuCrud = () => {
         }
     };
 
-    const formatMoney = (v: number) => `$ ${v.toFixed(2)}`;
+    const formatMoney = (v: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
 
     const costoHoraBodyTemplate = (row: MaquinariaApu) => <Tag value={formatMoney(row.costo_hora_total || 0) + ' / hr'} severity="success" />;
 
