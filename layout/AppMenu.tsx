@@ -109,7 +109,7 @@ const AppMenu = () => {
                                 icon: 'pi pi-fw pi-file-o',
                                 items: [
                                     { label: 'Presupuestos', icon: 'pi pi-fw pi-file-o', to: '/control-obras/apu/presupuestos' },
-                                    { label: 'Tarjetas por Presupuesto', icon: 'pi pi-fw pi-id-card', to: '/control-obras/apu/presupuestos/tarjetas' },
+                                    { label: 'Detalle por Presupuesto', icon: 'pi pi-fw pi-id-card', to: '/control-obras/apu/presupuestos/tarjetas' },
                                 ]
                             },
                         ]

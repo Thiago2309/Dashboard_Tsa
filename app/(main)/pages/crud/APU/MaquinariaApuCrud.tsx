@@ -5,24 +5,33 @@ import { DataTable, DataTableFilterMeta } from 'primereact/datatable';
 import { Dialog } from 'primereact/dialog';
 import { InputNumber } from 'primereact/inputnumber';
 import { InputText } from 'primereact/inputtext';
+import { SelectButton } from 'primereact/selectbutton';
 import { Tag } from 'primereact/tag';
 import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    calcularCostoHorarioMaquinaria,
+    calcularCostoMaquinaria,
     createMaquinariaApu,
     deleteMaquinariaApu,
     fetchMaquinariaApu,
     MaquinariaApu,
+    TipoCalculoMaquinariaApu,
+    unidadInsumoMaquinaria,
     updateMaquinariaApu
 } from '../../../../../Services/BD/apu/maquinariaApuService';
+
+const opcionesTipoCalculo: { label: string; value: TipoCalculoMaquinariaApu }[] = [
+    { label: 'Estándar', value: 'ESTANDAR' },
+    { label: 'Manual', value: 'MANUAL' }
+];
 
 const MaquinariaApuCrud = () => {
     const emptyMaquinaria: MaquinariaApu = {
         clave: '',
         descripcion: '',
         marca_modelo: '',
+        tipo_calculo: 'ESTANDAR',
         valor_adquisicion: 0,
         valor_rescate_pct: 10,
         vida_util_anios: 5,
@@ -35,6 +44,8 @@ const MaquinariaApuCrud = () => {
         consumo_lubricantes_pct: 15,
         costo_llantas_hora: 0,
         otros_consumibles_hora: 0,
+        precio_flete: 0,
+        abundamiento: 1,
         status: true
     };
 
@@ -66,7 +77,8 @@ const MaquinariaApuCrud = () => {
         cargar();
     }, []);
 
-    const costoCalculado = useMemo(() => calcularCostoHorarioMaquinaria(maquinaria), [maquinaria]);
+    const costoCalculado = useMemo(() => calcularCostoMaquinaria(maquinaria), [maquinaria]);
+    const esManual = maquinaria.tipo_calculo === 'MANUAL';
 
     const openNew = () => {
         setMaquinaria(emptyMaquinaria);
@@ -92,7 +104,9 @@ const MaquinariaApuCrud = () => {
     const save = async () => {
         setSubmitted(true);
 
-        if (maquinaria.clave.trim() && maquinaria.descripcion.trim() && maquinaria.valor_adquisicion > 0) {
+        const datosValidos = maquinaria.clave.trim() && maquinaria.descripcion.trim() && (maquinaria.tipo_calculo === 'MANUAL' ? maquinaria.precio_flete > 0 : maquinaria.valor_adquisicion > 0);
+
+        if (datosValidos) {
             setGuardando(true);
             try {
                 if (maquinaria.id) {
@@ -128,7 +142,9 @@ const MaquinariaApuCrud = () => {
 
     const formatMoney = (v: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
 
-    const costoHoraBodyTemplate = (row: MaquinariaApu) => <Tag value={formatMoney(row.costo_hora_total || 0) + ' / hr'} severity="success" />;
+    const tipoCalculoBodyTemplate = (row: MaquinariaApu) => <Tag value={row.tipo_calculo === 'MANUAL' ? 'Manual' : 'Estándar'} severity={row.tipo_calculo === 'MANUAL' ? 'warning' : 'info'} />;
+
+    const costoTotalBodyTemplate = (row: MaquinariaApu) => <Tag value={`${formatMoney(row.costo_hora_total || 0)} / ${unidadInsumoMaquinaria(row.tipo_calculo)}`} severity="success" />;
 
     const statusBodyTemplate = (row: MaquinariaApu) => <Tag value={row.status ? 'Activo' : 'Inactivo'} severity={row.status ? 'success' : 'danger'} />;
 
@@ -189,9 +205,10 @@ const MaquinariaApuCrud = () => {
                         <Column field="clave" header="Clave" sortable style={{ width: '120px' }}></Column>
                         <Column field="descripcion" header="Descripción" sortable></Column>
                         <Column field="marca_modelo" header="Marca / Modelo" sortable></Column>
+                        <Column field="tipo_calculo" header="Tipo" sortable body={tipoCalculoBodyTemplate} style={{ width: '110px' }}></Column>
                         <Column field="costo_fijo_hora" header="Costo Fijo/hr" sortable body={(r: MaquinariaApu) => formatMoney(r.costo_fijo_hora || 0)} style={{ width: '140px' }}></Column>
                         <Column field="costo_operacion_hora" header="Costo Operación/hr" sortable body={(r: MaquinariaApu) => formatMoney(r.costo_operacion_hora || 0)} style={{ width: '160px' }}></Column>
-                        <Column field="costo_hora_total" header="Costo Total/hr" sortable body={costoHoraBodyTemplate} style={{ width: '160px' }}></Column>
+                        <Column field="costo_hora_total" header="Costo Total" sortable body={costoTotalBodyTemplate} style={{ width: '170px' }}></Column>
                         <Column field="status" header="Estado" sortable body={statusBodyTemplate} style={{ width: '110px' }}></Column>
                         <Column body={actionBodyTemplate} headerStyle={{ minWidth: '9rem' }}></Column>
                     </DataTable>
@@ -210,111 +227,149 @@ const MaquinariaApuCrud = () => {
                                     <InputText id="descripcion" value={maquinaria.descripcion} onChange={(e) => setMaquinaria({ ...maquinaria, descripcion: e.target.value })} className={submitted && !maquinaria.descripcion ? 'p-invalid' : ''} />
                                 </div>
                             </div>
-                            <div className="col-12">
+                            <div className="col-12 md:col-6">
                                 <div className="field">
                                     <label htmlFor="marca_modelo">Marca / Modelo</label>
                                     <InputText id="marca_modelo" value={maquinaria.marca_modelo} onChange={(e) => setMaquinaria({ ...maquinaria, marca_modelo: e.target.value })} />
                                 </div>
                             </div>
-
-                            <div className="col-12">
-                                <h6 className="mb-2">Costos Fijos</h6>
-                            </div>
-                            <div className="col-6 md:col-3">
+                            <div className="col-12 md:col-6">
                                 <div className="field">
-                                    <label>Valor de Adquisición</label>
-                                    <InputNumber value={maquinaria.valor_adquisicion} onValueChange={(e) => setMaquinaria({ ...maquinaria, valor_adquisicion: e.value || 0 })} mode="decimal" minFractionDigits={2} min={0} className={submitted && maquinaria.valor_adquisicion <= 0 ? 'p-invalid' : ''} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-3">
-                                <div className="field">
-                                    <label>Valor de Rescate (%)</label>
-                                    <InputNumber value={maquinaria.valor_rescate_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, valor_rescate_pct: e.value || 0 })} suffix=" %" min={0} max={100} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-3">
-                                <div className="field">
-                                    <label>Vida Útil (años)</label>
-                                    <InputNumber value={maquinaria.vida_util_anios} onValueChange={(e) => setMaquinaria({ ...maquinaria, vida_util_anios: e.value || 0 })} min={0} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-3">
-                                <div className="field">
-                                    <label>Horas de Uso Anual</label>
-                                    <InputNumber value={maquinaria.horas_uso_anual} onValueChange={(e) => setMaquinaria({ ...maquinaria, horas_uso_anual: e.value || 0 })} min={0} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-4">
-                                <div className="field">
-                                    <label>Tasa de Interés Anual (%)</label>
-                                    <InputNumber value={maquinaria.tasa_interes_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, tasa_interes_pct: e.value || 0 })} suffix=" %" min={0} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-4">
-                                <div className="field">
-                                    <label>Tasa de Seguros Anual (%)</label>
-                                    <InputNumber value={maquinaria.tasa_seguros_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, tasa_seguros_pct: e.value || 0 })} suffix=" %" min={0} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-4">
-                                <div className="field">
-                                    <label>Mantenimiento (% de depreciación)</label>
-                                    <InputNumber value={maquinaria.factor_mantenimiento_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, factor_mantenimiento_pct: e.value || 0 })} suffix=" %" min={0} />
+                                    <label>Tipo de Cálculo</label>
+                                    <SelectButton value={maquinaria.tipo_calculo} options={opcionesTipoCalculo} onChange={(e) => e.value && setMaquinaria({ ...maquinaria, tipo_calculo: e.value })} />
                                 </div>
                             </div>
 
-                            <div className="col-12">
-                                <h6 className="mb-2">Costos de Operación</h6>
-                            </div>
-                            <div className="col-6 md:col-3">
-                                <div className="field">
-                                    <label>Consumo Combustible (lt/hr)</label>
-                                    <InputNumber value={maquinaria.consumo_combustible_litros_hora} onValueChange={(e) => setMaquinaria({ ...maquinaria, consumo_combustible_litros_hora: e.value || 0 })} min={0} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-3">
-                                <div className="field">
-                                    <label>Precio Combustible ($/lt)</label>
-                                    <InputNumber value={maquinaria.precio_combustible_litro} onValueChange={(e) => setMaquinaria({ ...maquinaria, precio_combustible_litro: e.value || 0 })} mode="decimal" minFractionDigits={2} min={0} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-3">
-                                <div className="field">
-                                    <label>Lubricantes (% del combustible)</label>
-                                    <InputNumber value={maquinaria.consumo_lubricantes_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, consumo_lubricantes_pct: e.value || 0 })} suffix=" %" min={0} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-3">
-                                <div className="field">
-                                    <label>Llantas ($/hr)</label>
-                                    <InputNumber value={maquinaria.costo_llantas_hora} onValueChange={(e) => setMaquinaria({ ...maquinaria, costo_llantas_hora: e.value || 0 })} mode="decimal" minFractionDigits={2} min={0} />
-                                </div>
-                            </div>
-                            <div className="col-6 md:col-3">
-                                <div className="field">
-                                    <label>Otros Consumibles ($/hr)</label>
-                                    <InputNumber value={maquinaria.otros_consumibles_hora} onValueChange={(e) => setMaquinaria({ ...maquinaria, otros_consumibles_hora: e.value || 0 })} mode="decimal" minFractionDigits={2} min={0} />
-                                </div>
-                            </div>
-
-                            <div className="col-12">
-                                <div className="surface-100 border-round p-3 mt-2">
-                                    <div className="grid">
-                                        <div className="col-4 text-center">
-                                            <span className="block text-500 text-sm">Costo Fijo / hr</span>
-                                            <span className="text-xl font-bold">{formatMoney(costoCalculado.costo_fijo_hora)}</span>
-                                        </div>
-                                        <div className="col-4 text-center">
-                                            <span className="block text-500 text-sm">Costo Operación / hr</span>
-                                            <span className="text-xl font-bold">{formatMoney(costoCalculado.costo_operacion_hora)}</span>
-                                        </div>
-                                        <div className="col-4 text-center">
-                                            <span className="block text-500 text-sm">Costo Total / hr</span>
-                                            <span className="text-xl font-bold text-primary">{formatMoney(costoCalculado.costo_hora_total)}</span>
+                            {esManual ? (
+                                <>
+                                    <div className="col-12">
+                                        <p className="text-500 text-sm mt-0">Cálculo manual: se usa para fletes de acarreo u otros costos que no dependen de un análisis de costo fijo/operación por hora. El resultado se expresa por M3.</p>
+                                    </div>
+                                    <div className="col-6 md:col-4">
+                                        <div className="field">
+                                            <label>Precio del Flete</label>
+                                            <InputNumber value={maquinaria.precio_flete} onValueChange={(e) => setMaquinaria({ ...maquinaria, precio_flete: e.value || 0 })} mode="decimal" minFractionDigits={2} min={0} className={submitted && maquinaria.precio_flete <= 0 ? 'p-invalid' : ''} />
+                                            {submitted && maquinaria.precio_flete <= 0 && <small className="p-invalid">El precio del flete debe ser mayor a 0.</small>}
                                         </div>
                                     </div>
-                                </div>
-                            </div>
+                                    <div className="col-6 md:col-4">
+                                        <div className="field">
+                                            <label>Abundamiento</label>
+                                            <InputNumber value={maquinaria.abundamiento} onValueChange={(e) => setMaquinaria({ ...maquinaria, abundamiento: e.value ?? 1 })} mode="decimal" minFractionDigits={2} maxFractionDigits={4} min={0} />
+                                        </div>
+                                    </div>
+
+                                    <div className="col-12">
+                                        <div className="surface-100 border-round p-3 mt-2">
+                                            <div className="text-center">
+                                                <span className="block text-500 text-sm">Costo Total (Precio del Flete × Abundamiento)</span>
+                                                <span className="text-xl font-bold text-primary">{formatMoney(costoCalculado.costo_hora_total)} / M3</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="col-12">
+                                        <h6 className="mb-2">Costos Fijos</h6>
+                                    </div>
+                                    <div className="col-6 md:col-3">
+                                        <div className="field">
+                                            <label>Valor de Adquisición</label>
+                                            <InputNumber value={maquinaria.valor_adquisicion} onValueChange={(e) => setMaquinaria({ ...maquinaria, valor_adquisicion: e.value || 0 })} mode="decimal" minFractionDigits={2} min={0} className={submitted && maquinaria.valor_adquisicion <= 0 ? 'p-invalid' : ''} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-3">
+                                        <div className="field">
+                                            <label>Valor de Rescate (%)</label>
+                                            <InputNumber value={maquinaria.valor_rescate_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, valor_rescate_pct: e.value || 0 })} suffix=" %" min={0} max={100} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-3">
+                                        <div className="field">
+                                            <label>Vida Útil (años)</label>
+                                            <InputNumber value={maquinaria.vida_util_anios} onValueChange={(e) => setMaquinaria({ ...maquinaria, vida_util_anios: e.value || 0 })} min={0} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-3">
+                                        <div className="field">
+                                            <label>Horas de Uso Anual</label>
+                                            <InputNumber value={maquinaria.horas_uso_anual} onValueChange={(e) => setMaquinaria({ ...maquinaria, horas_uso_anual: e.value || 0 })} min={0} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-4">
+                                        <div className="field">
+                                            <label>Tasa de Interés Anual (%)</label>
+                                            <InputNumber value={maquinaria.tasa_interes_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, tasa_interes_pct: e.value || 0 })} suffix=" %" min={0} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-4">
+                                        <div className="field">
+                                            <label>Tasa de Seguros Anual (%)</label>
+                                            <InputNumber value={maquinaria.tasa_seguros_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, tasa_seguros_pct: e.value || 0 })} suffix=" %" min={0} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-4">
+                                        <div className="field">
+                                            <label>Mantenimiento (% de depreciación)</label>
+                                            <InputNumber value={maquinaria.factor_mantenimiento_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, factor_mantenimiento_pct: e.value || 0 })} suffix=" %" min={0} />
+                                        </div>
+                                    </div>
+
+                                    <div className="col-12">
+                                        <h6 className="mb-2">Costos de Operación</h6>
+                                    </div>
+                                    <div className="col-6 md:col-3">
+                                        <div className="field">
+                                            <label>Consumo Combustible (lt/hr)</label>
+                                            <InputNumber value={maquinaria.consumo_combustible_litros_hora} onValueChange={(e) => setMaquinaria({ ...maquinaria, consumo_combustible_litros_hora: e.value || 0 })} min={0} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-3">
+                                        <div className="field">
+                                            <label>Precio Combustible ($/lt)</label>
+                                            <InputNumber value={maquinaria.precio_combustible_litro} onValueChange={(e) => setMaquinaria({ ...maquinaria, precio_combustible_litro: e.value || 0 })} mode="decimal" minFractionDigits={2} min={0} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-3">
+                                        <div className="field">
+                                            <label>Lubricantes (% del combustible)</label>
+                                            <InputNumber value={maquinaria.consumo_lubricantes_pct} onValueChange={(e) => setMaquinaria({ ...maquinaria, consumo_lubricantes_pct: e.value || 0 })} suffix=" %" min={0} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-3">
+                                        <div className="field">
+                                            <label>Llantas ($/hr)</label>
+                                            <InputNumber value={maquinaria.costo_llantas_hora} onValueChange={(e) => setMaquinaria({ ...maquinaria, costo_llantas_hora: e.value || 0 })} mode="decimal" minFractionDigits={2} min={0} />
+                                        </div>
+                                    </div>
+                                    <div className="col-6 md:col-3">
+                                        <div className="field">
+                                            <label>Otros Consumibles ($/hr)</label>
+                                            <InputNumber value={maquinaria.otros_consumibles_hora} onValueChange={(e) => setMaquinaria({ ...maquinaria, otros_consumibles_hora: e.value || 0 })} mode="decimal" minFractionDigits={2} min={0} />
+                                        </div>
+                                    </div>
+
+                                    <div className="col-12">
+                                        <div className="surface-100 border-round p-3 mt-2">
+                                            <div className="grid">
+                                                <div className="col-4 text-center">
+                                                    <span className="block text-500 text-sm">Costo Fijo / hr</span>
+                                                    <span className="text-xl font-bold">{formatMoney(costoCalculado.costo_fijo_hora)}</span>
+                                                </div>
+                                                <div className="col-4 text-center">
+                                                    <span className="block text-500 text-sm">Costo Operación / hr</span>
+                                                    <span className="text-xl font-bold">{formatMoney(costoCalculado.costo_operacion_hora)}</span>
+                                                </div>
+                                                <div className="col-4 text-center">
+                                                    <span className="block text-500 text-sm">Costo Total / hr</span>
+                                                    <span className="text-xl font-bold text-primary">{formatMoney(costoCalculado.costo_hora_total)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </Dialog>
 

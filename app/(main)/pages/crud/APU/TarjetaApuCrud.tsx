@@ -191,6 +191,8 @@ const TarjetaApuCrud = () => {
         const insumoCatalogo = opciones.find((i) => i.id === seleccion.id_insumo);
         if (!insumoCatalogo) return;
 
+        // Cada clic en "Agregar" crea su propia línea, aunque sea el mismo insumo ya agregado antes
+        // (así se puede llevar el conteo de cada cantidad requerida por separado, en vez de sumarlas).
         const linea: TarjetaInsumoApu = {
             id_insumo: insumoCatalogo.id!,
             tipo,
@@ -205,14 +207,16 @@ const TarjetaApuCrud = () => {
         setNuevoInsumo({ ...nuevoInsumo, [tipo]: { id_insumo: null, cantidad: 0 } });
     };
 
-    const quitarInsumo = (id_insumo: number, tipo: TipoInsumoApu) => {
-        setTarjeta({ ...tarjeta, insumos: (tarjeta.insumos || []).filter((i) => !(i.id_insumo === id_insumo && i.tipo === tipo)) });
+    // Las líneas se identifican por su posición en el arreglo (no por el insumo), ya que puede haber
+    // varias líneas del mismo insumo y cada una debe poder editarse/quitarse de forma independiente.
+    const quitarInsumo = (indice: number) => {
+        setTarjeta({ ...tarjeta, insumos: (tarjeta.insumos || []).filter((_, i) => i !== indice) });
     };
 
-    const cambiarCantidadInsumo = (id_insumo: number, tipo: TipoInsumoApu, cantidad: number) => {
+    const cambiarCantidadInsumo = (indice: number, cantidad: number) => {
         setTarjeta({
             ...tarjeta,
-            insumos: (tarjeta.insumos || []).map((i) => (i.id_insumo === id_insumo && i.tipo === tipo ? { ...i, cantidad } : i))
+            insumos: (tarjeta.insumos || []).map((insumo, i) => (i === indice ? { ...insumo, cantidad } : insumo))
         });
     };
 
@@ -250,8 +254,8 @@ const TarjetaApuCrud = () => {
     );
 
     const renderSeccionInsumos = (tipo: TipoInsumoApu) => {
-        const lineas = (tarjeta.insumos || []).filter((i) => i.tipo === tipo);
-        const opciones = opcionesInsumoPorTipo[tipo].filter((i) => !lineas.some((l) => l.id_insumo === i.id));
+        const lineas = (tarjeta.insumos || []).map((insumo, indice) => ({ insumo, indice })).filter((l) => l.insumo.tipo === tipo);
+        const opciones = opcionesInsumoPorTipo[tipo];
         const sugerencia = tipo === 'MANO_OBRA' || tipo === 'MAQUINARIA' ? calcularCantidadSugerida(tarjeta.jornada_horas, tarjeta.rendimiento) : null;
 
         return (
@@ -272,15 +276,15 @@ const TarjetaApuCrud = () => {
                 )}
 
                 <DataTable value={lineas} emptyMessage={`Sin ${tipoLabel[tipo].toLowerCase()} agregados.`} className="mb-3">
-                    <Column field="insumo_clave" header="Clave" style={{ width: '100px' }}></Column>
-                    <Column field="insumo_descripcion" header="Descripción"></Column>
-                    <Column field="insumo_unidad" header="Unidad" style={{ width: '90px' }}></Column>
+                    <Column header="Clave" style={{ width: '100px' }} body={(row: { insumo: TarjetaInsumoApu }) => row.insumo.insumo_clave}></Column>
+                    <Column header="Descripción" body={(row: { insumo: TarjetaInsumoApu }) => row.insumo.insumo_descripcion}></Column>
+                    <Column header="Unidad" style={{ width: '90px' }} body={(row: { insumo: TarjetaInsumoApu }) => row.insumo.insumo_unidad}></Column>
                     <Column
                         header="Cantidad"
                         style={{ width: '190px' }}
-                        body={(row: TarjetaInsumoApu) => (
+                        body={(row: { insumo: TarjetaInsumoApu; indice: number }) => (
                             <div className="flex align-items-center gap-1">
-                                <InputNumber value={row.cantidad} onValueChange={(e) => cambiarCantidadInsumo(row.id_insumo, tipo, e.value || 0)} mode="decimal" minFractionDigits={2} maxFractionDigits={4} min={0} size={6} />
+                                <InputNumber value={row.insumo.cantidad} onValueChange={(e) => cambiarCantidadInsumo(row.indice, e.value || 0)} mode="decimal" minFractionDigits={2} maxFractionDigits={4} min={0} size={6} />
                                 {sugerencia !== null && (
                                     <Button
                                         icon="pi pi-bolt"
@@ -290,18 +294,18 @@ const TarjetaApuCrud = () => {
                                         type="button"
                                         tooltip={`Usar sugerida (${sugerencia.toFixed(4)})`}
                                         tooltipOptions={{ position: 'top' }}
-                                        onClick={() => cambiarCantidadInsumo(row.id_insumo, tipo, sugerencia)}
+                                        onClick={() => cambiarCantidadInsumo(row.indice, sugerencia)}
                                     />
                                 )}
                             </div>
                         )}
                     ></Column>
-                    <Column header="Precio Unitario" style={{ width: '130px' }} body={(row: TarjetaInsumoApu) => formatMoney(row.precio_unitario)}></Column>
-                    <Column header="Importe" style={{ width: '130px' }} body={(row: TarjetaInsumoApu) => formatMoney((row.cantidad || 0) * (row.precio_unitario || 0))}></Column>
+                    <Column header="Precio Unitario" style={{ width: '130px' }} body={(row: { insumo: TarjetaInsumoApu }) => formatMoney(row.insumo.precio_unitario)}></Column>
+                    <Column header="Importe" style={{ width: '130px' }} body={(row: { insumo: TarjetaInsumoApu }) => formatMoney((row.insumo.cantidad || 0) * (row.insumo.precio_unitario || 0))}></Column>
                     <Column
                         header=""
                         style={{ width: '60px' }}
-                        body={(row: TarjetaInsumoApu) => <Button icon="pi pi-trash" rounded text severity="danger" onClick={() => quitarInsumo(row.id_insumo, tipo)} />}
+                        body={(row: { indice: number }) => <Button icon="pi pi-trash" rounded text severity="danger" onClick={() => quitarInsumo(row.indice)} />}
                     ></Column>
                 </DataTable>
 
@@ -360,7 +364,20 @@ const TarjetaApuCrud = () => {
                         responsiveLayout="scroll"
                     >
                         <Column field="concepto_clave" header="Clave" sortable style={{ width: '110px' }}></Column>
-                        <Column field="concepto_descripcion" header="Concepto" sortable></Column>
+                        <Column
+                            field="concepto_descripcion"
+                            header="Concepto"
+                            sortable
+                            style={{ maxWidth: '320px' }}
+                            body={(r: TarjetaApu) => (
+                                <span
+                                    title={r.concepto_descripcion}
+                                    style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                >
+                                    {r.concepto_descripcion}
+                                </span>
+                            )}
+                        ></Column>
                         <Column field="concepto_unidad" header="Unidad" sortable style={{ width: '90px' }}></Column>
                         <Column field="costo_directo" header="Costo Directo" sortable body={(r: TarjetaApu) => formatMoney(r.costo_directo)} style={{ width: '140px' }}></Column>
                         <Column field="pct_material" header="% Material" sortable body={(r: TarjetaApu) => formatPct(r.pct_material)} style={{ width: '110px' }}></Column>

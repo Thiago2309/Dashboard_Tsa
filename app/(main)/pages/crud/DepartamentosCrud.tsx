@@ -9,7 +9,6 @@ import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
 import { ToggleButton } from 'primereact/togglebutton';
 import { Tag } from 'primereact/tag';
-import { OrganizationChart } from 'primereact/organizationchart';
 import { DataTableFilterMeta } from 'primereact/datatable';
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import html2canvas from 'html2canvas';
@@ -30,10 +29,70 @@ import {
 interface OrgNode {
     label: string;
     className?: string;
-    expanded?: boolean;
     children?: OrgNode[];
     data?: { puesto?: string; departamentoNombre?: string };
 }
+
+const PALETA_AREAS = ['#f2a49c', '#8ecae6', '#f5e26b', '#74c9ae', '#c9a4e0', '#f4b183'];
+
+const primerNombre = (nombreCompleto: string) => nombreCompleto.trim().split(/\s+/)[0];
+
+const ListaDescendientes: React.FC<{ nodos: OrgNode[]; nivel?: number }> = ({ nodos, nivel = 0 }) => {
+    if (!nodos || nodos.length === 0) return null;
+    return (
+        <div className="ov-lista" style={nivel > 0 ? { marginLeft: `${nivel * 12}px` } : undefined}>
+            {nodos.map((n, i) => (
+                <div className="ov-lista-item" key={i}>
+                    <div className="ov-lista-conector" />
+                    <span className="ov-lista-texto">{primerNombre(n.label)}</span>
+                    <ListaDescendientes nodos={n.children || []} nivel={nivel + 1} />
+                </div>
+            ))}
+        </div>
+    );
+};
+
+// Reproduce el formato de "organigrama vertical" clásico: una cadena de cajas
+// centradas mientras cada nivel tiene un único subordinado, y en el primer punto
+// donde un jefe tiene varios subordinados directos, esos se muestran como una
+// fila de cajas de color (las "áreas"), cada una con su gente a cargo en una
+// lista simple debajo.
+const OrganigramaVertical: React.FC<{ nodo: OrgNode }> = ({ nodo }) => {
+    const cadena: OrgNode[] = [nodo];
+    let actual = nodo;
+    while (actual.children && actual.children.length === 1) {
+        actual = actual.children[0];
+        cadena.push(actual);
+    }
+    const ramas = actual.children && actual.children.length > 1 ? actual.children : [];
+
+    return (
+        <div className="organigrama-vertical">
+            {cadena.map((n, i) => (
+                <React.Fragment key={i}>
+                    <div className={`ov-caja-nivel ${i === 0 ? 'ov-caja-ceo' : 'ov-caja-cadena'}`}>
+                        <div className="ov-caja-nombre">{n.data ? primerNombre(n.label) : n.label}</div>
+                        {n.data?.puesto && <div className="ov-caja-puesto">{n.data.puesto}</div>}
+                    </div>
+                    {(i < cadena.length - 1 || ramas.length > 0) && <div className="ov-flecha">▼</div>}
+                </React.Fragment>
+            ))}
+            {ramas.length > 0 && (
+                <div className="ov-ramas">
+                    {ramas.map((rama, idx) => (
+                        <div className="ov-columna" key={idx}>
+                            <div className="ov-caja-area" style={{ background: PALETA_AREAS[idx % PALETA_AREAS.length] }}>
+                                <div className="ov-caja-nombre">{primerNombre(rama.label)}</div>
+                                {rama.data?.puesto && <div className="ov-caja-puesto">{rama.data.puesto}</div>}
+                            </div>
+                            <ListaDescendientes nodos={rama.children || []} />
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const DepartamentosCrud = () => {
     const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
@@ -263,7 +322,6 @@ const DepartamentosCrud = () => {
             const claseNivel = emp.es_ceo ? 'org-node-ceo' : nivel === 1 ? 'org-node-gerente' : 'org-node-empleado';
             return {
                 label: emp.nombre,
-                expanded: true,
                 className: claseNivel,
                 data: { puesto: emp.puesto, departamentoNombre: emp.departamento_nombre },
                 children: hijos.map(h => construirNodo(h, visitados, nivel + 1))
@@ -278,39 +336,10 @@ const DepartamentosCrud = () => {
 
         return [{
             label: 'Empresa',
-            expanded: true,
             className: 'org-node-empresa',
             children: nodosRaiz
         }];
     }, [jerarquia]);
-
-    const inicialesDe = useCallback((nombre: string) => {
-        return nombre
-            .trim()
-            .split(/\s+/)
-            .filter(Boolean)
-            .slice(0, 2)
-            .map(p => p[0]?.toUpperCase())
-            .join('');
-    }, []);
-
-    const nodeTemplate = useCallback((node: any) => {
-        if (!node.data) {
-            return (
-                <div className="org-card org-card-empresa">
-                    <div className="org-card-nombre">{node.label}</div>
-                </div>
-            );
-        }
-        return (
-            <div className="org-card">
-                <div className="org-card-avatar">{inicialesDe(node.label)}</div>
-                <div className="org-card-nombre">{node.label}</div>
-                {node.data.puesto && <div className="org-card-puesto">{node.data.puesto}</div>}
-                {node.data.departamentoNombre && <div className="org-card-departamento">{node.data.departamentoNombre}</div>}
-            </div>
-        );
-    }, [inicialesDe]);
 
     const exportCSV = useCallback(() => {
         dt.current?.exportCSV();
@@ -387,94 +416,123 @@ const DepartamentosCrud = () => {
                 <div className="card">
                     <Toast ref={toast} />
                     <style jsx global>{`
-                        .p-organizationchart .p-organizationchart-node-content {
-                            border: none;
-                            background: transparent;
-                            padding: 0.4rem;
-                        }
-                        .p-organizationchart .p-organizationchart-line-down {
-                            background: var(--surface-300);
-                            width: 2px;
-                        }
-                        .p-organizationchart .p-organizationchart-line-left,
-                        .p-organizationchart .p-organizationchart-line-top {
-                            border-color: var(--surface-300);
-                            border-width: 2px;
-                        }
-
-                        .org-card {
+                        .organigrama-vertical {
                             display: flex;
                             flex-direction: column;
                             align-items: center;
-                            min-width: 170px;
-                            max-width: 210px;
-                            padding: 1rem 0.75rem 0.85rem;
-                            background: var(--surface-card);
-                            border-radius: 12px;
-                            border-top: 4px solid var(--surface-400);
-                            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-                            transition: transform 0.15s ease, box-shadow 0.15s ease;
-                        }
-                        .org-card:hover {
-                            transform: translateY(-2px);
-                            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
-                        }
-                        .org-card-empresa {
-                            border-top-color: var(--surface-500);
-                            padding: 0.6rem 1rem;
-                            min-width: auto;
                         }
 
-                        .org-card-avatar {
-                            width: 48px;
-                            height: 48px;
-                            border-radius: 50%;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            font-weight: 700;
-                            font-size: 0.95rem;
-                            color: #ffffff;
-                            background: var(--surface-400);
-                            margin-bottom: 0.4rem;
-                        }
-                        .org-card-nombre {
-                            font-weight: 700;
-                            font-size: 0.92rem;
-                            line-height: 1.2;
+                        .ov-caja-nivel {
+                            min-width: 200px;
                             text-align: center;
-                            color: var(--text-color);
-                            word-break: break-word;
+                            padding: 0.55rem 1.25rem;
+                            border-radius: 6px;
+                            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
                         }
-                        .org-card-puesto {
-                            font-size: 0.78rem;
-                            line-height: 1.2;
-                            text-align: center;
-                            color: var(--text-color-secondary);
-                            margin-top: 0.15rem;
-                            word-break: break-word;
-                        }
-                        .org-card-departamento {
-                            font-size: 0.68rem;
-                            text-align: center;
-                            color: var(--primary-color);
-                            background: var(--primary-50, rgba(99, 102, 241, 0.12));
-                            padding: 1px 8px;
-                            border-radius: 10px;
-                            margin-top: 0.35rem;
-                        }
-
-                        .org-node-ceo .org-card {
-                            border-top-color: var(--primary-color);
-                        }
-                        .org-node-ceo .org-card-avatar {
+                        .ov-caja-ceo {
                             background: var(--primary-color);
+                            color: var(--primary-color-text);
                         }
-                        .org-node-gerente .org-card {
-                            border-top-color: #3b82f6;
+                        .ov-caja-cadena {
+                            background: #2f3542;
+                            color: #ffffff;
                         }
-                        .org-node-gerente .org-card-avatar {
-                            background: #3b82f6;
+                        .ov-caja-nombre {
+                            font-weight: 700;
+                            font-size: 0.9rem;
+                            text-transform: uppercase;
+                            letter-spacing: 0.02em;
+                        }
+                        .ov-caja-puesto {
+                            font-weight: 400;
+                            font-size: 0.7rem;
+                            opacity: 0.85;
+                            margin-top: 2px;
+                        }
+                        .ov-flecha {
+                            color: var(--surface-400);
+                            font-size: 0.9rem;
+                            line-height: 1.4;
+                        }
+
+                        .ov-ramas {
+                            display: flex;
+                            justify-content: center;
+                            position: relative;
+                            padding-top: 20px;
+                        }
+                        .ov-ramas::before {
+                            content: '';
+                            position: absolute;
+                            top: 0;
+                            left: 50%;
+                            width: 0;
+                            height: 20px;
+                            border-left: 2px solid var(--surface-400);
+                        }
+                        .ov-columna {
+                            position: relative;
+                            padding: 20px 14px 0 14px;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                        }
+                        .ov-columna::before,
+                        .ov-columna::after {
+                            content: '';
+                            position: absolute;
+                            top: 0;
+                            right: 50%;
+                            width: 50%;
+                            height: 20px;
+                            border-top: 2px solid var(--surface-400);
+                        }
+                        .ov-columna::after {
+                            right: auto;
+                            left: 50%;
+                            border-left: 2px solid var(--surface-400);
+                        }
+                        .ov-columna:only-child::before,
+                        .ov-columna:only-child::after {
+                            display: none;
+                        }
+                        .ov-columna:first-child::before {
+                            border-color: transparent;
+                        }
+                        .ov-columna:last-child::after {
+                            border-color: transparent;
+                        }
+
+                        .ov-caja-area {
+                            min-width: 130px;
+                            text-align: center;
+                            padding: 0.5rem 0.9rem;
+                            border-radius: 6px;
+                            color: #2b2b2b;
+                            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+                        }
+
+                        .ov-lista {
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            margin-top: 2px;
+                        }
+                        .ov-lista-item {
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                        }
+                        .ov-lista-conector {
+                            width: 2px;
+                            height: 10px;
+                            background: var(--surface-300);
+                        }
+                        .ov-lista-texto {
+                            font-size: 0.72rem;
+                            color: var(--text-color-secondary);
+                            padding: 2px 0;
+                            white-space: nowrap;
                         }
                     `}</style>
                     <Toolbar className="mb-4" left={leftToolbarTemplate} right={rightToolbarTemplate}></Toolbar>
@@ -621,10 +679,13 @@ const DepartamentosCrud = () => {
                                             display: 'inline-block',
                                             transform: `scale(${zoomOrganigrama})`,
                                             transformOrigin: 'top left',
-                                            padding: '1rem'
+                                            padding: '1rem',
+                                            background: '#ffffff'
                                         }}
                                     >
-                                        <OrganizationChart value={arbolOrganigrama as any} nodeTemplate={nodeTemplate} />
+                                        {arbolOrganigrama.map((raiz, idx) => (
+                                            <OrganigramaVertical key={idx} nodo={raiz} />
+                                        ))}
                                     </div>
                                 </div>
                             </>
