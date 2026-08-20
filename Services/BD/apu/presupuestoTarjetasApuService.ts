@@ -1,7 +1,11 @@
+import ExcelJS from 'exceljs';
 import { supabase } from '../../superbase.service';
+import { InsumoExplosionApu } from './explosionInsumosApuService';
 import { TipoInsumoApu } from './insumosApuService';
-import { calcularTotalesDesdeConceptos, PresupuestoConceptoApu } from './presupuestosApuService';
+import { propagarPrecioAConceptoYRecalcular } from './presupuestosApuService';
 import { calcularTotalesTarjeta } from './tarjetasApuService';
+
+const ID_HERRAMIENTA_MENOR = -1;
 
 export interface PresupuestoTarjetaInsumoApu {
     id?: number;
@@ -104,7 +108,7 @@ export const fetchPresupuestoTarjetasApu = async (id_presupuesto: number): Promi
     return data?.map(transformPresupuestoTarjetaApuData) || [];
 };
 
-const fetchInsumosDePresupuestoTarjetaApu = async (id_presupuesto_tarjeta: number): Promise<PresupuestoTarjetaInsumoApu[]> => {
+export const fetchInsumosDePresupuestoTarjetaApu = async (id_presupuesto_tarjeta: number): Promise<PresupuestoTarjetaInsumoApu[]> => {
     const { data, error } = await supabase.from('fetch_apu_presupuesto_tarjeta_insumos').select('*').eq('id_presupuesto_tarjeta', id_presupuesto_tarjeta).order('id');
 
     if (error) {
@@ -179,53 +183,160 @@ export const updatePresupuestoTarjetaApu = async (tarjeta: PresupuestoTarjetaApu
         }
     }
 
-    await propagarPrecioAlPresupuesto(tarjeta.id_presupuesto, tarjeta.id_presupuesto_concepto, totales.precio_unitario);
+    await propagarPrecioAConceptoYRecalcular(tarjeta.id_presupuesto, tarjeta.id_presupuesto_concepto, totales.precio_unitario);
 
     return fetchPresupuestoTarjetaApuPorId(tarjeta.id!);
 };
 
-// Actualiza el renglón del presupuesto (precio_unitario/importe) y recalcula el Subtotal/IVA/Total
-// de la cabecera del presupuesto, usando el mismo criterio que el resto del módulo de Presupuesto.
-const propagarPrecioAlPresupuesto = async (id_presupuesto: number, id_presupuesto_concepto: number, nuevoPrecioUnitario: number): Promise<void> => {
-    const { data: conceptoActual, error: errorConcepto } = await supabase.from('apu_presupuesto_conceptos').select('cantidad').eq('id', id_presupuesto_concepto).single();
-    if (errorConcepto) {
-        console.error('Error leyendo renglón de Presupuesto APU a actualizar:', errorConcepto);
-        throw errorConcepto;
-    }
+// Explosión de insumos de TODO el presupuesto: para cada tarjeta clonada, multiplica la cantidad de
+// cada insumo (por unidad del concepto) por la cantidad de obra capturada en el presupuesto para ese
+// concepto, y agrega el total requerido por insumo. Incluye la Herramienta Menor como renglón aparte,
+// ya que no se guarda como insumo individual (es un % sobre la mano de obra de cada tarjeta).
+export const fetchExplosionInsumosPresupuesto = async (id_presupuesto: number): Promise<InsumoExplosionApu[]> => {
+    const tarjetas = await fetchPresupuestoTarjetasApu(id_presupuesto);
+    if (tarjetas.length === 0) return [];
 
-    const nuevoImporte = (conceptoActual.cantidad || 0) * nuevoPrecioUnitario;
-
-    const { error: errorUpdateConcepto } = await supabase
+    const { data: conceptosRaw, error } = await supabase
         .from('apu_presupuesto_conceptos')
-        .update({ precio_unitario: nuevoPrecioUnitario, importe: nuevoImporte })
-        .eq('id', id_presupuesto_concepto);
+        .select('id, cantidad')
+        .in(
+            'id',
+            tarjetas.map((t) => t.id_presupuesto_concepto)
+        );
 
-    if (errorUpdateConcepto) {
-        console.error('Error propagando precio al renglón de Presupuesto APU:', errorUpdateConcepto);
-        throw errorUpdateConcepto;
+    if (error) {
+        console.error('Error leyendo cantidades de conceptos para la explosión de insumos del presupuesto:', error);
+        throw error;
     }
 
-    const { data: presupuestoActual, error: errorPresupuesto } = await supabase.from('apu_presupuestos').select('pct_iva').eq('id', id_presupuesto).single();
-    if (errorPresupuesto) {
-        console.error('Error leyendo Presupuesto APU a recalcular:', errorPresupuesto);
-        throw errorPresupuesto;
-    }
+    const cantidadPorConcepto = new Map((conceptosRaw || []).map((c) => [c.id, c.cantidad as number]));
 
-    const { data: todosLosConceptos, error: errorConceptos } = await supabase.from('fetch_apu_presupuesto_conceptos').select('cantidad, precio_unitario, aplica_iva').eq('id_presupuesto', id_presupuesto);
-    if (errorConceptos) {
-        console.error('Error leyendo conceptos de Presupuesto APU para recalcular:', errorConceptos);
-        throw errorConceptos;
-    }
+    const detalles = await Promise.all(
+        tarjetas.map(async (t) => ({
+            cantidadConcepto: cantidadPorConcepto.get(t.id_presupuesto_concepto) || 0,
+            costoHerramienta: t.costo_herramienta || 0,
+            insumos: await fetchInsumosDePresupuestoTarjetaApu(t.id!)
+        }))
+    );
 
-    const totalesPresupuesto = calcularTotalesDesdeConceptos((todosLosConceptos || []) as PresupuestoConceptoApu[], presupuestoActual.pct_iva);
+    const acumulado = new Map<number, InsumoExplosionApu>();
 
-    const { error: errorUpdatePresupuesto } = await supabase
-        .from('apu_presupuestos')
-        .update({ ...totalesPresupuesto, updated_at: new Date().toISOString() })
-        .eq('id', id_presupuesto);
+    detalles.forEach(({ cantidadConcepto, costoHerramienta, insumos }) => {
+        insumos.forEach((insumo) => {
+            const cantidadRequerida = (insumo.cantidad || 0) * cantidadConcepto;
+            const existente = acumulado.get(insumo.id_insumo);
 
-    if (errorUpdatePresupuesto) {
-        console.error('Error recalculando totales de Presupuesto APU:', errorUpdatePresupuesto);
-        throw errorUpdatePresupuesto;
-    }
+            if (existente) {
+                existente.cantidad_total += cantidadRequerida;
+                existente.importe_total += cantidadRequerida * (insumo.precio_unitario || 0);
+            } else {
+                acumulado.set(insumo.id_insumo, {
+                    id_insumo: insumo.id_insumo,
+                    clave: insumo.insumo_clave || '',
+                    descripcion: insumo.insumo_descripcion || '',
+                    tipo: insumo.tipo,
+                    unidad: insumo.insumo_unidad || '',
+                    cantidad_total: cantidadRequerida,
+                    precio_unitario: insumo.precio_unitario || 0,
+                    importe_total: cantidadRequerida * (insumo.precio_unitario || 0)
+                });
+            }
+        });
+
+        const importeHerramienta = costoHerramienta * cantidadConcepto;
+        if (importeHerramienta > 0) {
+            const existente = acumulado.get(ID_HERRAMIENTA_MENOR);
+            if (existente) {
+                existente.importe_total += importeHerramienta;
+            } else {
+                acumulado.set(ID_HERRAMIENTA_MENOR, {
+                    id_insumo: ID_HERRAMIENTA_MENOR,
+                    clave: '%MO',
+                    descripcion: 'Herramienta Menor',
+                    tipo: 'HERRAMIENTA',
+                    unidad: '% M.O.',
+                    cantidad_total: 0,
+                    precio_unitario: 0,
+                    importe_total: importeHerramienta
+                });
+            }
+        }
+    });
+
+    return Array.from(acumulado.values()).sort((a, b) => a.tipo.localeCompare(b.tipo) || a.descripcion.localeCompare(b.descripcion));
+};
+
+const MONEY_FORMAT = '"$"#,##0.00';
+const BORDER_BOTTOM_MEDIUM: Partial<ExcelJS.Borders> = { bottom: { style: 'medium' } };
+
+const descargarWorkbook = async (workbook: ExcelJS.Workbook, nombreArchivo: string): Promise<void> => {
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${nombreArchivo}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+};
+
+// Exporta la lista de Tarjetas propias del presupuesto (resumen, una fila por concepto)
+export const exportarTarjetasPresupuestoExcel = async (tarjetas: PresupuestoTarjetaApu[], nombrePresupuesto: string): Promise<void> => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Sistema APU - Tsa';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Tarjetas');
+    worksheet.columns = [{ width: 14 }, { width: 42 }, { width: 10 }, { width: 16 }, { width: 12 }, { width: 12 }, { width: 16 }];
+
+    const headerRow = worksheet.addRow(['Clave', 'Concepto', 'Unidad', 'Costo Directo', '% Material', '% M.O.', 'Precio Unitario']);
+    headerRow.font = { bold: true };
+    headerRow.eachCell((cell) => (cell.border = BORDER_BOTTOM_MEDIUM));
+
+    tarjetas.forEach((t) => {
+        const fila = worksheet.addRow([t.concepto_clave, t.concepto_descripcion, t.concepto_unidad, t.costo_directo, (t.pct_material || 0) / 100, (t.pct_mano_obra || 0) / 100, t.precio_unitario]);
+        fila.getCell(4).numFmt = MONEY_FORMAT;
+        fila.getCell(5).numFmt = '0.00%';
+        fila.getCell(6).numFmt = '0.00%';
+        fila.getCell(7).numFmt = MONEY_FORMAT;
+    });
+
+    await descargarWorkbook(workbook, `Tarjetas_${nombrePresupuesto}`.replace(/[^a-zA-Z0-9_]/g, '_'));
+};
+
+// Exporta la Matriz de Precios Unitarios del presupuesto (mismas Tarjetas, con el desglose de costos)
+export const exportarMatrizPresupuestoExcel = async (tarjetas: PresupuestoTarjetaApu[], nombrePresupuesto: string): Promise<void> => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Sistema APU - Tsa';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Matriz');
+    worksheet.columns = [{ width: 14 }, { width: 38 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 16 }];
+
+    const headerRow = worksheet.addRow(['Clave', 'Concepto', 'Unidad', 'Materiales', 'Mano de Obra', 'Maquinaria', '% Material', '% M.O.', '% Maq.', 'Precio Unitario']);
+    headerRow.font = { bold: true };
+    headerRow.eachCell((cell) => (cell.border = BORDER_BOTTOM_MEDIUM));
+
+    tarjetas.forEach((t) => {
+        const fila = worksheet.addRow([
+            t.concepto_clave,
+            t.concepto_descripcion,
+            t.concepto_unidad,
+            t.costo_materiales,
+            t.costo_mano_obra,
+            t.costo_maquinaria,
+            (t.pct_material || 0) / 100,
+            (t.pct_mano_obra || 0) / 100,
+            (t.pct_maquinaria || 0) / 100,
+            t.precio_unitario
+        ]);
+        [4, 5, 6].forEach((col) => (fila.getCell(col).numFmt = MONEY_FORMAT));
+        [7, 8, 9].forEach((col) => (fila.getCell(col).numFmt = '0.00%'));
+        fila.getCell(10).numFmt = MONEY_FORMAT;
+    });
+
+    await descargarWorkbook(workbook, `Matriz_${nombrePresupuesto}`.replace(/[^a-zA-Z0-9_]/g, '_'));
 };

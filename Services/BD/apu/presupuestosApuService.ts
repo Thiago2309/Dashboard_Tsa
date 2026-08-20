@@ -201,6 +201,49 @@ const clonarTarjetaHaciaPresupuesto = async (id_presupuesto: number, id_presupue
             importe: i.importe
         }))
     );
+
+    const idsMaquinaria = Array.from(new Set(insumosMaestros.filter((i: any) => i.tipo === 'MAQUINARIA').map((i: any) => i.id_insumo as number)));
+    await Promise.all(idsMaquinaria.map((idInsumo) => clonarMaquinariaHaciaPresupuesto(id_presupuesto, idInsumo)));
+};
+
+// Clona el Costo Horario de Maquinaria maestro hacia una tabla propia del presupuesto
+// (apu_presupuesto_maquinaria), sin tocar la maquinaria maestra. Se comparte entre todas las tarjetas
+// del mismo presupuesto que usen la misma maquinaria (no se duplica si ya existe para este presupuesto).
+const clonarMaquinariaHaciaPresupuesto = async (id_presupuesto: number, id_insumo: number): Promise<void> => {
+    const { data: yaClonada } = await supabase.from('apu_presupuesto_maquinaria').select('id').eq('id_presupuesto', id_presupuesto).eq('id_insumo', id_insumo).maybeSingle();
+    if (yaClonada) return;
+
+    const { data: maquinariaMaestra, error } = await supabase.from('fetch_apu_maquinaria').select('*').eq('id_insumo', id_insumo).maybeSingle();
+    if (error || !maquinariaMaestra) return;
+
+    await supabase.from('apu_presupuesto_maquinaria').insert([
+        {
+            id_presupuesto,
+            id_maquinaria: maquinariaMaestra.id,
+            id_insumo,
+            clave: maquinariaMaestra.clave,
+            descripcion: maquinariaMaestra.descripcion,
+            marca_modelo: maquinariaMaestra.marca_modelo,
+            tipo_calculo: maquinariaMaestra.tipo_calculo,
+            valor_adquisicion: maquinariaMaestra.valor_adquisicion,
+            valor_rescate_pct: maquinariaMaestra.valor_rescate_pct,
+            vida_util_anios: maquinariaMaestra.vida_util_anios,
+            horas_uso_anual: maquinariaMaestra.horas_uso_anual,
+            tasa_interes_pct: maquinariaMaestra.tasa_interes_pct,
+            tasa_seguros_pct: maquinariaMaestra.tasa_seguros_pct,
+            factor_mantenimiento_pct: maquinariaMaestra.factor_mantenimiento_pct,
+            consumo_combustible_litros_hora: maquinariaMaestra.consumo_combustible_litros_hora,
+            precio_combustible_litro: maquinariaMaestra.precio_combustible_litro,
+            consumo_lubricantes_pct: maquinariaMaestra.consumo_lubricantes_pct,
+            costo_llantas_hora: maquinariaMaestra.costo_llantas_hora,
+            otros_consumibles_hora: maquinariaMaestra.otros_consumibles_hora,
+            precio_flete: maquinariaMaestra.precio_flete,
+            abundamiento: maquinariaMaestra.abundamiento,
+            costo_fijo_hora: maquinariaMaestra.costo_fijo_hora,
+            costo_operacion_hora: maquinariaMaestra.costo_operacion_hora,
+            costo_hora_total: maquinariaMaestra.costo_hora_total
+        }
+    ]);
 };
 
 // Guarda los frentes y conceptos del presupuesto conservando los ids existentes (actualiza en vez de
@@ -354,6 +397,53 @@ export const updatePresupuestoApu = async (presupuesto: PresupuestoApu): Promise
     await guardarFrentesPresupuestoApu(presupuesto.id!, presupuesto.frentes || []);
 
     return fetchPresupuestoApuPorId(presupuesto.id!);
+};
+
+// Actualiza el renglón del presupuesto (precio_unitario/importe) y recalcula el Subtotal/IVA/Total de la
+// cabecera. La usan tanto el editor de Tarjetas por Presupuesto como el de Costo de Maquinaria por
+// Presupuesto, ya que ambos pueden cambiar el precio de un concepto sin pasar por el editor de Presupuesto.
+export const propagarPrecioAConceptoYRecalcular = async (id_presupuesto: number, id_presupuesto_concepto: number, nuevoPrecioUnitario: number): Promise<void> => {
+    const { data: conceptoActual, error: errorConcepto } = await supabase.from('apu_presupuesto_conceptos').select('cantidad').eq('id', id_presupuesto_concepto).single();
+    if (errorConcepto) {
+        console.error('Error leyendo renglón de Presupuesto APU a actualizar:', errorConcepto);
+        throw errorConcepto;
+    }
+
+    const nuevoImporte = (conceptoActual.cantidad || 0) * nuevoPrecioUnitario;
+
+    const { error: errorUpdateConcepto } = await supabase
+        .from('apu_presupuesto_conceptos')
+        .update({ precio_unitario: nuevoPrecioUnitario, importe: nuevoImporte })
+        .eq('id', id_presupuesto_concepto);
+
+    if (errorUpdateConcepto) {
+        console.error('Error propagando precio al renglón de Presupuesto APU:', errorUpdateConcepto);
+        throw errorUpdateConcepto;
+    }
+
+    const { data: presupuestoActual, error: errorPresupuesto } = await supabase.from('apu_presupuestos').select('pct_iva').eq('id', id_presupuesto).single();
+    if (errorPresupuesto) {
+        console.error('Error leyendo Presupuesto APU a recalcular:', errorPresupuesto);
+        throw errorPresupuesto;
+    }
+
+    const { data: todosLosConceptos, error: errorConceptos } = await supabase.from('fetch_apu_presupuesto_conceptos').select('cantidad, precio_unitario, aplica_iva').eq('id_presupuesto', id_presupuesto);
+    if (errorConceptos) {
+        console.error('Error leyendo conceptos de Presupuesto APU para recalcular:', errorConceptos);
+        throw errorConceptos;
+    }
+
+    const totalesPresupuesto = calcularTotalesDesdeConceptos((todosLosConceptos || []) as PresupuestoConceptoApu[], presupuestoActual.pct_iva);
+
+    const { error: errorUpdatePresupuesto } = await supabase
+        .from('apu_presupuestos')
+        .update({ ...totalesPresupuesto, updated_at: new Date().toISOString() })
+        .eq('id', id_presupuesto);
+
+    if (errorUpdatePresupuesto) {
+        console.error('Error recalculando totales de Presupuesto APU:', errorUpdatePresupuesto);
+        throw errorUpdatePresupuesto;
+    }
 };
 
 export const deletePresupuestoApu = async (id: number): Promise<void> => {

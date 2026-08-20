@@ -1,12 +1,15 @@
 import { supabase } from '../../superbase.service';
 
+export type TipoCalculoMaquinariaApu = 'ESTANDAR' | 'MANUAL';
+
 export interface MaquinariaApu {
     id?: number;
     id_insumo?: number;
     clave: string;
     descripcion: string;
     marca_modelo?: string;
-    // Datos base para costo fijo
+    tipo_calculo: TipoCalculoMaquinariaApu;
+    // Datos base para costo fijo (modo Estándar)
     valor_adquisicion: number;
     valor_rescate_pct: number;
     vida_util_anios: number;
@@ -14,12 +17,16 @@ export interface MaquinariaApu {
     tasa_interes_pct: number;
     tasa_seguros_pct: number;
     factor_mantenimiento_pct: number;
-    // Datos base para costo de operación
+    // Datos base para costo de operación (modo Estándar)
     consumo_combustible_litros_hora: number;
     precio_combustible_litro: number;
     consumo_lubricantes_pct: number;
     costo_llantas_hora: number;
     otros_consumibles_hora: number;
+    // Datos base para el modo Manual (p.ej. fletes de acarreo): costo total = precio_flete x abundamiento,
+    // expresado por M3 en vez de por hora.
+    precio_flete: number;
+    abundamiento: number;
     // Resultado calculado (se persiste para consulta rápida en la tarjeta/matriz)
     costo_fijo_hora?: number;
     costo_operacion_hora?: number;
@@ -76,12 +83,37 @@ export const calcularCostoHorarioMaquinaria = (m: Partial<MaquinariaApu>): Desgl
     };
 };
 
+// Cálculo manual: costo total = Precio del Flete x Abundamiento, expresado por M3.
+// No hay costos fijos ni de operación en este modo (quedan en 0).
+export const calcularCostoManualMaquinaria = (m: Partial<MaquinariaApu>): DesgloseCostoHorario => ({
+    depreciacion_hora: 0,
+    inversion_hora: 0,
+    seguros_hora: 0,
+    costo_fijo_hora: 0,
+    combustible_hora: 0,
+    lubricantes_hora: 0,
+    llantas_hora: 0,
+    mantenimiento_hora: 0,
+    otros_hora: 0,
+    costo_operacion_hora: 0,
+    costo_hora_total: (m.precio_flete || 0) * (m.abundamiento || 0)
+});
+
+// Despacha al cálculo correspondiente según el tipo de cálculo elegido (Estándar o Manual)
+export const calcularCostoMaquinaria = (m: Partial<MaquinariaApu>): DesgloseCostoHorario =>
+    m.tipo_calculo === 'MANUAL' ? calcularCostoManualMaquinaria(m) : calcularCostoHorarioMaquinaria(m);
+
+// La unidad del insumo generado depende del tipo de cálculo: Manual produce un costo por M3
+// (p.ej. un flete de acarreo), Estándar produce un costo por hora de máquina.
+export const unidadInsumoMaquinaria = (tipo_calculo: TipoCalculoMaquinariaApu): string => (tipo_calculo === 'MANUAL' ? 'M3' : 'HR');
+
 const transformMaquinariaApuData = (data: any): MaquinariaApu => ({
     id: data.id,
     id_insumo: data.id_insumo,
     clave: data.clave,
     descripcion: data.descripcion,
     marca_modelo: data.marca_modelo ?? '',
+    tipo_calculo: data.tipo_calculo ?? 'ESTANDAR',
     valor_adquisicion: data.valor_adquisicion ?? 0,
     valor_rescate_pct: data.valor_rescate_pct ?? 0,
     vida_util_anios: data.vida_util_anios ?? 0,
@@ -94,6 +126,8 @@ const transformMaquinariaApuData = (data: any): MaquinariaApu => ({
     consumo_lubricantes_pct: data.consumo_lubricantes_pct ?? 0,
     costo_llantas_hora: data.costo_llantas_hora ?? 0,
     otros_consumibles_hora: data.otros_consumibles_hora ?? 0,
+    precio_flete: data.precio_flete ?? 0,
+    abundamiento: data.abundamiento ?? 1,
     costo_fijo_hora: data.costo_fijo_hora ?? 0,
     costo_operacion_hora: data.costo_operacion_hora ?? 0,
     costo_hora_total: data.costo_hora_total ?? 0,
@@ -116,7 +150,7 @@ export const fetchMaquinariaApu = async (): Promise<MaquinariaApu[]> => {
 
 // Crea la maquinaria y su insumo vinculado (tipo MAQUINARIA) en una sola operación
 export const createMaquinariaApu = async (maquinaria: Omit<MaquinariaApu, 'id' | 'id_insumo'>): Promise<MaquinariaApu> => {
-    const costo = calcularCostoHorarioMaquinaria(maquinaria);
+    const costo = calcularCostoMaquinaria(maquinaria);
 
     const { data: insumo, error: errorInsumo } = await supabase
         .from('apu_insumos')
@@ -124,7 +158,7 @@ export const createMaquinariaApu = async (maquinaria: Omit<MaquinariaApu, 'id' |
             clave: maquinaria.clave,
             descripcion: maquinaria.descripcion,
             tipo: 'MAQUINARIA',
-            unidad: 'HR',
+            unidad: unidadInsumoMaquinaria(maquinaria.tipo_calculo),
             precio_unitario: costo.costo_hora_total,
             status: maquinaria.status ?? true
         }])
@@ -143,6 +177,7 @@ export const createMaquinariaApu = async (maquinaria: Omit<MaquinariaApu, 'id' |
             clave: maquinaria.clave,
             descripcion: maquinaria.descripcion,
             marca_modelo: maquinaria.marca_modelo ?? '',
+            tipo_calculo: maquinaria.tipo_calculo ?? 'ESTANDAR',
             valor_adquisicion: maquinaria.valor_adquisicion ?? 0,
             valor_rescate_pct: maquinaria.valor_rescate_pct ?? 0,
             vida_util_anios: maquinaria.vida_util_anios ?? 0,
@@ -155,6 +190,8 @@ export const createMaquinariaApu = async (maquinaria: Omit<MaquinariaApu, 'id' |
             consumo_lubricantes_pct: maquinaria.consumo_lubricantes_pct ?? 0,
             costo_llantas_hora: maquinaria.costo_llantas_hora ?? 0,
             otros_consumibles_hora: maquinaria.otros_consumibles_hora ?? 0,
+            precio_flete: maquinaria.precio_flete ?? 0,
+            abundamiento: maquinaria.abundamiento ?? 1,
             costo_fijo_hora: costo.costo_fijo_hora,
             costo_operacion_hora: costo.costo_operacion_hora,
             costo_hora_total: costo.costo_hora_total,
@@ -175,7 +212,7 @@ export const createMaquinariaApu = async (maquinaria: Omit<MaquinariaApu, 'id' |
 
 // Actualiza la maquinaria y sincroniza el precio de su insumo vinculado
 export const updateMaquinariaApu = async (maquinaria: MaquinariaApu): Promise<MaquinariaApu> => {
-    const costo = calcularCostoHorarioMaquinaria(maquinaria);
+    const costo = calcularCostoMaquinaria(maquinaria);
 
     const { data, error } = await supabase
         .from('apu_maquinaria')
@@ -183,6 +220,7 @@ export const updateMaquinariaApu = async (maquinaria: MaquinariaApu): Promise<Ma
             clave: maquinaria.clave,
             descripcion: maquinaria.descripcion,
             marca_modelo: maquinaria.marca_modelo ?? '',
+            tipo_calculo: maquinaria.tipo_calculo ?? 'ESTANDAR',
             valor_adquisicion: maquinaria.valor_adquisicion ?? 0,
             valor_rescate_pct: maquinaria.valor_rescate_pct ?? 0,
             vida_util_anios: maquinaria.vida_util_anios ?? 0,
@@ -195,6 +233,8 @@ export const updateMaquinariaApu = async (maquinaria: MaquinariaApu): Promise<Ma
             consumo_lubricantes_pct: maquinaria.consumo_lubricantes_pct ?? 0,
             costo_llantas_hora: maquinaria.costo_llantas_hora ?? 0,
             otros_consumibles_hora: maquinaria.otros_consumibles_hora ?? 0,
+            precio_flete: maquinaria.precio_flete ?? 0,
+            abundamiento: maquinaria.abundamiento ?? 1,
             costo_fijo_hora: costo.costo_fijo_hora,
             costo_operacion_hora: costo.costo_operacion_hora,
             costo_hora_total: costo.costo_hora_total,
@@ -215,6 +255,7 @@ export const updateMaquinariaApu = async (maquinaria: MaquinariaApu): Promise<Ma
             .update({
                 clave: maquinaria.clave,
                 descripcion: maquinaria.descripcion,
+                unidad: unidadInsumoMaquinaria(maquinaria.tipo_calculo),
                 precio_unitario: costo.costo_hora_total,
                 status: maquinaria.status ?? true
             })
