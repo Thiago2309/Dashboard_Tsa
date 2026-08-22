@@ -1372,10 +1372,10 @@ const Crud = () => {
                     }
                 >
                     <div className="mb-4 p-3 border-round surface-100">
-                        <p className="mt-0 mb-2"><b>Campos obligatorios:</b> Fecha, Cliente, Origen, Destino, Material, y el M3 (usando la columna "M3" o la columna "M3 (manual)", ver abajo).</p>
+                        <p className="mt-0 mb-2"><b>Campos obligatorios:</b> Fecha, Cliente, Origen, Destino, Material, y el M3 (usando la columna &quot;M3&quot; o la columna &quot;M3 (manual)&quot;, ver abajo).</p>
                         <p className="mt-0 mb-2"><b>Campos opcionales:</b> Operador, Invitado, Folio, Folio Banco, Horario (D/N, por defecto Día), Numero de Viaje, Cantidad de Viajes, En Renta (Sí/No), Horas de Renta (obligatorio solo si En Renta = Sí), Observaciones.</p>
                         <p className="mt-0 mb-2">Cliente, Origen, Destino, Material, M3, Operador e Invitado deben escribirse <b>exactamente igual</b> a como están dados de alta en el sistema.</p>
-                        <p className="mt-0 mb-2"><b>M3 (manual):</b> para camiones externos que no están en el catálogo M3, deja la columna "M3" vacía y escribe el número de metros cúbicos en "M3 (manual)". No se crea nada nuevo en el catálogo; ese valor solo se usa para calcular el Total Flete de esa fila y queda anotado en Observaciones. Usa solo una de las dos columnas por fila, nunca ambas.</p>
+                        <p className="mt-0 mb-2"><b>M3 (manual):</b> para camiones externos que no están en el catálogo M3, deja la columna &quot;M3&quot; vacía y escribe el número de metros cúbicos en &quot;M3 (manual)&quot;. No se crea nada nuevo en el catálogo; ese valor solo se usa para calcular el Total Flete de esa fila y queda anotado en Observaciones. Usa solo una de las dos columnas por fila, nunca ambas.</p>
                         <p className="mt-0 mb-0">El Total Flete se calcula automáticamente (precio de la ruta × M3 × horas de renta o cantidad de viajes), no hace falta incluirlo en el Excel.</p>
                     </div>
 
