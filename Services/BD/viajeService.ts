@@ -1,5 +1,5 @@
 import { supabase } from '../superbase.service';
-import { crearCuentaPorPagar } from './CxPService';
+import { fetchAllRows } from './supabasePagination';
 
 export interface Viaje {
     id?: number;
@@ -59,17 +59,36 @@ const transformViajeData = (data: any): Viaje => ({
 });
 
 export const fetchViajes = async (): Promise<Viaje[]> => {
-    const { data, error } = await supabase
-        .from('fetch_viajes')
-        .select('*')
-        .order('id', { ascending: false });
-
-    if (error) {
+    try {
+        return await fetchAllRows<Viaje>((sb, from, to) =>
+            sb.from('fetch_viajes')
+              .select('*')
+              .order('id', { ascending: false })
+              .range(from, to)
+        );
+    } catch (error) {
         console.error('Error fetching viajes:', error);
         throw error;
     }
+};
 
-    return data || [];
+// La vista `fetch_viajes` no siempre trae los ids crudos (id_cliente, id_material, etc.),
+// solo los nombres ya resueltos para mostrar en la tabla. Para editar necesitamos los ids
+// reales, así que se leen directo de la tabla `viajes`, que es la misma que usan
+// createViaje/updateViaje.
+export const fetchViajeById = async (id: number): Promise<Viaje> => {
+    const { data, error } = await supabase
+        .from('viajes')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+    if (error) {
+        console.error('Error fetching viaje por id:', error);
+        throw error;
+    }
+
+    return data as Viaje;
 };
 
 export const createViaje = async (viaje: Omit<Viaje, 'id'>): Promise<Viaje> => {
@@ -84,69 +103,15 @@ export const createViaje = async (viaje: Omit<Viaje, 'id'>): Promise<Viaje> => {
         throw error;
     }
 
-    const viajeCreado = transformViajeData(data);
-
-    if (viajeCreado.id_invitado) {
-        await generarCxPInvitadoPorViaje(viajeCreado);
-    }
-
-    return viajeCreado;
+    return transformViajeData(data);
 };
 
-// Genera automáticamente la cuenta por pagar del invitado con el % que le corresponde del total del viaje
-const generarCxPInvitadoPorViaje = async (viaje: Viaje): Promise<void> => {
-    try {
-        const { data: invitado, error } = await supabase
-            .from('invitados')
-            .select('porcentaje_participacion')
-            .eq('id', viaje.id_invitado)
-            .single();
-
-        if (error || !invitado || !invitado.porcentaje_participacion) return;
-
-        const totalViaje = (viaje.caphrsviajes || 0) + (viaje.total_materia || 0);
-        const montoInvitado = totalViaje * (invitado.porcentaje_participacion / 100);
-
-        if (montoInvitado <= 0) return;
-
-        // Si el invitado ya tiene una cuenta por pagar pendiente, se acumula el monto ahí en lugar de crear una nueva
-        const { data: cuentaExistente, error: errorCuenta } = await supabase
-            .from('cuentas_por_pagar')
-            .select('id, saldo')
-            .eq('tipo_entidad', 'Invitado')
-            .eq('id_entidad', Number(viaje.id_invitado))
-            .eq('estatus', 'Pendiente')
-            .order('fecha', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-
-        if (errorCuenta) throw errorCuenta;
-
-        if (cuentaExistente) {
-            const { error: errorUpdate } = await supabase
-                .from('cuentas_por_pagar')
-                .update({ saldo: (cuentaExistente.saldo || 0) + montoInvitado })
-                .eq('id', cuentaExistente.id);
-
-            if (errorUpdate) throw errorUpdate;
-            return;
-        }
-
-        await crearCuentaPorPagar({
-            id_entidad: Number(viaje.id_invitado),
-            tipo_entidad: 'Invitado',
-            id_compra: null,
-            fecha: viaje.fecha,
-            monto: 0,
-            saldo: montoInvitado,
-            estatus: 'Pendiente',
-            fecha_pago_esperado: null,
-            notas: `Pago acumulado del ${invitado.porcentaje_participacion}% por viajes con participación`
-        });
-    } catch (error) {
-        console.error('Error generando la cuenta por pagar del invitado:', error);
-    }
-};
+// Nota: la cuenta por pagar del invitado ya no se acumula aquí de forma incremental.
+// Su saldo se recalcula dinámicamente a partir de los viajes vinculados y su
+// porcentaje de participación cada vez que se consulta (ver fetchCuentasInvitado en
+// CxPService.ts), igual que el saldo de Cuentas por Cobrar se recalcula desde los
+// viajes del cliente. Esto evita que la cuenta quede desactualizada si el % del
+// invitado se define después, o si el viaje no trae montos al momento de crearse.
 
 export const updateViaje = async (viaje: Viaje): Promise<Viaje> => {
     const { data, error } = await supabase
@@ -238,6 +203,26 @@ export const fetchViajesPorCliente = async (id_cliente: number): Promise<any[]> 
             total_materia
         `)
         .eq('id_cliente', id_cliente)
+        .order('fecha', { ascending: false });
+
+    if (error) throw error;
+
+    return data || [];
+};
+
+//obtener los viajes vinculados a un invitado, para el resumen de CxP
+export const fetchViajesPorInvitado = async (id_invitado: number): Promise<any[]> => {
+    const { data, error } = await supabase
+        .from('viajes')
+        .select(`
+            id,
+            fecha,
+            folio_bco,
+            folio,
+            caphrsviajes,
+            total_materia
+        `)
+        .eq('id_invitado', String(id_invitado))
         .order('fecha', { ascending: false });
 
     if (error) throw error;

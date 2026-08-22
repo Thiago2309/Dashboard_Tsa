@@ -1,4 +1,5 @@
 import { supabase } from '../superbase.service';
+import { fetchAllRows } from './supabasePagination';
 import { CajaChica, createCajaChica } from './cajaChicaService';
 
 export interface Combustible {
@@ -209,11 +210,8 @@ export const deleteCombustible = async (id: number): Promise<void> => {
 };
 
 // New helper functions to fetch dropdown options
-export const fetchViajes = async (): Promise<{ id: number; folio: string }[]> => {
-    const { data, error } = await supabase.from('viajes').select('id, folio');
-    if (error) throw error;
-    return data || [];
-};
+export const fetchViajes = async (): Promise<{ id: number; folio: string }[]> =>
+    fetchAllRows((sb, from, to) => sb.from('viajes').select('id, folio').range(from, to));
 
 export const fetchOperadores = async (): Promise<{ id: number; nombre: string }[]> => {
     const { data, error } = await supabase.from('operador').select('id, nombre');

@@ -369,6 +369,10 @@ const LogisticaTabla = () => {
         return rowData.operador_nombre || '-';
     }, []);
 
+    const invitadoBodyTemplate = useCallback((rowData: LogisticaViaje) => {
+        return rowData.invitado_nombre || '-';
+    }, []);
+
     const origenBodyTemplate = useCallback((rowData: LogisticaViaje) => {
         return rowData.origen || '-';
     }, []);
@@ -480,6 +484,7 @@ const LogisticaTabla = () => {
                 <Column field="numero_viaje" header="Número de Viaje" sortable body={numeroViajeBodyTemplate} />
                 <Column field="cliente_nombre" header="Cliente" sortable body={clienteBodyTemplate} />
                 <Column field="operador_nombre" header="Operador" sortable body={operadorBodyTemplate} />
+                <Column field="invitado_nombre" header="Invitado" sortable body={invitadoBodyTemplate} />
                 <Column field="origen" header="Origen" sortable body={origenBodyTemplate} />
                 <Column field="destino" header="Destino" sortable body={destinoBodyTemplate} />
                 <Column field="material_nombre" header="Material" sortable body={materialBodyTemplate} />

@@ -9,7 +9,7 @@ import { Toolbar } from 'primereact/toolbar';
 import { Dropdown } from 'primereact/dropdown'; // Import Dropdown
 import { Calendar } from 'primereact/calendar';
 import React, { useEffect, useRef, useState } from 'react';
-import { fetchViajes, createViaje, updateViaje, deleteViaje, Viaje, fetchClientes, fetchPreciosOrigenDestino, fetchMateriales, fetchM3, fetchOperadores, checkFolioExists, fetchInvitados } from '../../../../Services/BD/viajeService';
+import { fetchViajes, fetchViajeById, createViaje, updateViaje, deleteViaje, Viaje, fetchClientes, fetchPreciosOrigenDestino, fetchMateriales, fetchM3, fetchOperadores, checkFolioExists, fetchInvitados } from '../../../../Services/BD/viajeService';
 import { DataTableFilterMeta } from 'primereact/datatable';
 import { InputNumber } from 'primereact/inputnumber';
 import { Checkbox } from 'primereact/checkbox';
@@ -22,6 +22,16 @@ import {
   ViajeEstimacion, 
   FiltrosEstimacion 
 } from '../../../../Services/BD/estimacionesService';
+
+// Normaliza ids para que el value del Dropdown y sus options coincidan en tipo
+// (Supabase puede devolver columnas bigint como string, mientras las opciones
+// de los combos vienen tipadas como number, lo que hace que el Dropdown no
+// muestre la selección aunque el dato sí esté presente).
+const normalizeId = (v: any): number | string | null => {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    return Number.isNaN(n) ? v : n;
+};
 
 const Crud = () => {
     let emptyViaje: Viaje = {
@@ -39,7 +49,8 @@ const Crud = () => {
         horas_renta: null,
         id_invitado: null,
         numero_viaje: null,
-        cantidad_viajes: null
+        cantidad_viajes: null,
+        observaciones: null
     };
 
     const [viajes, setViajes] = useState<Viaje[]>([]);
@@ -63,8 +74,7 @@ const Crud = () => {
     const [operadores, setOperadores] = useState<{id: number; nombre: string}[]>([]);
     const [folioError, setFolioError] = useState(false);
     const [invitados, setInvitados] = useState<{ id: number; empresa: string }[]>([]);
-    const [clientes, setClientes] = useState<EstimacionCliente[]>([]); 
-    const [observaciones, setObservaciones] = useState('');
+    const [clientes, setClientes] = useState<EstimacionCliente[]>([]);
 
     const [filtros, setFiltros] = useState<FiltrosEstimacion>({
         fechaInicio: null,
@@ -266,10 +276,10 @@ const Crud = () => {
         if (
             // viaje.folio_bco.trim() &&
             // viaje.folio.trim() &&
+            // id_invitado es opcional, no debe bloquear el guardado
             viaje.id_cliente !== null &&
             viaje.id_material !== null &&
             viaje.id_m3 !== null &&
-            viaje.id_invitado !== null &&
             viaje.id_precio_origen_destino !== null &&
             viaje.fecha
         ) {
@@ -318,12 +328,13 @@ const Crud = () => {
                         id_m3: viaje.id_m3,
                         caphrsviajes,
                         id_operador: viaje.id_operador,
-                        id_invitado: viaje.id_invitado,
+                        id_invitado: viaje.id_invitado ?? null,
                         horario: viaje.horario || 'D',
                         en_renta: viaje.en_renta,
                         horas_renta: viaje.en_renta ? viaje.horas_renta : null,
                         numero_viaje: viaje.numero_viaje ?? null,
-                        cantidad_viajes: viaje.cantidad_viajes ?? null
+                        cantidad_viajes: viaje.cantidad_viajes ?? null,
+                        observaciones: viaje.observaciones ?? null
                     };
 
                     console.log('Objeto enviado a Supabase:', { ...viajeLimpio, id: viaje.id });
@@ -351,9 +362,30 @@ const Crud = () => {
     };
     
 
-    const editViaje = (viaje: Viaje) => {
-        setViaje({ ...viaje });
+    const editViaje = async (viajeFila: Viaje) => {
+        // La fila de la tabla viene de la vista `fetch_viajes`, que solo trae los nombres
+        // ya resueltos (cliente_nombre, origen, material_nombre...) y no siempre los ids
+        // crudos necesarios para preseleccionar los combos. Se piden los ids reales
+        // directo de la tabla `viajes` antes de abrir el diálogo.
+        setViaje(viajeFila);
         setViajeDialog(true);
+        try {
+            const viajeCompleto = await fetchViajeById(viajeFila.id!);
+            setViaje({
+                ...viajeFila,
+                ...viajeCompleto,
+                id_cliente: normalizeId(viajeCompleto.id_cliente) as number | null,
+                id_operador: normalizeId(viajeCompleto.id_operador) as number | null,
+                id_material: normalizeId(viajeCompleto.id_material) as number | null,
+                id_m3: normalizeId(viajeCompleto.id_m3) as number | null,
+                id_precio_origen_destino: normalizeId(viajeCompleto.id_precio_origen_destino) as number | null,
+                id_invitado: normalizeId(viajeCompleto.id_invitado) as any
+            });
+        } catch (error) {
+            console.error('Error cargando el viaje para editar:', error);
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar el viaje para editar', life: 3000 });
+            setViajeDialog(false);
+        }
     };
 
     const confirmDeleteViaje = (viaje: Viaje) => {
@@ -831,7 +863,7 @@ const Crud = () => {
                             <Dropdown
                                 id="id_cliente"
                                 value={viaje.id_cliente}
-                                options={clientes2.map(c => ({ label: c.empresa, value: c.id }))}
+                                options={clientes2.map(c => ({ label: c.empresa, value: normalizeId(c.id) }))}
                                 onChange={(e) => setViaje({ ...viaje, id_cliente: e.value })}
                                 placeholder="Selecciona un cliente"
                                 required
@@ -847,7 +879,7 @@ const Crud = () => {
                                 value={viaje.id_precio_origen_destino}
                                 options={preciosOrigenDestino.map(p => ({
                                     label: `${p.label} - ($${p.precio_unidad?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) ?? '0.00'})`,
-                                    value: p.id,
+                                    value: normalizeId(p.id),
                                     precio_unidad: p.precio_unidad
                                 }))}
                                 onChange={(e) => setViaje({ ...viaje, id_precio_origen_destino: e.value })}
@@ -868,7 +900,7 @@ const Crud = () => {
                             <Dropdown
                                 id="id_material"
                                 value={viaje.id_material}
-                                options={materiales.map(m => ({ label: m.nombre, value: m.id }))}
+                                options={materiales.map(m => ({ label: m.nombre, value: normalizeId(m.id) }))}
                                 onChange={(e) => setViaje({ ...viaje, id_material: e.value })}
                                 placeholder="Selecciona un material"
                                 required
@@ -882,7 +914,7 @@ const Crud = () => {
                             <Dropdown
                                 id="id_m3"
                                 value={viaje.id_m3}
-                                options={m3Options.map(m => ({ label: m.nombre, value: m.id }))}
+                                options={m3Options.map(m => ({ label: m.nombre, value: normalizeId(m.id) }))}
                                 onChange={(e) => setViaje({ ...viaje, id_m3: e.value })}
                                 placeholder="Selecciona un M3"
                                 required
@@ -896,7 +928,7 @@ const Crud = () => {
                             <Dropdown
                                 id="id_operador"
                                 value={viaje.id_operador}
-                                options={operadores.map(op => ({ label: op.nombre, value: op.id }))}
+                                options={operadores.map(op => ({ label: op.nombre, value: normalizeId(op.id) }))}
                                 onChange={(e) => setViaje({ ...viaje, id_operador: e.value })}
                                 placeholder="Selecciona un operador"
                                 className={submitted && !viaje.id_operador ? 'p-invalid' : ''}
@@ -911,7 +943,7 @@ const Crud = () => {
                             <Dropdown
                                 id="id_invitado"
                                 value={viaje.id_invitado}
-                                options={invitados.map(i => ({ label: i.empresa, value: i.id }))}
+                                options={invitados.map(i => ({ label: i.empresa, value: normalizeId(i.id) }))}
                                 onChange={(e) => setViaje({ ...viaje, id_invitado: e.value })}
                                 placeholder="Selecciona un invitado (opcional)"
                             />
@@ -932,8 +964,8 @@ const Crud = () => {
                             <label htmlFor="observaciones">Observaciones</label>
                             <InputText
                                 id="observaciones"
-                                value={observaciones}
-                                onChange={(e) => {setObservaciones(e.target.value);}}
+                                value={viaje.observaciones || ''}
+                                onChange={(e) => setViaje({ ...viaje, observaciones: e.target.value })}
                                 placeholder="Escriba alguna observación"
                             />
                         </div>
