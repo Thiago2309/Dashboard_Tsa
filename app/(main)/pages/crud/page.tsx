@@ -8,8 +8,27 @@ import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
 import { Dropdown } from 'primereact/dropdown'; // Import Dropdown
 import { Calendar } from 'primereact/calendar';
+import { FileUpload, FileUploadHandlerEvent } from 'primereact/fileupload';
+import { Tag } from 'primereact/tag';
 import React, { useEffect, useRef, useState } from 'react';
-import { fetchViajes, fetchViajeById, createViaje, updateViaje, deleteViaje, Viaje, fetchClientes, fetchPreciosOrigenDestino, fetchMateriales, fetchM3, fetchOperadores, checkFolioExists, fetchInvitados } from '../../../../Services/BD/viajeService';
+import * as XLSX from 'xlsx';
+import {
+    fetchViajes,
+    fetchViajeById,
+    createViaje,
+    updateViaje,
+    deleteViaje,
+    createViajesBulk,
+    checkFoliosExisten,
+    Viaje,
+    fetchClientes,
+    fetchPreciosOrigenDestino,
+    fetchMateriales,
+    fetchM3,
+    fetchOperadores,
+    checkFolioExists,
+    fetchInvitados
+} from '../../../../Services/BD/viajeService';
 import { DataTableFilterMeta } from 'primereact/datatable';
 import { InputNumber } from 'primereact/inputnumber';
 import { Checkbox } from 'primereact/checkbox';
@@ -31,6 +50,91 @@ const normalizeId = (v: any): number | string | null => {
     if (v === null || v === undefined || v === '') return null;
     const n = Number(v);
     return Number.isNaN(n) ? v : n;
+};
+
+// Encabezados esperados en el Excel de carga masiva (ver también la plantilla descargable)
+const COLUMNAS_PLANTILLA_CARGA = [
+    'Fecha', 'Cliente', 'Origen', 'Destino', 'Material', 'M3',
+    'Operador', 'Invitado', 'Folio', 'Folio Banco', 'Horario',
+    'Numero de Viaje', 'Cantidad de Viajes', 'En Renta', 'Horas de Renta', 'Observaciones'
+];
+
+const FILA_EJEMPLO_PLANTILLA_CARGA = {
+    'Fecha': '2026-01-15',
+    'Cliente': 'Nombre exacto del cliente',
+    'Origen': 'Nombre exacto del origen',
+    'Destino': 'Nombre exacto del destino',
+    'Material': 'Nombre exacto del material',
+    'M3': 'Nombre exacto del M3',
+    'Operador': '',
+    'Invitado': '',
+    'Folio': '',
+    'Folio Banco': '',
+    'Horario': 'D',
+    'Numero de Viaje': '',
+    'Cantidad de Viajes': '',
+    'En Renta': 'No',
+    'Horas de Renta': '',
+    'Observaciones': ''
+};
+
+interface FilaCargaMasiva {
+    fila: number; // número de fila en el Excel (incluye encabezado, 1-indexed)
+    textoOriginal: {
+        cliente: string;
+        origen: string;
+        destino: string;
+        material: string;
+        m3: string;
+        operador: string;
+        invitado: string;
+    };
+    datos: Omit<Viaje, 'id'>;
+    errores: string[];
+}
+
+const normalizarTexto = (v: any): string => String(v ?? '').trim();
+
+const normalizarTextoComparacion = (v: any): string =>
+    normalizarTexto(v)
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, ''); // quita acentos para comparar de forma más tolerante
+
+const buscarPorNombre = <T extends Record<string, any>>(lista: T[], campo: keyof T, valor: string): T | undefined => {
+    const objetivo = normalizarTextoComparacion(valor);
+    if (!objetivo) return undefined;
+    return lista.find(item => normalizarTextoComparacion(item[campo]) === objetivo);
+};
+
+const parseFechaExcel = (valor: any): string | null => {
+    if (valor === null || valor === undefined || valor === '') return null;
+    if (valor instanceof Date && !isNaN(valor.getTime())) {
+        return `${valor.getFullYear()}-${String(valor.getMonth() + 1).padStart(2, '0')}-${String(valor.getDate()).padStart(2, '0')}`;
+    }
+    const texto = normalizarTexto(valor);
+    let m = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); // YYYY-MM-DD
+    if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    m = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // DD/MM/YYYY
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    return null;
+};
+
+const parseSiNo = (valor: any): boolean => {
+    const texto = normalizarTextoComparacion(valor);
+    return texto === 'si' || texto === 'sí' || texto === 'true' || texto === '1' || texto === 'x';
+};
+
+const parseHorario = (valor: any): string => {
+    const texto = normalizarTextoComparacion(valor);
+    if (texto === 'n' || texto === 'noche') return 'N';
+    return 'D';
+};
+
+const parseNumeroOpcional = (valor: any): number | null => {
+    if (valor === null || valor === undefined || valor === '') return null;
+    const n = Number(valor);
+    return Number.isNaN(n) ? null : n;
 };
 
 const Crud = () => {
@@ -68,7 +172,7 @@ const Crud = () => {
 
     // State for dropdown options
     const [clientes2, setClientes2] = useState<{ id: number; empresa: string }[]>([]);
-    const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; precio_unidad: number }[]>([]);
+    const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; origen: string; destino: string; precio_unidad: number }[]>([]);
     const [m3Options, setM3Options] = useState<{ id: number; nombre: string; metros_cubicos: number }[]>([]);
     const [materiales, setMateriales] = useState<{ id: number; nombre: string }[]>([]);
     const [operadores, setOperadores] = useState<{id: number; nombre: string}[]>([]);
@@ -94,6 +198,13 @@ const Crud = () => {
     const [showFiltros, setShowFiltros] = useState(false);
     const [loading, setLoading] = useState({ viajes: false });
     const [filteredViajes, setFilteredViajes] = useState<Viaje[]>([]);
+
+    // Estado para la carga masiva de viajes desde Excel
+    const [cargaMasivaDialog, setCargaMasivaDialog] = useState(false);
+    const [filasCarga, setFilasCarga] = useState<FilaCargaMasiva[]>([]);
+    const [nombreArchivoCarga, setNombreArchivoCarga] = useState('');
+    const [procesandoArchivo, setProcesandoArchivo] = useState(false);
+    const [guardandoCarga, setGuardandoCarga] = useState(false);
 
     const aplicarFiltros = () => {
     setLoading({ ...loading, viajes: true });
@@ -425,13 +536,199 @@ const Crud = () => {
         }
     };
 
+    const abrirCargaMasiva = () => {
+        setFilasCarga([]);
+        setNombreArchivoCarga('');
+        setCargaMasivaDialog(true);
+    };
+
+    const cerrarCargaMasiva = () => {
+        if (guardandoCarga) return;
+        setCargaMasivaDialog(false);
+        setFilasCarga([]);
+        setNombreArchivoCarga('');
+    };
+
+    const descargarPlantillaCarga = () => {
+        const ws = XLSX.utils.json_to_sheet([FILA_EJEMPLO_PLANTILLA_CARGA], { header: COLUMNAS_PLANTILLA_CARGA });
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Viajes');
+        XLSX.writeFile(wb, 'Plantilla_Carga_Masiva_Viajes.xlsx');
+    };
+
+    // Lee el Excel, resuelve los nombres (Cliente, Origen, Destino, Material, M3, Operador,
+    // Invitado) contra los catálogos ya cargados, calcula el Total Flete igual que el alta
+    // manual y marca en `errores` cualquier fila que no se pueda guardar tal cual.
+    const procesarArchivoCarga = async (file: File) => {
+        setProcesandoArchivo(true);
+        try {
+            const buffer = await file.arrayBuffer();
+            const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+            const hoja = wb.Sheets[wb.SheetNames[0]];
+            const filasExcel = XLSX.utils.sheet_to_json<any>(hoja, { defval: '' });
+
+            if (filasExcel.length === 0) {
+                toast.current?.show({ severity: 'warn', summary: 'Archivo vacío', detail: 'El Excel no tiene filas de datos', life: 4000 });
+                setFilasCarga([]);
+                return;
+            }
+
+            const foliosVistos = new Set<string>();
+            const procesadas: FilaCargaMasiva[] = filasExcel.map((fila, indice) => {
+                const errores: string[] = [];
+
+                const fecha = parseFechaExcel(fila['Fecha']);
+                if (!fecha) errores.push('Fecha vacía o con formato inválido (usa AAAA-MM-DD o DD/MM/AAAA)');
+
+                const clienteTexto = normalizarTexto(fila['Cliente']);
+                const cliente = buscarPorNombre(clientes2, 'empresa', clienteTexto);
+                if (!clienteTexto) errores.push('Cliente vacío');
+                else if (!cliente) errores.push(`Cliente "${clienteTexto}" no encontrado`);
+
+                const origenTexto = normalizarTexto(fila['Origen']);
+                const destinoTexto = normalizarTexto(fila['Destino']);
+                const ruta = preciosOrigenDestino.find(
+                    p => normalizarTextoComparacion(p.origen) === normalizarTextoComparacion(origenTexto) &&
+                         normalizarTextoComparacion(p.destino) === normalizarTextoComparacion(destinoTexto)
+                );
+                if (!origenTexto || !destinoTexto) errores.push('Origen y/o Destino vacío');
+                else if (!ruta) errores.push(`Ruta "${origenTexto} - ${destinoTexto}" no encontrada`);
+
+                const materialTexto = normalizarTexto(fila['Material']);
+                const material = buscarPorNombre(materiales, 'nombre', materialTexto);
+                if (!materialTexto) errores.push('Material vacío');
+                else if (!material) errores.push(`Material "${materialTexto}" no encontrado`);
+
+                const m3Texto = normalizarTexto(fila['M3']);
+                const m3 = buscarPorNombre(m3Options, 'nombre', m3Texto);
+                if (!m3Texto) errores.push('M3 vacío');
+                else if (!m3) errores.push(`M3 "${m3Texto}" no encontrado`);
+
+                const operadorTexto = normalizarTexto(fila['Operador']);
+                const operador = operadorTexto ? buscarPorNombre(operadores, 'nombre', operadorTexto) : undefined;
+                if (operadorTexto && !operador) errores.push(`Operador "${operadorTexto}" no encontrado`);
+
+                const invitadoTexto = normalizarTexto(fila['Invitado']);
+                const invitado = invitadoTexto ? buscarPorNombre(invitados, 'empresa', invitadoTexto) : undefined;
+                if (invitadoTexto && !invitado) errores.push(`Invitado "${invitadoTexto}" no encontrado`);
+
+                const enRenta = parseSiNo(fila['En Renta']);
+                const horasRenta = parseNumeroOpcional(fila['Horas de Renta']);
+                if (enRenta && (!horasRenta || horasRenta <= 0)) errores.push('Horas de Renta es requerido cuando En Renta = Sí');
+
+                const folio = normalizarTexto(fila['Folio']) || null;
+                if (folio) {
+                    const folioNormalizado = normalizarTextoComparacion(folio);
+                    if (foliosVistos.has(folioNormalizado)) errores.push(`Folio "${folio}" duplicado dentro del archivo`);
+                    foliosVistos.add(folioNormalizado);
+                }
+
+                const cantidadViajes = parseNumeroOpcional(fila['Cantidad de Viajes']);
+
+                let caphrsviajes: number | null = null;
+                if (ruta && m3) {
+                    if (enRenta && horasRenta) {
+                        caphrsviajes = ruta.precio_unidad * m3.metros_cubicos * horasRenta;
+                    } else if (cantidadViajes && cantidadViajes > 0) {
+                        caphrsviajes = ruta.precio_unidad * m3.metros_cubicos * cantidadViajes;
+                    } else {
+                        caphrsviajes = ruta.precio_unidad * m3.metros_cubicos;
+                    }
+                }
+
+                return {
+                    fila: indice + 2, // +2: la fila 1 es el encabezado y Excel es 1-indexado
+                    textoOriginal: {
+                        cliente: clienteTexto,
+                        origen: origenTexto,
+                        destino: destinoTexto,
+                        material: materialTexto,
+                        m3: m3Texto,
+                        operador: operadorTexto,
+                        invitado: invitadoTexto
+                    },
+                    datos: {
+                        id_cliente: cliente ? cliente.id : null,
+                        fecha: fecha || '',
+                        folio_bco: normalizarTexto(fila['Folio Banco']),
+                        folio: folio || '',
+                        id_precio_origen_destino: ruta ? ruta.id : null,
+                        id_material: material ? material.id : null,
+                        id_m3: m3 ? m3.id : null,
+                        caphrsviajes,
+                        id_operador: operador ? operador.id : null,
+                        id_invitado: invitado ? (invitado.id as any) : null,
+                        en_renta: enRenta,
+                        horas_renta: enRenta ? horasRenta : null,
+                        horario: parseHorario(fila['Horario']),
+                        numero_viaje: parseNumeroOpcional(fila['Numero de Viaje']),
+                        cantidad_viajes: cantidadViajes,
+                        observaciones: normalizarTexto(fila['Observaciones']) || null
+                    },
+                    errores
+                };
+            });
+
+            // Revisar folios duplicados contra los que ya existen en la base de datos
+            const foliosParaChecar = procesadas.filter(p => p.datos.folio).map(p => p.datos.folio);
+            if (foliosParaChecar.length > 0) {
+                const existentes = await checkFoliosExisten(foliosParaChecar);
+                procesadas.forEach(p => {
+                    if (p.datos.folio && existentes.has(p.datos.folio)) {
+                        p.errores.push(`Folio "${p.datos.folio}" ya existe en la base de datos`);
+                    }
+                });
+            }
+
+            setFilasCarga(procesadas);
+        } catch (error) {
+            console.error('Error leyendo el archivo de carga masiva:', error);
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo leer el archivo. Verifica que sea un Excel válido y use la plantilla.', life: 5000 });
+            setFilasCarga([]);
+        } finally {
+            setProcesandoArchivo(false);
+        }
+    };
+
+    const manejarSeleccionArchivo = async (e: FileUploadHandlerEvent) => {
+        const file = e.files?.[0];
+        if (!file) return;
+        setNombreArchivoCarga(file.name);
+        await procesarArchivoCarga(file);
+    };
+
+    const filasValidasCarga = filasCarga.filter(f => f.errores.length === 0);
+    const filasConErrorCarga = filasCarga.filter(f => f.errores.length > 0);
+
+    const guardarCargaMasiva = async () => {
+        if (filasValidasCarga.length === 0) return;
+        setGuardandoCarga(true);
+        try {
+            const insertados = await createViajesBulk(filasValidasCarga.map(f => f.datos));
+            toast.current?.show({
+                severity: 'success',
+                summary: 'Carga masiva completada',
+                detail: `${insertados.length} viaje(s) cargado(s) correctamente${filasConErrorCarga.length > 0 ? `. ${filasConErrorCarga.length} fila(s) se omitieron por errores.` : ''}`,
+                life: 5000
+            });
+            fetchViajes().then(setViajes);
+            cerrarCargaMasiva();
+        } catch (error) {
+            console.error('Error guardando la carga masiva:', error);
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo completar la carga masiva', life: 5000 });
+        } finally {
+            setGuardandoCarga(false);
+        }
+    };
+
     const leftToolbarTemplate = () => {
         return (
             <React.Fragment>
                 <div className="my-2">
                     {/* <Button label="Nuevo" icon="pi pi-plus" severity="info" className="mr-2" onClick={openNew} /> */}
                     <Button label="Eliminar" icon="pi pi-trash" severity="danger" className="mr-2" onClick={confirmDeleteSelected} disabled={!selectedViajes || !selectedViajes.length} />
-                    <Button label="Filtros" icon="pi pi-filter" className="p-button-outlined" onClick={() => setShowFiltros(true)} />
+                    <Button label="Filtros" icon="pi pi-filter" className="p-button-outlined mr-2" onClick={() => setShowFiltros(true)} />
+                    <Button label="Carga Masiva" icon="pi pi-file-excel" severity="success" className="p-button-outlined" onClick={abrirCargaMasiva} />
                 </div>
             </React.Fragment>
         );
@@ -1027,6 +1324,88 @@ const Crud = () => {
                             )}
                         </div>
                     </Dialog>
+
+                {/* Diálogo de Carga Masiva de Viajes */}
+                <Dialog
+                    visible={cargaMasivaDialog}
+                    onHide={cerrarCargaMasiva}
+                    header="Carga Masiva de Viajes"
+                    style={{ width: '95vw', maxWidth: '1100px' }}
+                    modal
+                    footer={
+                        <>
+                            <Button label="Cancelar" icon="pi pi-times" text onClick={cerrarCargaMasiva} disabled={guardandoCarga} />
+                            {filasCarga.length > 0 && (
+                                <Button
+                                    label={`Guardar ${filasValidasCarga.length} viaje(s)`}
+                                    icon="pi pi-check"
+                                    onClick={guardarCargaMasiva}
+                                    loading={guardandoCarga}
+                                    disabled={filasValidasCarga.length === 0}
+                                />
+                            )}
+                        </>
+                    }
+                >
+                    <div className="mb-4 p-3 border-round surface-100">
+                        <p className="mt-0 mb-2"><b>Campos obligatorios:</b> Fecha, Cliente, Origen, Destino, Material, M3.</p>
+                        <p className="mt-0 mb-2"><b>Campos opcionales:</b> Operador, Invitado, Folio, Folio Banco, Horario (D/N, por defecto Día), Numero de Viaje, Cantidad de Viajes, En Renta (Sí/No), Horas de Renta (obligatorio solo si En Renta = Sí), Observaciones.</p>
+                        <p className="mt-0 mb-2">Cliente, Origen, Destino, Material, M3, Operador e Invitado deben escribirse <b>exactamente igual</b> a como están dados de alta en el sistema.</p>
+                        <p className="mt-0 mb-0">El Total Flete se calcula automáticamente (precio de la ruta × M3 × horas de renta o cantidad de viajes), no hace falta incluirlo en el Excel.</p>
+                    </div>
+
+                    <div className="flex flex-wrap align-items-center gap-2 mb-4">
+                        <Button label="Descargar plantilla" icon="pi pi-download" className="p-button-outlined" onClick={descargarPlantillaCarga} />
+                        <FileUpload
+                            mode="basic"
+                            name="cargaMasivaExcel"
+                            accept=".xlsx,.xls"
+                            maxFileSize={10000000}
+                            customUpload
+                            uploadHandler={manejarSeleccionArchivo}
+                            chooseLabel={nombreArchivoCarga || 'Seleccionar Excel'}
+                            auto
+                        />
+                        {procesandoArchivo && <span className="text-500"><i className="pi pi-spin pi-spinner mr-2" />Procesando archivo...</span>}
+                    </div>
+
+                    {filasCarga.length > 0 && (
+                        <>
+                            <div className="flex gap-3 mb-3">
+                                <Tag severity="success" value={`${filasValidasCarga.length} válida(s)`} />
+                                {filasConErrorCarga.length > 0 && <Tag severity="danger" value={`${filasConErrorCarga.length} con error`} />}
+                            </div>
+                            <DataTable value={filasCarga} paginator rows={10} className="datatable-responsive" size="small" scrollable>
+                                <Column field="fila" header="Fila" style={{ width: '4rem' }} />
+                                <Column header="Fecha" body={(f: FilaCargaMasiva) => f.datos.fecha || '-'} />
+                                <Column header="Cliente" body={(f: FilaCargaMasiva) => f.textoOriginal.cliente || '-'} />
+                                <Column header="Origen" body={(f: FilaCargaMasiva) => f.textoOriginal.origen || '-'} />
+                                <Column header="Destino" body={(f: FilaCargaMasiva) => f.textoOriginal.destino || '-'} />
+                                <Column header="Material" body={(f: FilaCargaMasiva) => f.textoOriginal.material || '-'} />
+                                <Column header="M3" body={(f: FilaCargaMasiva) => f.textoOriginal.m3 || '-'} />
+                                <Column header="Folio" body={(f: FilaCargaMasiva) => f.datos.folio || '-'} />
+                                <Column
+                                    header="Estado"
+                                    body={(f: FilaCargaMasiva) =>
+                                        f.errores.length === 0 ? (
+                                            <Tag severity="success" value="OK" />
+                                        ) : (
+                                            <Tag severity="danger" value="Error" className="cursor-pointer" title={f.errores.join(' | ')} />
+                                        )
+                                    }
+                                />
+                                <Column
+                                    header="Detalle de errores"
+                                    body={(f: FilaCargaMasiva) =>
+                                        f.errores.length === 0 ? '-' : (
+                                            <span className="text-red-600 text-sm">{f.errores.join(' | ')}</span>
+                                        )
+                                    }
+                                />
+                            </DataTable>
+                        </>
+                    )}
+                </Dialog>
 
                 {/* Diálogo de Filtros */}
                 <Dialog 

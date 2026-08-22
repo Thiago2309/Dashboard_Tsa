@@ -166,12 +166,14 @@ export const fetchClientes = async (): Promise<{ id: number; empresa: string }[]
     return data || [];
 };
 
-export const fetchPreciosOrigenDestino = async (): Promise<{ id: number; label: string; precio_unidad: number; precio_materia?: number }[]> => {
+export const fetchPreciosOrigenDestino = async (): Promise<{ id: number; label: string; origen: string; destino: string; precio_unidad: number; precio_materia?: number }[]> => {
     const { data, error } = await supabase.from('precio_origen_destino').select('id, nombreorigen, nombredestino, precio_unidad, precio_materia').eq('status', true);
     if (error) throw error;
     return data?.map(item => ({
         id: item.id,
         label: `${item.nombreorigen} - ${item.nombredestino}`,
+        origen: item.nombreorigen,
+        destino: item.nombredestino,
         precio_unidad: item.precio_unidad,
         precio_materia: item.precio_materia ?? 0
     })) || [];
@@ -246,6 +248,39 @@ export const fetchInvitados = async (): Promise<{ id: number; empresa: string }[
     
     if (error) throw error;
     return data || [];
+};
+
+// Revisa cuáles de los folios recibidos ya existen en la base de datos (para la carga masiva,
+// en lugar de checar uno por uno como hace checkFolioExists).
+export const checkFoliosExisten = async (folios: string[]): Promise<Set<string>> => {
+    if (folios.length === 0) return new Set();
+    const { data, error } = await supabase
+        .from('viajes')
+        .select('folio')
+        .in('folio', folios);
+
+    if (error) {
+        console.error('Error al verificar folios:', error);
+        throw error;
+    }
+
+    return new Set((data || []).map(d => d.folio));
+};
+
+// Inserta varios viajes de una sola vez (carga masiva desde Excel).
+export const createViajesBulk = async (viajes: Omit<Viaje, 'id'>[]): Promise<Viaje[]> => {
+    if (viajes.length === 0) return [];
+    const { data, error } = await supabase
+        .from('viajes')
+        .insert(viajes)
+        .select('*');
+
+    if (error) {
+        console.error('Error en la carga masiva de viajes:', error);
+        throw error;
+    }
+
+    return (data || []).map(transformViajeData);
 };
 
 export const checkFolioExists = async (folio: string): Promise<boolean> => {
