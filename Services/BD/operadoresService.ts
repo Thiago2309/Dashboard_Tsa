@@ -23,6 +23,7 @@ export interface Operador {
     es_ceo?: boolean;
     puesto_id?: number | null;
     departamento_nombre?: string;
+    es_externo?: boolean;
 }
 
 export const fetchOperadores = async (): Promise<Operador[]> => {
@@ -115,7 +116,8 @@ export const createOperador = async (operador: Omit<Operador, 'id'>): Promise<Op
                 departamento_id: operador.departamento_id || null,
                 jefe_inmediato_id: operador.jefe_inmediato_id || null,
                 es_ceo: operador.es_ceo || false,
-                puesto_id: operador.puesto_id || null
+                puesto_id: operador.puesto_id || null,
+                es_externo: operador.es_externo || false
             }])
             .select()
             .single();
@@ -311,7 +313,8 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
             departamento_id: operador.departamento_id || null,
             jefe_inmediato_id: operador.jefe_inmediato_id || null,
             es_ceo: operador.es_ceo || false,
-            puesto_id: operador.puesto_id || null
+            puesto_id: operador.puesto_id || null,
+            es_externo: operador.es_externo || false
         })
         .eq('id', operador.id)
         .select()

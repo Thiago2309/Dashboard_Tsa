@@ -21,6 +21,7 @@ import { InputText } from 'primereact/inputtext';
 import { InputNumber } from 'primereact/inputnumber';
 import { supabase } from '../../../../../Services/superbase.service';
 import { createViaje } from '../../../../../Services/BD/viajeService';
+import { anotarM3ManualEnObservaciones, extraerM3ManualDeObservaciones, quitarAnotacionM3Manual } from '../../../../../Services/BD/m3ManualUtil';
 
 const LogisticaTabla = () => {
     const [viajes, setViajes] = useState<LogisticaViaje[]>([]);
@@ -37,6 +38,9 @@ const LogisticaTabla = () => {
     const [submittedEdit, setSubmittedEdit] = useState(false);
     const [loadingEdit, setLoadingEdit] = useState(false);
     const [observaciones, setObservaciones] = useState('');
+    // M3 manual: para camiones externos sin M3 en el catálogo. Si tiene valor, al Aprobar
+    // se usa ese número en vez del M3 de catálogo (que aquí solo se muestra de lectura).
+    const [m3Manual, setM3Manual] = useState<number | null>(null);
 
     // Cargar datos - usar useCallback para evitar recreación
     const cargarDatos = useCallback(async () => {
@@ -71,6 +75,7 @@ const LogisticaTabla = () => {
         setNumeroViaje('');
         setCantidadViajes(null);
         setObservaciones('');
+        setM3Manual(null);
         setSubmittedEdit(false);
     }, []);
 
@@ -81,7 +86,8 @@ const LogisticaTabla = () => {
         setFolio(rowData.folio || '');
         setNumeroViaje(rowData.numero_viaje || '');
         setCantidadViajes(rowData.cantidad_viajes || null);
-        setObservaciones(rowData.observaciones || '');
+        setObservaciones(quitarAnotacionM3Manual(rowData.observaciones) || '');
+        setM3Manual(extraerM3ManualDeObservaciones(rowData.observaciones));
         setSubmittedEdit(false);
         setEditDialog(true);
     }, []);
@@ -102,7 +108,9 @@ const LogisticaTabla = () => {
 
         try {
             setLoadingEdit(true);
-            
+
+            const observacionesFinal = anotarM3ManualEnObservaciones(m3Manual, observaciones);
+
             const datosActualizar = {
                 id: editViaje?.id,
                 folio: folio.trim(),
@@ -116,7 +124,7 @@ const LogisticaTabla = () => {
                 id_m3: editViaje?.id_m3,
                 id_invitado: editViaje?.id_invitado,
                 estado: editViaje?.estado,
-                observaciones: observaciones || null,
+                observaciones: observacionesFinal,
                 fecha_asignacion: editViaje?.fecha_asignacion,
                 horario: editViaje?.horario,
                 en_renta: editViaje?.en_renta,
@@ -128,15 +136,15 @@ const LogisticaTabla = () => {
             await updateViajeLogistica(datosActualizar as LogisticaViaje);
 
             // Actualizar el estado local usando la función de actualización
-            setViajes(prevViajes => 
-                prevViajes.map(v => 
-                    v.id === editViaje?.id ? { 
-                        ...v, 
+            setViajes(prevViajes =>
+                prevViajes.map(v =>
+                    v.id === editViaje?.id ? {
+                        ...v,
                         folio: folio.trim(),
                         folio_bco: folioBco,
                         numero_viaje: numeroViaje,
                         cantidad_viajes: cantidadViajes,
-                        observaciones: observaciones
+                        observaciones: observacionesFinal
                     } : v
                 )
             );
@@ -161,7 +169,7 @@ const LogisticaTabla = () => {
         } finally {
             setLoadingEdit(false);
         }
-    }, [editViaje, folio, folioBco, numeroViaje, cantidadViajes, observaciones, cerrarDialog]);
+    }, [editViaje, folio, folioBco, numeroViaje, cantidadViajes, observaciones, m3Manual, cerrarDialog]);
 
     // Función para Aprobar
     const handleAprobar = useCallback(async (rowData: LogisticaViaje) => {
@@ -175,8 +183,12 @@ const LogisticaTabla = () => {
             const precio = preciosData.find(p => p.id === rowData.id_precio_origen_destino);
             const material = materialesData.find(m => m.id === rowData.id_material);
             const m3Item = m3Data.find(m => m.id === rowData.id_m3);
+            // Si en observaciones hay un M3 manual anotado (camión externo sin M3 de catálogo),
+            // se usa ese valor en vez de requerir un m3Item del catálogo.
+            const m3ManualValor = extraerM3ManualDeObservaciones(rowData.observaciones);
+            const metrosCubicosEfectivos = m3Item ? m3Item.metros_cubicos : m3ManualValor;
 
-            if (!precio || !material || !m3Item) {
+            if (!precio || !material || !metrosCubicosEfectivos) {
                 toast.current?.show({
                     severity: 'error',
                     summary: 'Error',
@@ -190,15 +202,15 @@ const LogisticaTabla = () => {
             let total_materia = 0;
 
             if (rowData.en_renta && rowData.horas_renta) {
-                caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos * rowData.horas_renta;
+                caphrsviajes = precio.precio_unidad * metrosCubicosEfectivos * rowData.horas_renta;
             } else if (rowData.cantidad_viajes && rowData.cantidad_viajes > 0) {
-                caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos * rowData.cantidad_viajes;
+                caphrsviajes = precio.precio_unidad * metrosCubicosEfectivos * rowData.cantidad_viajes;
             } else {
-                caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos;
+                caphrsviajes = precio.precio_unidad * metrosCubicosEfectivos;
             }
 
             if (precio.precio_materia && precio.precio_materia > 0) {
-                total_materia = precio.precio_materia * m3Item.metros_cubicos;
+                total_materia = precio.precio_materia * metrosCubicosEfectivos;
             }
 
             const fechaViaje = rowData.fecha_asignacion 
@@ -218,7 +230,7 @@ const LogisticaTabla = () => {
                 folio: rowData.folio,
                 id_precio_origen_destino: rowData.id_precio_origen_destino,
                 id_material: rowData.id_material,
-                id_m3: rowData.id_m3,
+                id_m3: m3Item ? rowData.id_m3 : null,
                 caphrsviajes: caphrsviajes,
                 total_materia: total_materia,
                 id_operador: rowData.id_operador,
@@ -567,6 +579,24 @@ const LogisticaTabla = () => {
                 </div>
 
                 <div className="field">
+                    <label htmlFor="m3_manual">M3 (Manual)</label>
+                    <InputNumber
+                        id="m3_manual"
+                        value={m3Manual}
+                        onValueChange={(e) => setM3Manual(e.value ?? null)}
+                        mode="decimal"
+                        min={0}
+                        minFractionDigits={0}
+                        maxFractionDigits={2}
+                        placeholder="Para camión externo sin M3 de catálogo"
+                        className="w-full"
+                    />
+                    <small className="text-500">
+                        Solo para camiones externos que no están en el catálogo. Si se deja vacío, al Aprobar se usará el M3 del catálogo: {editViaje?.m3_nombre || 'sin definir'}.
+                    </small>
+                </div>
+
+                <div className="field">
                     <label htmlFor="observaciones">Observaciones</label>
                     <InputText
                         id="observaciones"
@@ -575,7 +605,7 @@ const LogisticaTabla = () => {
                         placeholder="Escriba alguna observación"
                     />
                 </div>
-                
+
                 {editViaje && (
                     <div className="field">
                         <label>Información del Viaje</label>

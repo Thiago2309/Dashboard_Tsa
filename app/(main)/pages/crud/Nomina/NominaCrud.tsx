@@ -423,7 +423,7 @@ const NominaModule = () => {
             });
 
             const nominasPromises = empleados
-                .filter(empleado => empleado.estatus)
+                .filter(empleado => empleado.estatus && !empleado.es_externo && !empleado.es_ceo)
                 .map(async (empleado) => {
                     const viajesEmpleado = viajes.filter(viaje => {
                         const perteneceAlOperador = viaje.operador_nombre === empleado.nombre;
