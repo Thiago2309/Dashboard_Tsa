@@ -1,7 +1,16 @@
 import { supabase } from '../superbase.service';
 import { PostgrestError } from '@supabase/supabase-js';
+import { fetchAllRows } from './supabasePagination';
 
 export type TipoEntidad = 'Proveedor' | 'Cliente' | 'Colaborador' | 'Invitado' | string;
+
+const fetchTodosLosViajesConInvitado = (): Promise<{ id_invitado: string | number | null; caphrsviajes: number | null }[]> =>
+    fetchAllRows((sb, from, to) =>
+        sb.from('viajes')
+          .select('id_invitado, caphrsviajes')
+          .not('id_invitado', 'is', null)
+          .range(from, to)
+    );
 
 export interface CuentaPorPagarBase {
     id?: number;
@@ -166,13 +175,26 @@ export const fetchEntidadesConCuentas = async (tipo?: TipoEntidad): Promise<Resu
 
     if (tipo === 'Proveedor') return resumenProveedores;
 
-    // Para invitados
+    // Para invitados: el Monto Total se calcula dinámicamente sumando el FLETE (caphrsviajes)
+    // de sus viajes vinculados y descontando su % de participación sobre esa suma, igual que
+    // en Cuentas por Cobrar (no se confía en el saldo acumulado manualmente en
+    // cuentas_por_pagar, que puede quedar desactualizado). El material (total_materia) no
+    // forma parte del pago del invitado.
     if (tipo === 'Invitado') {
         const { data: invitados, error: errorInvitados } = await supabase
             .from('invitados')
-            .select('id, empresa');
+            .select('id, empresa, porcentaje_participacion');
 
         if (errorInvitados) throw errorInvitados;
+
+        const viajesInvitados = await fetchTodosLosViajesConInvitado();
+
+        const totalViajesPorInvitado = viajesInvitados.reduce((acc, v) => {
+            if (!v.id_invitado) return acc;
+            const key = String(v.id_invitado);
+            acc[key] = (acc[key] || 0) + (v.caphrsviajes || 0);
+            return acc;
+        }, {} as Record<string, number>);
 
         const { data: cuentasInvitado } = await supabase
             .from('cuentas_por_pagar')
@@ -180,15 +202,18 @@ export const fetchEntidadesConCuentas = async (tipo?: TipoEntidad): Promise<Resu
             .eq('tipo_entidad', 'Invitado');
 
         return invitados?.map(invitado => {
+            const totalViajes = totalViajesPorInvitado[String(invitado.id)] || 0;
+            const porcentaje = (invitado.porcentaje_participacion || 0) / 100;
+            const saldoCalculado = totalViajes * (1 - porcentaje);
+
             const cuentas = cuentasInvitado?.filter(c => c.id_entidad === invitado.id) || [];
-            const totalAdeudado = cuentas.reduce((sum, c) => sum + (c.saldo - (c.monto || 0)), 0);
             const totalPagado = cuentas.reduce((sum, c) => sum + (c.monto || 0), 0);
             const pendientes = cuentas.filter(c => c.estatus === 'Pendiente').length;
 
             return {
                 id_entidad: invitado.id,
                 entidad_nombre: invitado.empresa,
-                total_adeudado: totalAdeudado,
+                total_adeudado: Math.max(0, Number((saldoCalculado - totalPagado).toFixed(2))),
                 total_monto_pagado: totalPagado,
                 cuentas_pendientes: pendientes,
                 tipo: 'Invitado' as TipoEntidad
@@ -227,7 +252,72 @@ export const fetchEntidadesConCuentas = async (tipo?: TipoEntidad): Promise<Resu
     return tipo === 'Cliente' ? resumenClientes : [...resumenProveedores, ...resumenClientes];
 };
 
+// Recalcula el Monto Total real de un invitado sumando el flete de sus viajes vinculados y
+// descontando su % de participación sobre esa suma, y lo persiste en su(s) cuenta(s) por
+// pagar (igual que fetchCuentasPorCliente hace con las cuentas por cobrar de clientes).
+const fetchCuentasInvitado = async (id_entidad: number): Promise<CuentaPorPagar[]> => {
+    const { data: invitado, error: errorInvitado } = await supabase
+        .from('invitados')
+        .select('empresa, porcentaje_participacion')
+        .eq('id', id_entidad)
+        .single();
+
+    if (errorInvitado) throw errorInvitado;
+
+    const { data: viajes, error: errorViajes } = await supabase
+        .from('viajes')
+        .select('caphrsviajes')
+        .eq('id_invitado', String(id_entidad));
+
+    if (errorViajes) throw errorViajes;
+
+    const totalViajes = viajes?.reduce((sum, v) => sum + (v.caphrsviajes || 0), 0) || 0;
+    const porcentaje = (invitado.porcentaje_participacion || 0) / 100;
+    const saldoCalculado = Number((totalViajes * (1 - porcentaje)).toFixed(2));
+
+    const { data: cuentas, error: errorCuentas } = await supabase
+        .from('cuentas_por_pagar')
+        .select('*')
+        .eq('tipo_entidad', 'Invitado')
+        .eq('id_entidad', id_entidad)
+        .order('fecha', { ascending: false });
+
+    if (errorCuentas) throw errorCuentas;
+    if (!cuentas || cuentas.length === 0) return [];
+
+    const cuentasActualizadas: CuentaPorPagar[] = [];
+
+    for (const cuenta of cuentas) {
+        // Solo las cuentas todavía pendientes reflejan el saldo recalculado; una cuenta ya
+        // cancelada conserva su saldo histórico.
+        const saldo = cuenta.estatus === 'Cancelado' ? (cuenta.saldo || 0) : saldoCalculado;
+
+        if (cuenta.saldo !== saldo) {
+            await supabase.from('cuentas_por_pagar').update({ saldo }).eq('id', cuenta.id);
+        }
+
+        const adeudo = Math.max(0, Number((saldo - (cuenta.monto || 0)).toFixed(2)));
+        const estatusActualizado: 'Pagado' | 'Pendiente' | 'Cancelado' =
+            cuenta.estatus === 'Cancelado' ? 'Cancelado' : adeudo <= 0 ? 'Pagado' : 'Pendiente';
+
+        if (cuenta.estatus !== estatusActualizado) {
+            await supabase.from('cuentas_por_pagar').update({ estatus: estatusActualizado }).eq('id', cuenta.id);
+        }
+
+        cuentasActualizadas.push({
+            ...transformCuentaData({ ...cuenta, saldo, estatus: estatusActualizado }),
+            entidad_nombre: invitado.empresa
+        });
+    }
+
+    return cuentasActualizadas;
+};
+
 export const fetchCuentasPorEntidad = async (tipo: TipoEntidad, id_entidad?: number): Promise<CuentaPorPagar[]> => {
+    if (tipo === 'Invitado' && id_entidad) {
+        return fetchCuentasInvitado(id_entidad);
+    }
+
     let query = supabase
         .from('cuentas_por_pagar')
         .select('*');

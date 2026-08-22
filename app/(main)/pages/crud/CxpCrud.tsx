@@ -28,6 +28,7 @@ import {
     CuentaPorPagar,
     TipoEntidad
 } from '../../../../Services/BD/CxPService';
+import { fetchViajesPorInvitado } from '../../../../Services/BD/viajeService';
 
 const TIPOS_DISPONIBLES: { label: string; value: TipoEntidad }[] = [
     { label: 'Proveedores', value: 'Proveedor' },
@@ -41,8 +42,10 @@ const CxpCrud = () => {
     const [entidadSeleccionada, setEntidadSeleccionada] = useState<ResumenEntidad | null>(null);
     const [loading, setLoading] = useState({
         entidades: true,
-        detalles: false
+        detalles: false,
+        viajes: false
     });
+    const [viajesInvitado, setViajesInvitado] = useState<any[]>([]);
     const [totalGeneral, setTotalGeneral] = useState<number>(0);
     const [pagoDialog, setPagoDialog] = useState(false);
     const [editFechaDialog, setEditFechaDialog] = useState(false);
@@ -77,6 +80,7 @@ const CxpCrud = () => {
             setEntidadSeleccionada(null);
             setCuentasEntidad([]);
             setHistorialPagos([]);
+            setViajesInvitado([]);
             try {
                 const [entidades, proveedoresData, invitadosData] = await Promise.all([
                     fetchEntidadesConCuentas(tipoEntidad),
@@ -102,15 +106,25 @@ const CxpCrud = () => {
             setEntidadSeleccionada(null);
             setCuentasEntidad([]);
             setHistorialPagos([]);
+            setViajesInvitado([]);
             return;
         }
 
-        setLoading({ entidades: false, detalles: true });
+        setLoading({ entidades: false, detalles: true, viajes: tipoEntidad === 'Invitado' });
         setEntidadSeleccionada(entidad);
 
         try {
             const cuentas = await fetchCuentasPorEntidad(tipoEntidad, entidad.id_entidad);
             setCuentasEntidad(cuentas);
+
+            // El resumen (entidad) puede haber quedado desactualizado si el saldo se
+            // recalculó al traer las cuentas (p. ej. invitados): sincronizamos el
+            // subtítulo "Total Adeudado" con los datos frescos que se acaban de traer.
+            const totalAdeudadoActualizado = cuentas.reduce((sum, c) => sum + (c.adeudo || 0), 0);
+            const totalPagadoActualizado = cuentas.reduce((sum, c) => sum + (c.monto || 0), 0);
+            setEntidadSeleccionada(prev =>
+                prev ? { ...prev, total_adeudado: totalAdeudadoActualizado, total_monto_pagado: totalPagadoActualizado } : prev
+            );
 
             if (cuentas.length > 0) {
                 const historial = await fetchHistorialPagosCxP(cuentas[0].id!);
@@ -118,23 +132,30 @@ const CxpCrud = () => {
             } else {
                 setHistorialPagos([]);
             }
+
+            if (tipoEntidad === 'Invitado') {
+                const viajes = await fetchViajesPorInvitado(entidad.id_entidad);
+                setViajesInvitado(viajes);
+            } else {
+                setViajesInvitado([]);
+            }
         } catch (error) {
             mostrarError(`Error al cargar datos de ${entidad.entidad_nombre}`);
             setEntidadSeleccionada(null);
         } finally {
-            setLoading({ entidades: false, detalles: false });
+            setLoading({ entidades: false, detalles: false, viajes: false });
         }
     };
 
     const actualizarDatos = () => {
-        setLoading({ entidades: true, detalles: false });
+        setLoading({ entidades: true, detalles: false, viajes: false });
         fetchEntidadesConCuentas(tipoEntidad)
             .then(data => {
                 setResumenEntidades(data);
                 setTotalGeneral(data.reduce((sum, e) => sum + e.total_adeudado, 0));
             })
             .catch(() => mostrarError('Error al actualizar'))
-            .finally(() => setLoading({ entidades: false, detalles: false }));
+            .finally(() => setLoading({ entidades: false, detalles: false, viajes: false }));
     };
 
     const registrarPagoEntidad = async () => {
@@ -555,6 +576,34 @@ const CxpCrud = () => {
                                                     </DataTable>
                                                 </TabPanel>
                                             </TabView>
+
+                                            {tipoEntidad === 'Invitado' && !loading.viajes && viajesInvitado.length > 0 && (
+                                                <div className="mt-5">
+                                                    <h4>Viajes Relacionados ({viajesInvitado.length})</h4>
+                                                    <DataTable
+                                                        value={viajesInvitado}
+                                                        paginator
+                                                        rows={5}
+                                                        emptyMessage="No se encontraron viajes"
+                                                        className="p-datatable-sm"
+                                                    >
+                                                        <Column field="id" header="Id de Viaje" />
+                                                        <Column
+                                                            field="fecha"
+                                                            header="Fecha"
+                                                            body={(row) => {
+                                                                if (!row.fecha) return '-';
+                                                                const [year, month, day] = row.fecha.split('T')[0].split('-');
+                                                                return `${day}-${month}-${year}`;
+                                                            }}
+                                                        />
+                                                        <Column field="folio" header="Folio" body={(row) => row.folio ? row.folio : '-'} />
+                                                        <Column field="folio_bco" header="Folio BCO" body={(row) => row.folio_bco ? row.folio_bco : '-'} />
+                                                        <Column field="caphrsviajes" header="Total Flete" body={(row) => formatCurrency(row.caphrsviajes || 0)} />
+                                                        <Column field="total_materia" header="Total Material" body={(row) => formatCurrency(row.total_materia || 0)} />
+                                                    </DataTable>
+                                                </div>
+                                            )}
                                         </>
                                     )}
                                 </Card>

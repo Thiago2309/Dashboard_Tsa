@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { supabase } from '../superbase.service';
 import { CajaChica, createCajaChica } from './cajaChicaService'; // Ajusta la ruta
+import { fetchAllRows } from './supabasePagination';
 
 export interface CuentaPorCobrar {
     adeudo?: number; // Diferencia entre saldo y abonos (saldo - monto)
@@ -61,16 +62,14 @@ export const fetchTodosClientesConCuentas = async (): Promise<ResumenCliente[]> 
 
     if (errorClientes) throw errorClientes;
 
-    // 2. Obtener los viajes y agrupar por cliente
-    const { data: viajesData, error: errorViajes } = await supabase
-        .from('viajes')
-        .select(`
-            id_cliente,
-            caphrsviajes,
-            total_materia
-        `);
-
-    if (errorViajes) throw errorViajes;
+    // 2. Obtener TODOS los viajes (paginando: PostgREST corta en 1000 filas por
+    // consulta y la tabla "viajes" ya supera esa cifra) y agrupar por cliente
+    const viajesData = await fetchAllRows<{ id_cliente: number | null; caphrsviajes: number | null; total_materia: number | null }>(
+        (sb, from, to) =>
+            sb.from('viajes')
+              .select('id_cliente, caphrsviajes, total_materia')
+              .range(from, to)
+    );
 
     // 3. Agrupar el total por cliente, incluyendo flete y material
     const totalPorCliente = viajesData?.reduce((acc, viaje) => {
