@@ -28,6 +28,7 @@ import {
     checkFolioExists,
     LogisticaViaje
 } from '../../../../../Services/BD/logistica/logisticaService';
+import { anotarM3ManualEnObservaciones, extraerM3ManualDeObservaciones, quitarAnotacionM3Manual } from '../../../../../Services/BD/m3ManualUtil';
 
 const LogisticaCrud = () => {
     const emptyViaje: LogisticaViaje = {
@@ -87,6 +88,11 @@ const LogisticaCrud = () => {
     const [m3Options, setM3Options] = useState<{ id: number; nombre: string; metros_cubicos: number }[]>([]);
     const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; origen: string; destino: string }[]>([]);
     const [invitados, setInvitados] = useState<{ id: number; empresa: string }[]>([]);
+    // M3 (Invitado): para camiones externos que no están en el catálogo m3. Excluyente con
+    // el dropdown de M3: si se llena uno, se limpia el otro.
+    const [m3Invitado, setM3Invitado] = useState<number | null>(null);
+    // Cantidad de viajes idénticos a crear de una sola vez (solo aplica al dar de alta)
+    const [cantidadViajes, setCantidadViajes] = useState<number>(1);
 
     const toast = useRef<Toast>(null);
     const dt = useRef<DataTable<any>>(null);
@@ -338,22 +344,26 @@ const LogisticaCrud = () => {
 
     const openNew = () => {
         setViaje({ ...emptyViaje });
+        setM3Invitado(null);
         setSubmitted(false);
         setFolioError(false);
+        setCantidadViajes(1);
         setViajeDialog(true);
     };
 
     const hideDialog = () => {
         setSubmitted(false);
         setFolioError(false);
+        setM3Invitado(null);
+        setCantidadViajes(1);
         setViajeDialog(false);
     };
 
     const saveViaje = async () => {
         setSubmitted(true);
 
-        if (!viaje.id_cliente || !viaje.id_operador || !viaje.id_precio_origen_destino || 
-            !viaje.id_material || !viaje.id_m3) {
+        if (!viaje.id_cliente || !viaje.id_operador || !viaje.id_precio_origen_destino ||
+            !viaje.id_material || (!viaje.id_m3 && !(m3Invitado && m3Invitado > 0))) {
             toast.current?.show({
                 severity: 'error',
                 summary: 'Error',
@@ -373,9 +383,22 @@ const LogisticaCrud = () => {
             return;
         }
 
+        const esNuevo = !viaje.id;
+        const cantidad = esNuevo ? Math.max(1, cantidadViajes || 1) : 1;
+
+        if (esNuevo && cantidad > 1 && viaje.folio) {
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'El folio debe estar vacío para crear varios viajes duplicados (cada folio debe ser único).',
+                life: 4000
+            });
+            return;
+        }
+
         try {
             setLoading(true);
-            
+
             if (!viaje.id && viaje.folio) {
                 const folioExists = await checkFolioExists(viaje.folio);
                 if (folioExists) {
@@ -391,8 +414,14 @@ const LogisticaCrud = () => {
                 }
             }
 
-            if (viaje.id) {
-                const updated = await updateViajeLogistica(viaje);
+            const viajeAGuardar: LogisticaViaje = {
+                ...viaje,
+                id_m3: m3Invitado ? null : viaje.id_m3,
+                observaciones: anotarM3ManualEnObservaciones(m3Invitado, viaje.observaciones)
+            };
+
+            if (viajeAGuardar.id) {
+                const updated = await updateViajeLogistica(viajeAGuardar);
                 setViajes(viajes.map(v => v.id === updated.id ? updated : v));
                 toast.current?.show({
                     severity: 'success',
@@ -400,8 +429,21 @@ const LogisticaCrud = () => {
                     detail: 'Viaje actualizado correctamente',
                     life: 3000
                 });
+            } else if (cantidad > 1) {
+                const nuevosViajes: LogisticaViaje[] = [];
+                for (let i = 0; i < cantidad; i++) {
+                    const nuevoViaje = await createViajeLogistica(viajeAGuardar);
+                    nuevosViajes.push(nuevoViaje);
+                }
+                setViajes([...nuevosViajes, ...viajes]);
+                toast.current?.show({
+                    severity: 'success',
+                    summary: 'Éxito',
+                    detail: `${cantidad} viajes duplicados creados correctamente`,
+                    life: 3000
+                });
             } else {
-                const newViaje = await createViajeLogistica(viaje);
+                const newViaje = await createViajeLogistica(viajeAGuardar);
                 setViajes([newViaje, ...viajes]);
                 toast.current?.show({
                     severity: 'success',
@@ -411,6 +453,8 @@ const LogisticaCrud = () => {
                 });
             }
             setViajeDialog(false);
+            setM3Invitado(null);
+            setCantidadViajes(1);
             cargarDatos();
         } catch (error) {
             console.error('Error guardando viaje:', error);
@@ -606,12 +650,13 @@ const LogisticaCrud = () => {
                     rounded 
                     severity="info" 
                     onClick={() => {
-                        setViaje(rowData);
+                        setViaje({ ...rowData, observaciones: quitarAnotacionM3Manual(rowData.observaciones) });
+                        setM3Invitado(extraerM3ManualDeObservaciones(rowData.observaciones));
                         setViajeDialog(true);
                     }}
                 />
-                <Button 
-                    icon="pi pi-trash" 
+                <Button
+                    icon="pi pi-trash"
                     rounded 
                     severity="danger" 
                     onClick={() => {
@@ -839,6 +884,24 @@ const LogisticaCrud = () => {
                         </div>
                     </div>
 
+                    {!viaje.id && (
+                        <div className="col-12 md:col-6">
+                            <div className="field">
+                                <label htmlFor="cantidad_viajes">Cantidad de viajes a crear</label>
+                                <InputNumber
+                                    id="cantidad_viajes"
+                                    value={cantidadViajes}
+                                    onValueChange={(e) => setCantidadViajes(e.value ?? 1)}
+                                    mode="decimal"
+                                    min={1}
+                                    max={50}
+                                    showButtons
+                                />
+                                <small className="text-500">Crea este mismo viaje duplicado varias veces (útil cuando es el mismo viaje para el mismo operador). Deja el folio vacío si pones más de 1.</small>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="col-12 md:col-6">
                         <div className="field">
                             <label htmlFor="fecha_asignacion">Fecha Asignación</label><span style={{ color: 'red' }}> *</span>
@@ -939,22 +1002,46 @@ const LogisticaCrud = () => {
 
                     <div className="col-12 md:col-6">
                         <div className="field">
-                            <label htmlFor="m3">M3</label><span style={{ color: 'red' }}> *</span>
+                            <label htmlFor="m3">M3</label>{!m3Invitado && <span style={{ color: 'red' }}> *</span>}
                             <Dropdown
                                 id="m3"
                                 value={viaje.id_m3}
-                                options={m3Options.map(m => ({ 
-                                    label: `${m.nombre} (${m.metros_cubicos} m³)`, 
-                                    value: m.id 
+                                options={m3Options.map(m => ({
+                                    label: `${m.nombre} (${m.metros_cubicos} m³)`,
+                                    value: m.id
                                 }))}
-                                onChange={(e) => setViaje({ ...viaje, id_m3: e.value })}
+                                onChange={(e) => {
+                                    setViaje({ ...viaje, id_m3: e.value });
+                                    if (e.value) setM3Invitado(null);
+                                }}
                                 placeholder="Selecciona M3"
-                                required
+                                disabled={!!m3Invitado}
                                 filter
                                 showClear
-                                className={submitted && !viaje.id_m3 ? 'p-invalid' : ''}
+                                className={submitted && !viaje.id_m3 && !m3Invitado ? 'p-invalid' : ''}
                             />
-                            {submitted && !viaje.id_m3 && <small className="p-error">M3 es requerido</small>}
+                            {submitted && !viaje.id_m3 && !m3Invitado && <small className="p-error">M3 es requerido</small>}
+                        </div>
+                    </div>
+
+                    <div className="col-12 md:col-6">
+                        <div className="field">
+                            <label htmlFor="m3_invitado">M3 (Invitado)</label>
+                            <InputNumber
+                                id="m3_invitado"
+                                value={m3Invitado}
+                                onValueChange={(e) => {
+                                    setM3Invitado(e.value ?? null);
+                                    if (e.value) setViaje({ ...viaje, id_m3: null });
+                                }}
+                                mode="decimal"
+                                min={0}
+                                minFractionDigits={0}
+                                maxFractionDigits={2}
+                                placeholder="Para camión de invitado sin M3 de catálogo"
+                                disabled={!!viaje.id_m3}
+                            />
+                            <small className="text-500">Solo si es un camión de invitado externo. Déjalo vacío si ya seleccionaste M3 arriba.</small>
                         </div>
                     </div>
 

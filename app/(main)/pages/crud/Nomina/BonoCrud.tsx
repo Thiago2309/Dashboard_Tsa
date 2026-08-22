@@ -47,7 +47,7 @@ const BonoModule = () => {
                 fetchOperadores()
             ]);
             setBonos(bonosData);
-            setOperadores(operadoresData.filter(op => op.estatus));
+            setOperadores(operadoresData.filter(op => op.estatus && !op.es_externo && !op.es_ceo));
         } catch (error) {
             mostrarToast('error', 'Error', 'No se pudieron cargar los datos');
         }

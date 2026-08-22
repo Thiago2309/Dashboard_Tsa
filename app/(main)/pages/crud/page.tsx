@@ -54,7 +54,7 @@ const normalizeId = (v: any): number | string | null => {
 
 // Encabezados esperados en el Excel de carga masiva (ver también la plantilla descargable)
 const COLUMNAS_PLANTILLA_CARGA = [
-    'Fecha', 'Cliente', 'Origen', 'Destino', 'Material', 'M3',
+    'Fecha', 'Cliente', 'Origen', 'Destino', 'Material', 'M3', 'M3 (manual)',
     'Operador', 'Invitado', 'Folio', 'Folio Banco', 'Horario',
     'Numero de Viaje', 'Cantidad de Viajes', 'En Renta', 'Horas de Renta', 'Observaciones'
 ];
@@ -65,7 +65,8 @@ const FILA_EJEMPLO_PLANTILLA_CARGA = {
     'Origen': 'Nombre exacto del origen',
     'Destino': 'Nombre exacto del destino',
     'Material': 'Nombre exacto del material',
-    'M3': 'Nombre exacto del M3',
+    'M3': 'Nombre exacto del M3 (deja vacío si usas "M3 (manual)")',
+    'M3 (manual)': '',
     'Operador': '',
     'Invitado': '',
     'Folio': '',
@@ -599,10 +600,25 @@ const Crud = () => {
                 if (!materialTexto) errores.push('Material vacío');
                 else if (!material) errores.push(`Material "${materialTexto}" no encontrado`);
 
+                // M3 admite dos formas: el nombre de un M3 del catálogo, o un valor manual en
+                // metros cúbicos para camiones externos que no están dados de alta en el
+                // catálogo (en ese caso id_m3 se guarda como null; no se crea nada en el catálogo).
                 const m3Texto = normalizarTexto(fila['M3']);
-                const m3 = buscarPorNombre(m3Options, 'nombre', m3Texto);
-                if (!m3Texto) errores.push('M3 vacío');
-                else if (!m3) errores.push(`M3 "${m3Texto}" no encontrado`);
+                const m3 = m3Texto ? buscarPorNombre(m3Options, 'nombre', m3Texto) : undefined;
+                const m3ManualTexto = normalizarTexto(fila['M3 (manual)']);
+                const m3Manual = parseNumeroOpcional(fila['M3 (manual)']);
+
+                if (m3Texto && m3ManualTexto) {
+                    errores.push('Especifica solo M3 o M3 (manual), no ambos');
+                } else if (m3Texto && !m3) {
+                    errores.push(`M3 "${m3Texto}" no encontrado`);
+                } else if (m3ManualTexto && (m3Manual === null || m3Manual <= 0)) {
+                    errores.push(`M3 (manual) "${m3ManualTexto}" no es un número válido`);
+                } else if (!m3Texto && !m3ManualTexto) {
+                    errores.push('M3 vacío (usa la columna "M3" o "M3 (manual)")');
+                }
+
+                const metrosCubicosEfectivos = m3 ? m3.metros_cubicos : (m3Manual && m3Manual > 0 ? m3Manual : null);
 
                 const operadorTexto = normalizarTexto(fila['Operador']);
                 const operador = operadorTexto ? buscarPorNombre(operadores, 'nombre', operadorTexto) : undefined;
@@ -626,15 +642,23 @@ const Crud = () => {
                 const cantidadViajes = parseNumeroOpcional(fila['Cantidad de Viajes']);
 
                 let caphrsviajes: number | null = null;
-                if (ruta && m3) {
+                if (ruta && metrosCubicosEfectivos) {
                     if (enRenta && horasRenta) {
-                        caphrsviajes = ruta.precio_unidad * m3.metros_cubicos * horasRenta;
+                        caphrsviajes = ruta.precio_unidad * metrosCubicosEfectivos * horasRenta;
                     } else if (cantidadViajes && cantidadViajes > 0) {
-                        caphrsviajes = ruta.precio_unidad * m3.metros_cubicos * cantidadViajes;
+                        caphrsviajes = ruta.precio_unidad * metrosCubicosEfectivos * cantidadViajes;
                     } else {
-                        caphrsviajes = ruta.precio_unidad * m3.metros_cubicos;
+                        caphrsviajes = ruta.precio_unidad * metrosCubicosEfectivos;
                     }
                 }
+
+                // El M3 manual no queda en ningún catálogo, así que se anota en Observaciones
+                // para no perder el dato (la columna "M3" de la tabla de viajes se muestra a
+                // partir del catálogo, y para estas filas no habrá ese vínculo).
+                const observacionesTexto = normalizarTexto(fila['Observaciones']);
+                const observacionesFinal = m3Manual
+                    ? `M3 externo: ${m3Manual} m³.${observacionesTexto ? ' ' + observacionesTexto : ''}`
+                    : (observacionesTexto || null);
 
                 return {
                     fila: indice + 2, // +2: la fila 1 es el encabezado y Excel es 1-indexado
@@ -643,7 +667,7 @@ const Crud = () => {
                         origen: origenTexto,
                         destino: destinoTexto,
                         material: materialTexto,
-                        m3: m3Texto,
+                        m3: m3 ? m3Texto : (m3Manual ? `Manual: ${m3Manual} m³` : ''),
                         operador: operadorTexto,
                         invitado: invitadoTexto
                     },
@@ -663,7 +687,7 @@ const Crud = () => {
                         horario: parseHorario(fila['Horario']),
                         numero_viaje: parseNumeroOpcional(fila['Numero de Viaje']),
                         cantidad_viajes: cantidadViajes,
-                        observaciones: normalizarTexto(fila['Observaciones']) || null
+                        observaciones: observacionesFinal
                     },
                     errores
                 };
@@ -1348,9 +1372,10 @@ const Crud = () => {
                     }
                 >
                     <div className="mb-4 p-3 border-round surface-100">
-                        <p className="mt-0 mb-2"><b>Campos obligatorios:</b> Fecha, Cliente, Origen, Destino, Material, M3.</p>
+                        <p className="mt-0 mb-2"><b>Campos obligatorios:</b> Fecha, Cliente, Origen, Destino, Material, y el M3 (usando la columna &quot;M3&quot; o la columna &quot;M3 (manual)&quot;, ver abajo).</p>
                         <p className="mt-0 mb-2"><b>Campos opcionales:</b> Operador, Invitado, Folio, Folio Banco, Horario (D/N, por defecto Día), Numero de Viaje, Cantidad de Viajes, En Renta (Sí/No), Horas de Renta (obligatorio solo si En Renta = Sí), Observaciones.</p>
                         <p className="mt-0 mb-2">Cliente, Origen, Destino, Material, M3, Operador e Invitado deben escribirse <b>exactamente igual</b> a como están dados de alta en el sistema.</p>
+                        <p className="mt-0 mb-2"><b>M3 (manual):</b> para camiones externos que no están en el catálogo M3, deja la columna &quot;M3&quot; vacía y escribe el número de metros cúbicos en &quot;M3 (manual)&quot;. No se crea nada nuevo en el catálogo; ese valor solo se usa para calcular el Total Flete de esa fila y queda anotado en Observaciones. Usa solo una de las dos columnas por fila, nunca ambas.</p>
                         <p className="mt-0 mb-0">El Total Flete se calcula automáticamente (precio de la ruta × M3 × horas de renta o cantidad de viajes), no hace falta incluirlo en el Excel.</p>
                     </div>
 

@@ -56,7 +56,8 @@ const OperadoresCrud = () => {
       departamento_id: null,
       jefe_inmediato_id: null,
       es_ceo: false,
-      puesto_id: null
+      puesto_id: null,
+      es_externo: false
     });
     const [selectedOperadores, setSelectedOperadores] = useState<Operador[]>([]);
     const [submitted, setSubmitted] = useState(false);
@@ -132,7 +133,8 @@ const OperadoresCrud = () => {
             departamento_id: null,
             jefe_inmediato_id: null,
             es_ceo: false,
-            puesto_id: null
+            puesto_id: null,
+            es_externo: false
         });
         setSubmitted(false);
         setOperadorDialog(true);
@@ -256,6 +258,7 @@ const OperadoresCrud = () => {
             const operadorToSave = {
                 ...operador,
                 camion_full: operador.camion_full ?? false,
+                es_externo: operador.es_externo ?? false,
                 puesto: puestos.find(p => p.id === operador.puesto_id)?.nombre || operador.puesto,
                 jefe_inmediato_id: operador.es_ceo ? null : operador.jefe_inmediato_id
             };
@@ -324,7 +327,8 @@ const OperadoresCrud = () => {
     const editOperador = useCallback((operadorSeleccionado: Operador) => {
         setOperador({
             ...operadorSeleccionado,
-            camion_full: operadorSeleccionado.camion_full ?? false
+            camion_full: operadorSeleccionado.camion_full ?? false,
+            es_externo: operadorSeleccionado.es_externo ?? false
         });
         setOperadorDialog(true);
     }, []);
@@ -509,6 +513,21 @@ const OperadoresCrud = () => {
         );
     }, []);
 
+    const externoBodyTemplate = useCallback((rowData: Operador) => {
+        const isExterno = rowData.es_externo === true;
+        return isExterno ? (
+            <span className="inline-flex align-items-center gap-1">
+                <i className="pi pi-check-circle text-green-500" />
+                <span>Sí</span>
+            </span>
+        ) : (
+            <span className="inline-flex align-items-center gap-1">
+                <i className="pi pi-times-circle text-red-500" />
+                <span>No</span>
+            </span>
+        );
+    }, []);
+
     const actionBodyTemplate = useCallback((rowData: Operador) => {
         return (
             <div className="flex gap-2">
@@ -622,6 +641,10 @@ const OperadoresCrud = () => {
                                                 <div className="text-500 text-sm">Camión Full</div>
                                                 <div className="font-medium">{camionFullBodyTemplate(operadorItem)}</div>
                                             </div>
+                                            <div className="col-12 sm:col-6">
+                                                <div className="text-500 text-sm">Externo</div>
+                                                <div className="font-medium">{externoBodyTemplate(operadorItem)}</div>
+                                            </div>
                                             {operadorItem.descripcion && (
                                                 <div className="col-12">
                                                     <div className="text-500 text-sm">Notas</div>
@@ -681,6 +704,7 @@ const OperadoresCrud = () => {
                             <Column field="fecha_contratacion" header="Fecha Alta" body={fechaContratacionBodyTemplate}></Column>
                             <Column field="acceso_sistema" header="Acceso" body={accesoBodyTemplate}></Column>
                             <Column field="camion_full" header="Camión Full ?" body={camionFullBodyTemplate}></Column>
+                            <Column field="es_externo" header="Externo ?" body={externoBodyTemplate}></Column>
                             <Column field="estatus" header="Estatus" body={estatusBodyTemplate}></Column>
                             <Column header="Acciones" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }}></Column>
                         </DataTable>
@@ -988,6 +1012,31 @@ const OperadoresCrud = () => {
                                             Camion Full ?
                                         </label>
                                     </div>
+                                </div>
+                            </div>
+
+                            {/* Empleado externo? */}
+                            <div className="col-12">
+                                <div className="field">
+                                    <div className="flex align-items-center">
+                                        <Checkbox
+                                            id="es_externo"
+                                            checked={operador.es_externo === true}
+                                            onChange={(e) => {
+                                                const checked = e.checked || false;
+                                                setOperador({
+                                                    ...operador,
+                                                    es_externo: checked
+                                                });
+                                            }}
+                                        />
+                                        <label htmlFor="es_externo" className="ml-2">
+                                            Externo ?
+                                        </label>
+                                    </div>
+                                    <small className="text-500">
+                                        Los empleados externos no se incluyen en el cálculo de nómina.
+                                    </small>
                                 </div>
                             </div>
 

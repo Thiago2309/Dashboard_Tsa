@@ -16,6 +16,7 @@ import { Checkbox } from 'primereact/checkbox';
 import { InputNumber } from 'primereact/inputnumber';
 import { createMaterial, Material } from '../../../../Services/BD/materialService';
 import LogisticaTabla from '../../../../app/(main)/pages/crud/Logistica/LogisticaTabla';
+import { anotarM3ManualEnObservaciones } from '../../../../Services/BD/m3ManualUtil';
 
 
 const userRoleId = getUserRoleIdFromLocalStorage();
@@ -107,6 +108,9 @@ const FormularioNotaViaje = () => {
     const [folioError, setFolioError] = useState(false);
     const [invitados, setInvitados] = useState<{ id: number; empresa: string }[]>([]);
     const [observaciones, setObservaciones] = useState('');
+    // M3 manual: para camiones externos que no están en el catálogo m3. Es excluyente con
+    // el dropdown de M3 (Metros Cúbicos): si se llena uno, se limpia el otro.
+    const [m3Manual, setM3Manual] = useState<number | null>(null);
 
     // Cargar datos iniciales (clientes, precios, materiales, m3)
     useEffect(() => {
@@ -136,7 +140,7 @@ const FormularioNotaViaje = () => {
         // viaje.folio &&
         viaje.id_precio_origen_destino !== null &&
         viaje.id_material !== null &&
-        viaje.id_m3 !== null && 
+        (viaje.id_m3 !== null || (m3Manual !== null && m3Manual > 0)) &&
         viaje.id_operador !== null
         ) {
         // Validar que si está en renta, tenga horas
@@ -154,10 +158,11 @@ const FormularioNotaViaje = () => {
             // Obtener el precio_unidad y metros_cubicos
             const precioOrigenDestino = preciosOrigenDestino.find(p => p.id === viaje.id_precio_origen_destino);
             const m3Seleccionado = m3.find(m => m.id === viaje.id_m3);
+            const metrosCubicosEfectivos = m3Seleccionado ? m3Seleccionado.metros_cubicos : (m3Manual && m3Manual > 0 ? m3Manual : null);
 
-            if (precioOrigenDestino && m3Seleccionado) {
+            if (precioOrigenDestino && metrosCubicosEfectivos) {
             const precio_unidad = precioOrigenDestino.precio_unidad;
-            const metros_cubicos = m3Seleccionado.metros_cubicos;
+            const metros_cubicos = metrosCubicosEfectivos;
             const precio_materia = precioOrigenDestino.precio_materia ?? 0; // Precio material, si existe
 
             // Precio_unidad = precio Flete
@@ -194,9 +199,10 @@ const FormularioNotaViaje = () => {
             // Actualizar el estado del viaje con el cálculo
             const viajeActualizado = {
                 ...viaje,
+                id_m3: m3Seleccionado ? viaje.id_m3 : null,
                 caphrsviajes,
                 total_materia,
-                observaciones: observaciones || null // Guardar las observaciones en el viaje
+                observaciones: anotarM3ManualEnObservaciones(m3Manual, observaciones)
             };
 
             // Guardar o actualizar el viaje
@@ -229,7 +235,8 @@ const FormularioNotaViaje = () => {
                 observaciones: null
             });
             setSubmitted(false);
-            setObservaciones(''); 
+            setObservaciones('');
+            setM3Manual(null);
             } else {
             toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se encontró el precio o los metros cúbicos', life: 3000 });
             }
@@ -436,22 +443,43 @@ const FormularioNotaViaje = () => {
                     {submitted && !viaje.id_material && <small className="p-invalid">Material es requerido.</small>}
                     </div>
                     <div className="field">
-                    <label htmlFor="id_m3">Metros Cúbicos</label><span style={{ color: 'red' }}> *</span>
+                    <label htmlFor="id_m3">Metros Cúbicos</label>{!m3Manual && <span style={{ color: 'red' }}> *</span>}
                     <Dropdown
                         id="id_m3"
                         value={viaje.id_m3}
-                        options={m3.map(m => ({ 
-                            label: `${m.nombre} - (${m.metros_cubicos}m³)`, 
-                            value: m.id 
+                        options={m3.map(m => ({
+                            label: `${m.nombre} - (${m.metros_cubicos}m³)`,
+                            value: m.id
                         }))}
-                        onChange={(e) => setViaje({ ...viaje, id_m3: e.value })}
+                        onChange={(e) => {
+                            setViaje({ ...viaje, id_m3: e.value });
+                            if (e.value) setM3Manual(null);
+                        }}
                         placeholder="Selecciona m³"
-                        required
+                        disabled={!!m3Manual}
                         filter
                         filterBy="label"
-                        className={submitted && !viaje.id_m3 ? 'p-invalid' : ''}
+                        className={submitted && !viaje.id_m3 && !m3Manual ? 'p-invalid' : ''}
                     />
-                    {submitted && !viaje.id_m3 && <small className="p-invalid">Metros Cúbicos es requerido.</small>}
+                    {submitted && !viaje.id_m3 && !m3Manual && <small className="p-invalid">Metros Cúbicos es requerido.</small>}
+                    </div>
+                    <div className="field">
+                    <label htmlFor="m3_manual">M3 (Manual)</label>
+                    <InputNumber
+                        id="m3_manual"
+                        value={m3Manual}
+                        onValueChange={(e) => {
+                            setM3Manual(e.value ?? null);
+                            if (e.value) setViaje({ ...viaje, id_m3: null });
+                        }}
+                        mode="decimal"
+                        min={0}
+                        minFractionDigits={0}
+                        maxFractionDigits={2}
+                        placeholder="Para camiones externos: escribe aquí los m³"
+                        disabled={!!viaje.id_m3}
+                    />
+                    <small className="text-500">Solo para camiones externos que no están en el catálogo. Déjalo vacío si ya seleccionaste Metros Cúbicos arriba.</small>
                     </div>
                     <div className="field">
                     <label htmlFor="id_operador">Operador</label><span style={{ color: 'red' }}> *</span>

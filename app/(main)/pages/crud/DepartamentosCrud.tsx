@@ -35,28 +35,78 @@ interface OrgNode {
 
 const PALETA_AREAS = ['#f2a49c', '#8ecae6', '#f5e26b', '#74c9ae', '#c9a4e0', '#f4b183'];
 
-const primerNombre = (nombreCompleto: string) => nombreCompleto.trim().split(/\s+/)[0];
+// Devuelve "primer nombre + primer apellido". Se asume la convención mexicana
+// nombre(s) + apellido paterno + apellido materno, así que el primer apellido
+// es el penúltimo token (el último se descarta por ser el apellido materno),
+// salvo en nombres de 2 palabras donde ya es directamente el segundo token.
+const nombreCorto = (nombreCompleto: string) => {
+    const partes = nombreCompleto.trim().split(/\s+/);
+    if (partes.length === 1) return partes[0];
+    const indiceApellido = Math.max(1, partes.length - 2);
+    return `${partes[0]} ${partes[indiceApellido]}`;
+};
 
-const ListaDescendientes: React.FC<{ nodos: OrgNode[]; nivel?: number }> = ({ nodos, nivel = 0 }) => {
+const TickHoja: React.FC<{ nodo: OrgNode }> = ({ nodo }) => (
+    <span className="ov-hoja-texto">{nombreCorto(nodo.label)}</span>
+);
+
+const CajaManager: React.FC<{ nodo: OrgNode; color: string }> = ({ nodo, color }) => (
+    <div className="ov-caja-area" style={{ background: color }}>
+        <div className="ov-caja-nombre">{nombreCorto(nodo.label)}</div>
+        {nodo.data?.puesto && <div className="ov-caja-puesto">{nodo.data.puesto}</div>}
+    </div>
+);
+
+// Personas sin nadie a su cargo: lista vertical compacta, sin cajas.
+const ListaSimple: React.FC<{ nodos: OrgNode[] }> = ({ nodos }) => (
+    <div className="ov-lista">
+        {nodos.map((n, i) => (
+            <div className="ov-lista-item" key={i}>
+                <div className="ov-lista-conector" />
+                <span className="ov-lista-texto">{nombreCorto(n.label)}</span>
+            </div>
+        ))}
+    </div>
+);
+
+// Un grupo de hermanos se ramifica horizontalmente con cajas de color (conectadas
+// entre sí) en cuanto alguno de ellos tiene gente a su cargo -sin importar el nivel
+// de profundidad en el que aparezca-, igual que las áreas de primer nivel. Si nadie
+// del grupo tiene subordinados, se muestra como lista simple para no ensanchar el
+// organigrama sin necesidad.
+const GrupoSubordinados: React.FC<{ nodos: OrgNode[] }> = ({ nodos }) => {
     if (!nodos || nodos.length === 0) return null;
+
+    const hayJefes = nodos.some(n => n.children && n.children.length > 0);
+    if (!hayJefes) {
+        return <ListaSimple nodos={nodos} />;
+    }
+
     return (
-        <div className="ov-lista" style={nivel > 0 ? { marginLeft: `${nivel * 12}px` } : undefined}>
-            {nodos.map((n, i) => (
-                <div className="ov-lista-item" key={i}>
-                    <div className="ov-lista-conector" />
-                    <span className="ov-lista-texto">{primerNombre(n.label)}</span>
-                    <ListaDescendientes nodos={n.children || []} nivel={nivel + 1} />
-                </div>
-            ))}
+        <div className="ov-ramas">
+            {nodos.map((n, i) => {
+                const esJefe = !!n.children && n.children.length > 0;
+                return (
+                    <div className="ov-columna" key={i}>
+                        {esJefe ? (
+                            <>
+                                <CajaManager nodo={n} color={PALETA_AREAS[i % PALETA_AREAS.length]} />
+                                <GrupoSubordinados nodos={n.children!} />
+                            </>
+                        ) : (
+                            <TickHoja nodo={n} />
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 };
 
 // Reproduce el formato de "organigrama vertical" clásico: una cadena de cajas
 // centradas mientras cada nivel tiene un único subordinado, y en el primer punto
-// donde un jefe tiene varios subordinados directos, esos se muestran como una
-// fila de cajas de color (las "áreas"), cada una con su gente a cargo en una
-// lista simple debajo.
+// donde un jefe tiene varios subordinados directos, esos se ramifican en cajas
+// de color conectadas entre sí (ver GrupoSubordinados para la ramificación recursiva).
 const OrganigramaVertical: React.FC<{ nodo: OrgNode }> = ({ nodo }) => {
     const cadena: OrgNode[] = [nodo];
     let actual = nodo;
@@ -64,32 +114,19 @@ const OrganigramaVertical: React.FC<{ nodo: OrgNode }> = ({ nodo }) => {
         actual = actual.children[0];
         cadena.push(actual);
     }
-    const ramas = actual.children && actual.children.length > 1 ? actual.children : [];
 
     return (
         <div className="organigrama-vertical">
             {cadena.map((n, i) => (
                 <React.Fragment key={i}>
                     <div className={`ov-caja-nivel ${i === 0 ? 'ov-caja-ceo' : 'ov-caja-cadena'}`}>
-                        <div className="ov-caja-nombre">{n.data ? primerNombre(n.label) : n.label}</div>
+                        <div className="ov-caja-nombre">{n.data ? nombreCorto(n.label) : n.label}</div>
                         {n.data?.puesto && <div className="ov-caja-puesto">{n.data.puesto}</div>}
                     </div>
-                    {(i < cadena.length - 1 || ramas.length > 0) && <div className="ov-flecha">▼</div>}
+                    {(i < cadena.length - 1 || (actual.children && actual.children.length > 0)) && <div className="ov-flecha">▼</div>}
                 </React.Fragment>
             ))}
-            {ramas.length > 0 && (
-                <div className="ov-ramas">
-                    {ramas.map((rama, idx) => (
-                        <div className="ov-columna" key={idx}>
-                            <div className="ov-caja-area" style={{ background: PALETA_AREAS[idx % PALETA_AREAS.length] }}>
-                                <div className="ov-caja-nombre">{primerNombre(rama.label)}</div>
-                                {rama.data?.puesto && <div className="ov-caja-puesto">{rama.data.puesto}</div>}
-                            </div>
-                            <ListaDescendientes nodos={rama.children || []} />
-                        </div>
-                    ))}
-                </div>
-            )}
+            <GrupoSubordinados nodos={actual.children || []} />
         </div>
     );
 };
@@ -239,60 +276,22 @@ const DepartamentosCrud = () => {
                 useCORS: true
             });
 
-            const orientacion = canvas.width >= canvas.height ? 'l' : 'p';
-            const pdf = new jsPDF(orientacion, 'pt', 'a4');
+            // Siempre una sola hoja horizontal con el organigrama completo: se encoge
+            // lo que haga falta para que quepa entero, en vez de repartirlo en páginas.
+            const pdf = new jsPDF('l', 'pt', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
             const margen = 24;
             const anchoDisponible = pageWidth - margen * 2;
             const altoDisponible = pageHeight - margen * 2;
 
-            // Si el organigrama tiene muchos empleados, forzar todo en una sola página lo encoge
-            // hasta hacer ilegibles los nombres y puestos. Se fija una escala mínima legible y,
-            // cuando no cabe completo a esa escala, se reparte en varias páginas tipo póster.
-            const ESCALA_MINIMA_LEGIBLE = 0.62;
-            const escalaUnaPagina = Math.min(anchoDisponible / canvas.width, altoDisponible / canvas.height);
+            const escala = Math.min(anchoDisponible / canvas.width, altoDisponible / canvas.height);
+            const imgWidth = canvas.width * escala;
+            const imgHeight = canvas.height * escala;
+            const x = (pageWidth - imgWidth) / 2;
+            const y = (pageHeight - imgHeight) / 2;
 
-            if (escalaUnaPagina >= ESCALA_MINIMA_LEGIBLE) {
-                const imgWidth = canvas.width * escalaUnaPagina;
-                const imgHeight = canvas.height * escalaUnaPagina;
-                const x = (pageWidth - imgWidth) / 2;
-                const y = (pageHeight - imgHeight) / 2;
-                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, imgWidth, imgHeight);
-            } else {
-                const escala = ESCALA_MINIMA_LEGIBLE;
-                const anchoTilePx = Math.floor(anchoDisponible / escala);
-                const altoTilePx = Math.floor(altoDisponible / escala);
-                const columnas = Math.max(1, Math.ceil(canvas.width / anchoTilePx));
-                const filas = Math.max(1, Math.ceil(canvas.height / altoTilePx));
-
-                const tileCanvas = document.createElement('canvas');
-                const tileCtx = tileCanvas.getContext('2d')!;
-
-                let primera = true;
-                for (let fila = 0; fila < filas; fila++) {
-                    for (let col = 0; col < columnas; col++) {
-                        const sx = col * anchoTilePx;
-                        const sy = fila * altoTilePx;
-                        const sw = Math.min(anchoTilePx, canvas.width - sx);
-                        const sh = Math.min(altoTilePx, canvas.height - sy);
-
-                        tileCanvas.width = sw;
-                        tileCanvas.height = sh;
-                        tileCtx.clearRect(0, 0, sw, sh);
-                        tileCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-
-                        if (!primera) pdf.addPage('a4', orientacion);
-                        primera = false;
-
-                        pdf.addImage(tileCanvas.toDataURL('image/png'), 'PNG', margen, margen, sw * escala, sh * escala);
-                        pdf.setFontSize(8);
-                        pdf.setTextColor(150);
-                        pdf.text(`Fila ${fila + 1} de ${filas} · Columna ${col + 1} de ${columnas}`, margen, pageHeight - 8);
-                    }
-                }
-            }
-
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, imgWidth, imgHeight);
             pdf.save('organigrama-empresa.pdf');
         } catch (error) {
             console.error('Error generando PDF del organigrama:', error);
@@ -492,15 +491,22 @@ const DepartamentosCrud = () => {
                             left: 50%;
                             border-left: 2px solid var(--surface-400);
                         }
-                        .ov-columna:only-child::before,
-                        .ov-columna:only-child::after {
+                        .ov-columna:only-child::before {
                             display: none;
                         }
+                        .ov-columna:only-child::after {
+                            /* El hijo único no necesita el tramo horizontal, pero conserva
+                               la línea vertical (border-left) que baja hasta su caja. */
+                            border-top-color: transparent;
+                        }
                         .ov-columna:first-child::before {
-                            border-color: transparent;
+                            border-top-color: transparent;
                         }
                         .ov-columna:last-child::after {
-                            border-color: transparent;
+                            /* Solo se oculta el tramo horizontal que sobra hacia afuera;
+                               el border-left (línea vertical hacia la caja) debe seguir visible,
+                               si no, el último elemento de la fila queda "desconectado". */
+                            border-top-color: transparent;
                         }
 
                         .ov-caja-area {
@@ -532,6 +538,11 @@ const DepartamentosCrud = () => {
                             font-size: 0.72rem;
                             color: var(--text-color-secondary);
                             padding: 2px 0;
+                            white-space: nowrap;
+                        }
+                        .ov-hoja-texto {
+                            font-size: 0.72rem;
+                            color: var(--text-color-secondary);
                             white-space: nowrap;
                         }
                     `}</style>
