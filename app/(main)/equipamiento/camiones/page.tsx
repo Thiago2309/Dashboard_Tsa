@@ -20,8 +20,12 @@ import {
     deleteCamion,
     Camion
 } from '../../../../Services/BD/inventario/camion/camionService';
+import { crearBitacoraPorMantenimiento } from '../../../../Services/BD/taller/bitacoraTallerService';
+import { getUserNombreFromLocalStorage } from '../../../../Services/BD/userService';
+import { ModalDocumentosEquipo } from '../ModalDocumentosEquipo';
+import { fetchDocumentosByCamion, subirDocumentoCamion, eliminarDocumentoCamion } from '../../../../Services/BD/inventario/camion/camionDocumentoService';
 
-const M3Crud = () => {
+const CamionesCrud = () => {
     const emptyCamion: Camion = {
         nombre: '',
         placa: '',
@@ -51,6 +55,8 @@ const M3Crud = () => {
     const [filters, setFilters] = useState<DataTableFilterMeta>({
         global: { value: null, matchMode: 'contains' as const }
     });
+    const [documentosDialog, setDocumentosDialog] = useState(false);
+    const [camionDocumentos, setCamionDocumentos] = useState<Camion | null>(null);
     const toast = useRef<Toast>(null);
     const dt = useRef<DataTable<any>>(null);
 
@@ -123,15 +129,24 @@ const M3Crud = () => {
         }
 
         try {
+            const estatusPrevio = camion.id ? camiones.find(c => c.id === camion.id)?.estatus : undefined;
+            let guardado: Camion;
+
             if (camion.id) {
-                const updated = await updateCamion(camion.id, camion);
-                setCamiones(camiones.map(c => c.id === updated.id ? updated : c));
+                guardado = await updateCamion(camion.id, camion);
+                setCamiones(camiones.map(c => c.id === guardado.id ? guardado : c));
                 toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Camión actualizado', life: 3000 });
             } else {
-                const newCamion = await createCamion(camion);
-                setCamiones([newCamion, ...camiones]);
+                guardado = await createCamion(camion);
+                setCamiones([guardado, ...camiones]);
                 toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Camión creado', life: 3000 });
             }
+
+            if (guardado.estatus === 'Mantenimiento' && estatusPrevio !== 'Mantenimiento' && guardado.id) {
+                await crearBitacoraPorMantenimiento('camion', guardado.id, getUserNombreFromLocalStorage());
+                toast.current?.show({ severity: 'info', summary: 'Bitácora creada', detail: 'Se generó una bitácora en Taller para este equipo', life: 4000 });
+            }
+
             setCamionDialog(false);
             setCamion(emptyCamion);
         } catch (error: any) {
@@ -234,6 +249,20 @@ const M3Crud = () => {
         </div>
     );
 
+    const documentosBodyTemplate = (rowData: Camion) => (
+        <Button
+            icon="pi pi-file-pdf"
+            rounded
+            text
+            severity="info"
+            tooltip="Ver Documentos"
+            onClick={() => {
+                setCamionDocumentos(rowData);
+                setDocumentosDialog(true);
+            }}
+        />
+    );
+
     const leftToolbarTemplate = () => (
         <div className="my-2 flex gap-2">
             <Button label="Nuevo Camión" icon="pi pi-plus" severity="info" onClick={openNew} />
@@ -310,6 +339,7 @@ const M3Crud = () => {
                         <Column field="metros_cubicos" header="Capacidad (m³)" sortable style={{ width: '130px' }} />
                         <Column field="color" header="Color" body={colorBodyTemplate} sortable style={{ width: '100px' }} />
                         <Column field="estatus" header="Estatus" body={estatusBodyTemplate} sortable style={{ width: '130px' }} />
+                        <Column header="Documentos" body={documentosBodyTemplate} style={{ width: '100px' }} exportable={false} />
                         <Column header="Acciones" body={actionBodyTemplate} style={{ width: '120px' }} exportable={false} />
                     </DataTable>
 
@@ -375,6 +405,9 @@ const M3Crud = () => {
                                 <div className="field">
                                     <label htmlFor="estatus">Estatus</label>
                                     <Dropdown id="estatus" value={camion.estatus} options={estatusOptions} onChange={(e) => setCamion({ ...camion, estatus: e.value })} className="w-full" />
+                                    {camion.estatus === 'Mantenimiento' && (
+                                        <small className="text-500">Al guardar se generará (o reutilizará) una bitácora en Taller.</small>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -441,10 +474,20 @@ const M3Crud = () => {
                             <span>¿Eliminar {selectedCamiones.length} camión(es)?</span>
                         </div>
                     </Dialog>
+
+                    <ModalDocumentosEquipo
+                        visible={documentosDialog}
+                        onHide={() => setDocumentosDialog(false)}
+                        entidadId={camionDocumentos?.id ?? null}
+                        titulo={`Documentos de ${camionDocumentos?.nombre || ''}`}
+                        fetchDocumentos={fetchDocumentosByCamion}
+                        subirDocumento={subirDocumentoCamion}
+                        eliminarDocumento={eliminarDocumentoCamion}
+                    />
                 </div>
             </div>
         </div>
     );
 };
 
-export default M3Crud;
+export default CamionesCrud;

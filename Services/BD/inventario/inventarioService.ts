@@ -26,6 +26,7 @@ export interface MovimientoInventario {
     cantidad: number;
     motivo: string | null;
     camion_id: number | null;
+    maquinaria_id: number | null;
     usuario_id: string | null;
     fecha: string;
     costo_unitario?: number | null;
@@ -45,6 +46,13 @@ export interface Camion {
     tipo: string;
     marca: string | null;
     modelo: string | null;
+    estatus: string;
+}
+
+export interface MaquinariaMini {
+    id: number;
+    eco: string;
+    equipo: string;
     estatus: string;
 }
 
@@ -94,6 +102,20 @@ export const getCamionesActivos = async (): Promise<Camion[]> => {
 
     if (error) {
         console.error('Error al obtener camiones:', error);
+        throw new Error(error.message);
+    }
+    return data || [];
+};
+
+// Obtener maquinarias para dropdown (al registrar una salida vinculada a maquinaria)
+export const getMaquinariasActivas = async (): Promise<MaquinariaMini[]> => {
+    const { data, error } = await supabase
+        .from('maquinaria')
+        .select('id, eco, equipo, estatus')
+        .order('eco', { ascending: true });
+
+    if (error) {
+        console.error('Error al obtener maquinarias:', error);
         throw new Error(error.message);
     }
     return data || [];
@@ -324,13 +346,14 @@ export interface RegistrarSalidaParams {
     motivo: string;
     orden_trabajo: string;
     camion_id?: number;
+    maquinaria_id?: number;
     usuario_id?: string;
     costo_unitario?: number | null;
 }
 
 // Registrar salida de producto
 export const registrarSalida = async (params: RegistrarSalidaParams): Promise<void> => {
-    const { producto_id, cantidad, motivo, orden_trabajo, camion_id, usuario_id, costo_unitario } = params;
+    const { producto_id, cantidad, motivo, orden_trabajo, camion_id, maquinaria_id, usuario_id, costo_unitario } = params;
 
     // 1. Obtener producto actual
     const producto = await getProductoById(producto_id);
@@ -355,6 +378,7 @@ export const registrarSalida = async (params: RegistrarSalidaParams): Promise<vo
             motivo,
             orden_trabajo,
             camion_id: camion_id || null,
+            maquinaria_id: maquinaria_id || null,
             usuario_id: usuario_id || null,
             fecha: new Date().toISOString(),
             costo_unitario: costo_unitario ?? producto.precio_compra ?? null

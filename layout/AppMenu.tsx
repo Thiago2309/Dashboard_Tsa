@@ -70,7 +70,22 @@ const AppMenu = () => {
             {
                 label: 'Mantenimiento',
                 items: [
-                    { label: 'Taller', icon: 'pi pi-fw pi-wrench', to: '/pages/empty' },
+                    {
+                        label: 'Equipamiento',
+                        icon: 'pi pi-fw pi-truck',
+                        items: [
+                            { label: 'Camiones', icon: 'pi pi-fw pi-truck', to: '/equipamiento/camiones' },
+                            { label: 'Maquinaria', icon: 'pi pi-fw pi-cog', to: '/equipamiento/maquinaria' },
+                        ]
+                    },
+                    {
+                        label: 'Taller',
+                        icon: 'pi pi-fw pi-wrench',
+                        items: [
+                            { label: 'Bitácora', icon: 'pi pi-fw pi-book', to: '/taller/bitacora' },
+                            { label: 'Estatus General', icon: 'pi pi-fw pi-th-large', to: '/taller/estatus' },
+                        ]
+                    },
                     {
                         label: 'Almacen',
                         icon: 'pi pi-fw pi-box',
@@ -78,6 +93,27 @@ const AppMenu = () => {
                             { label: 'Inventario', icon: 'pi pi-fw pi-box', to: '/inventario' },
                             { label: 'Estadisticos', icon: 'pi pi-fw pi-chart-bar', to: '/inventario/estadisticos' },
                             { label: 'Validacion de Inventario', icon: 'pi pi-fw pi-check-square', to: '/inventario/validacion' },
+                        ]
+                    },
+                    {
+                        label: 'Costo Operativo',
+                        icon: 'pi pi-fw pi-dollar',
+                        items: [
+                            { label: 'Costo Operativo de Unidad', icon: 'pi pi-fw pi-dollar', to: '/inventario/costo-operativo' },
+                        ]
+                    },
+                    {
+                        label: 'Compras',
+                        icon: 'pi pi-fw pi-shopping-cart',
+                        items: [
+                            { label: 'Requisiciones de Compra', icon: 'pi pi-fw pi-shopping-cart', to: '/compras' },
+                        ]
+                    },
+                    {
+                        label: 'Combustible',
+                        icon: 'pi pi-fw pi-bolt',
+                        items: [
+                            { label: 'Combustible', icon: 'pi pi-fw pi-bolt', to: '/combustible' },
                         ]
                     },
                 ]

@@ -1,36 +1,26 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { useState } from 'react';
 import InventarioModule from './vistas/page';
-import CamionesCrud from '../uikit/formlayout/inventario/camiones/camionesModule';
+import OrdenesTrabajoModule from './ordenes/OrdenesTrabajoModule';
 
 const TableModule = () => {
     const [activeModule, setActiveModule] = useState('Inventario');
-    const searchParams = useSearchParams();
-
-    useEffect(() => {
-        const moduleParam = searchParams.get('module');
-        if (moduleParam) {
-            setActiveModule(moduleParam);
-        }
-    }, [searchParams]);
 
     const renderModule = () => {
         switch (activeModule) {
             case 'Inventario':
                 return <InventarioModule />;
-            case 'Camiones':
-                return <CamionesCrud />;
+            case 'Orden de Trabajo':
+                return <OrdenesTrabajoModule />;
             default:
                 return <div>Selecciona un módulo</div>;
         }
     };
 
-return (
+    return (
         <div className="grid">
             <div className='col-12'>
-            {/* <h1 style={styles.title}>Tables</h1> */}
                 <div className="card">
                     <div style={styles.menu}>
                         <div
@@ -40,10 +30,10 @@ return (
                             Inventario
                         </div>
                         <div
-                            style={activeModule === 'Camiones' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Camiones')}
+                            style={activeModule === 'Orden de Trabajo' ? styles.activeMenuItem : styles.menuItem}
+                            onClick={() => setActiveModule('Orden de Trabajo')}
                         >
-                            Camiones
+                            Orden de Trabajo
                         </div>
                     </div>
                     <div style={styles.tableContainer}>
@@ -56,20 +46,6 @@ return (
 };
 
 const styles = {
-    container: {
-        backgroundColor: '#f9f9f9',
-    },
-    title: {
-        marginBottom: '20px',
-        fontSize: '24px',
-        fontWeight: 'bold',
-    },
-    whiteContainer: {
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-        padding: '20px',
-    },
     menu: {
         display: 'flex',
         marginBottom: '20px',
@@ -85,14 +61,6 @@ const styles = {
         cursor: 'pointer',
         borderBottom: '2px solid red',
         fontWeight: 'bold',
-    },
-    actions: {
-        display: 'flex',
-        justifyContent: 'flex-end',
-        marginBottom: '20px',
-    },
-    button: {
-        marginLeft: '10px',
     },
     tableContainer: {
         marginTop: '20px',
