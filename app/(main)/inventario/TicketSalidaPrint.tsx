@@ -84,6 +84,12 @@ export const TicketSalidaPrint = forwardRef<HTMLDivElement, TicketSalidaPrintPro
                         <span>ID: {movimiento.camion_id}</span>
                     </div>
                 )}
+                {movimiento.maquinaria_id && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                        <span style={{ color: '#4b5563' }}>Maquinaria</span>
+                        <span>ID: {movimiento.maquinaria_id}</span>
+                    </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
                     <span style={{ color: '#4b5563' }}>Retira</span>
                     <span>{movimiento.usuario_id || '—'}</span>

@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { Button } from 'primereact/button';
 import ViajesModule from './viajes';
 import GastosModule from './gastos';
-import CombustibleModule from './combustible';
 import CajaNegraModule from './cajanegra';
 import OrigenDestino from './PrecioOriengenDestino';
 import ClientesCrud from './clientes';
@@ -32,8 +31,6 @@ const TableModule = () => {
                 return <ViajesModule />;
             case 'Gastos':
                 return <GastosModule />;
-            case 'Combustible':
-                return <CombustibleModule />;
             case 'Caja Negra':
                 return <CajaNegraModule />;
             case 'Precio Origen - Destino':
@@ -72,12 +69,6 @@ const TableModule = () => {
                                     onClick={() => setActiveModule('Gastos')}
                                 >
                                     Gastos
-                                </div>
-                                <div
-                                    className={`menu-item ${activeModule === 'Combustible' ? 'active' : ''}`}
-                                    onClick={() => setActiveModule('Combustible')}
-                                >
-                                    Combustible
                                 </div>
                                 <div
                                     className={`menu-item ${activeModule === 'Caja Negra' ? 'active' : ''}`}

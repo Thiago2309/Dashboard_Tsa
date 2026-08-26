@@ -33,6 +33,7 @@ import {
   fetchPuestosActivos,
   createPuesto
 } from '../../../../Services/BD/puestoService';
+import { ModalDocumentosOperador } from './ModalDocumentosOperador';
 
 const OperadoresCrud = () => {
     const [operadores, setOperadores] = useState<Operador[]>([]);
@@ -74,6 +75,8 @@ const OperadoresCrud = () => {
     const [nuevoPuestoDialog, setNuevoPuestoDialog] = useState(false);
     const [nuevoPuestoNombre, setNuevoPuestoNombre] = useState('');
     const [guardandoCatalogo, setGuardandoCatalogo] = useState(false);
+    const [documentosDialog, setDocumentosDialog] = useState(false);
+    const [operadorDocumentos, setOperadorDocumentos] = useState<Operador | null>(null);
     const toast = useRef<Toast>(null);
     const dt = useRef<DataTable<any>>(null);
 
@@ -383,6 +386,11 @@ const OperadoresCrud = () => {
         }
     }, [nuevoPuestoNombre]);
 
+    const abrirDocumentos = useCallback((operadorSeleccionado: Operador) => {
+        setOperadorDocumentos(operadorSeleccionado);
+        setDocumentosDialog(true);
+    }, []);
+
     const confirmDeleteOperador = useCallback((operador: Operador) => {
         setOperador(operador);
         setDeleteOperadorDialog(true);
@@ -537,6 +545,19 @@ const OperadoresCrud = () => {
         );
     }, [editOperador, confirmDeleteOperador]);
 
+    const documentosBodyTemplate = useCallback((rowData: Operador) => {
+        return (
+            <Button
+                icon="pi pi-file-pdf"
+                rounded
+                text
+                severity="info"
+                tooltip="Ver Documentos"
+                onClick={() => abrirDocumentos(rowData)}
+            />
+        );
+    }, [abrirDocumentos]);
+
     const leftToolbarTemplate = useCallback(() => {
         return (
             <div className="my-2">
@@ -668,6 +689,7 @@ const OperadoresCrud = () => {
 
                                         <div className="flex gap-2 mt-3">
                                             <Button label="Editar" icon="pi pi-pencil" severity="info" className="flex-1" onClick={() => editOperador(operadorItem)} />
+                                            <Button label="Documentos" icon="pi pi-file-pdf" severity="secondary" className="flex-1" onClick={() => abrirDocumentos(operadorItem)} />
                                             <Button label="Eliminar" icon="pi pi-trash" severity="danger" className="flex-1" onClick={() => confirmDeleteOperador(operadorItem)} />
                                         </div>
                                     </div>
@@ -706,6 +728,7 @@ const OperadoresCrud = () => {
                             <Column field="camion_full" header="Camión Full ?" body={camionFullBodyTemplate}></Column>
                             <Column field="es_externo" header="Externo ?" body={externoBodyTemplate}></Column>
                             <Column field="estatus" header="Estatus" body={estatusBodyTemplate}></Column>
+                            <Column header="Documentos" body={documentosBodyTemplate} style={{ width: '100px' }}></Column>
                             <Column header="Acciones" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }}></Column>
                         </DataTable>
                     </div>
@@ -1142,6 +1165,12 @@ const OperadoresCrud = () => {
                             />
                         </div>
                     </Dialog>
+
+                    <ModalDocumentosOperador
+                        visible={documentosDialog}
+                        onHide={() => setDocumentosDialog(false)}
+                        operador={operadorDocumentos}
+                    />
                 </div>
             </div>
         </div>

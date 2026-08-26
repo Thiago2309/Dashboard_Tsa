@@ -5,7 +5,7 @@ import { InputNumber } from 'primereact/inputnumber';
 import { InputText } from 'primereact/inputtext';
 import { Button } from 'primereact/button';
 import { Dropdown } from 'primereact/dropdown';
-import { registrarEntrada, registrarSalida, getCamionesActivos, Inventario, Camion } from '../../../Services/BD/inventario/inventarioService';
+import { registrarEntrada, registrarSalida, getCamionesActivos, getMaquinariasActivas, Inventario, Camion, MaquinariaMini } from '../../../Services/BD/inventario/inventarioService';
 import { fetchProveedores, Proveedor } from '../../../Services/BD/provedoresService';
 
 interface MovimientoFormProps {
@@ -31,7 +31,10 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
     const [submitted, setSubmitted] = useState(false);
     const [loading, setLoading] = useState(false);
     const [camiones, setCamiones] = useState<Camion[]>([]);
+    const [maquinarias, setMaquinarias] = useState<MaquinariaMini[]>([]);
+    const [tipoUnidad, setTipoUnidad] = useState<'camion' | 'maquinaria' | null>(null);
     const [camionSeleccionadoId, setCamionSeleccionadoId] = useState<number | null>(null);
+    const [maquinariaSeleccionadaId, setMaquinariaSeleccionadaId] = useState<number | null>(null);
     const [usuario, setUsuario] = useState('');
 
     // Campos de entrada (compra)
@@ -48,6 +51,7 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
     useEffect(() => {
         if (tipo === 'salida') {
             cargarCamiones();
+            cargarMaquinarias();
             setCostoUnitario(producto?.precio_compra ?? null);
         } else {
             cargarProveedores();
@@ -62,6 +66,15 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
             setCamiones(data);
         } catch (error) {
             console.error('Error al cargar camiones:', error);
+        }
+    };
+
+    const cargarMaquinarias = async () => {
+        try {
+            const data = await getMaquinariasActivas();
+            setMaquinarias(data);
+        } catch (error) {
+            console.error('Error al cargar maquinarias:', error);
         }
     };
 
@@ -117,7 +130,8 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
                     cantidad,
                     motivo,
                     orden_trabajo: ordenTrabajo.trim(),
-                    camion_id: camionSeleccionadoId || undefined,
+                    camion_id: tipoUnidad === 'camion' ? camionSeleccionadoId || undefined : undefined,
+                    maquinaria_id: tipoUnidad === 'maquinaria' ? maquinariaSeleccionadaId || undefined : undefined,
                     usuario_id: usuario.trim(),
                     costo_unitario: costoUnitario
                 });
@@ -288,19 +302,58 @@ const MovimientoForm: React.FC<MovimientoFormProps> = ({ producto, tipo, onSucce
                     </div>
 
                     <div className="field">
-                        <label htmlFor="camion">Camión (opcional)</label>
+                        <label htmlFor="tipoUnidad">Unidad destino (opcional)</label>
                         <Dropdown
-                            id="camion"
-                            value={camionSeleccionadoId}
-                            onChange={(e) => setCamionSeleccionadoId(e.value)}
-                            options={camiones}
-                            optionLabel="nombre"
-                            optionValue="id"
-                            placeholder="Seleccionar camión"
+                            id="tipoUnidad"
+                            value={tipoUnidad}
+                            onChange={(e) => {
+                                setTipoUnidad(e.value);
+                                setCamionSeleccionadoId(null);
+                                setMaquinariaSeleccionadaId(null);
+                            }}
+                            options={[
+                                { label: 'Camión', value: 'camion' },
+                                { label: 'Maquinaria', value: 'maquinaria' }
+                            ]}
+                            placeholder="¿A qué tipo de unidad va?"
                             className="w-full"
                             showClear
                         />
                     </div>
+
+                    {tipoUnidad === 'camion' && (
+                        <div className="field">
+                            <label htmlFor="camion">Camión</label>
+                            <Dropdown
+                                id="camion"
+                                value={camionSeleccionadoId}
+                                onChange={(e) => setCamionSeleccionadoId(e.value)}
+                                options={camiones}
+                                optionLabel="nombre"
+                                optionValue="id"
+                                placeholder="Seleccionar camión"
+                                className="w-full"
+                                showClear
+                                filter
+                            />
+                        </div>
+                    )}
+
+                    {tipoUnidad === 'maquinaria' && (
+                        <div className="field">
+                            <label htmlFor="maquinaria">Maquinaria</label>
+                            <Dropdown
+                                id="maquinaria"
+                                value={maquinariaSeleccionadaId}
+                                onChange={(e) => setMaquinariaSeleccionadaId(e.value)}
+                                options={maquinarias.map(m => ({ label: `${m.eco} - ${m.equipo}`, value: m.id }))}
+                                placeholder="Seleccionar maquinaria"
+                                className="w-full"
+                                showClear
+                                filter
+                            />
+                        </div>
+                    )}
 
                     <div className="field">
                         <label htmlFor="usuario">Usuario que retira <span style={{ color: 'red' }}> *</span></label>
