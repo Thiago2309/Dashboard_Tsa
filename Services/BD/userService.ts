@@ -1,6 +1,12 @@
 // Services/BD/userService.ts
 import { supabase } from '../superbase.service';
 
+const withTimeout = <T,>(promise: PromiseLike<T>, ms: number, mensaje: string): Promise<T> =>
+    Promise.race([
+        Promise.resolve(promise),
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error(mensaje)), ms))
+    ]);
+
 export interface User {
     id: number | null;
     auth_id: string | null;
@@ -174,8 +180,18 @@ export const login = async (email: string, password: string) => {
         }
 
         // 4. Si está activo o no existe (operador sin acceso), proceder con el login normal
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        
+        // El SDK de Supabase serializa TODAS sus llamadas de auth (login, refresh, getSession...)
+        // detrás de un mismo candado interno que espera indefinidamente. Si el endpoint de Auth
+        // se pone lento (se ha visto tardar varios minutos), signInWithPassword se queda colgado
+        // sin avisar. Este timeout evita que el usuario se quede viendo un spinner para siempre;
+        // si se dispara, hay que recargar la página antes de reintentar (el candado interno sigue
+        // ocupado por el intento anterior hasta que ese request realmente termine o se recargue).
+        const { data, error } = await withTimeout(
+            supabase.auth.signInWithPassword({ email, password }),
+            15000,
+            'El servidor de autenticación está tardando demasiado en responder. Recarga la página e intenta de nuevo.'
+        );
+
         if (error || !data.user) {
             console.error('Error en autenticación:', error?.message);
             throw error || new Error('No se pudo autenticar al usuario');
