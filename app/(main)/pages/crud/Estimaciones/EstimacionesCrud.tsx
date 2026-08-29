@@ -15,6 +15,7 @@ import { Dialog } from 'primereact/dialog';
 import { PickList } from 'primereact/picklist';
 import { Checkbox } from 'primereact/checkbox';
 import { RadioButton } from 'primereact/radiobutton';
+import { FileUpload, FileUploadHandlerEvent } from 'primereact/fileupload';
 import * as XLSX from 'xlsx';
 import {
   fetchClientesConViajesUltraRapido as fetchClientesConViajes,
@@ -31,14 +32,78 @@ import {
   FiltrosEstimacion,
   ConfiguracionExportacion
 } from '../../../../../Services/BD/estimacionesService';
+import { updateViajesEstatusBulk, fetchViajesPorIdentificadores, ViajeIdentificado, EstatusViaje } from '../../../../../Services/BD/viajeService';
 
 type ColumnaExportacion = { key: string; label: string };
+
+type ClasificacionFilaSubida = 'actualizara' | 'confirmar' | 'sinCambio' | 'noEncontrado' | 'duplicado' | 'sinIdentificador';
+
+interface FilaSubidaEstatus {
+  fila: number;
+  folio: string | null;
+  folioBco: string | null;
+  identificadorUsado: string;
+  viaje: ViajeIdentificado | null;
+  clasificacion: ClasificacionFilaSubida;
+  incluir: boolean;
+}
+
+const ETIQUETA_CLASIFICACION: Record<ClasificacionFilaSubida, string> = {
+  actualizara: 'Se actualizará',
+  confirmar: 'Sin estatus: requiere confirmación',
+  sinCambio: 'Sin cambios (no está en "estimado")',
+  noEncontrado: 'No encontrado en viajes',
+  duplicado: 'Folio duplicado en el Excel',
+  sinIdentificador: 'Fila sin Folio ni Folio BCO'
+};
+
+const SEVERIDAD_CLASIFICACION: Record<ClasificacionFilaSubida, 'info' | 'warning' | 'success' | 'danger'> = {
+  actualizara: 'success',
+  confirmar: 'warning',
+  sinCambio: 'info',
+  noEncontrado: 'danger',
+  duplicado: 'danger',
+  sinIdentificador: 'danger'
+};
+
+const normalizarTextoSubida = (v: any): string | null => {
+  const t = String(v ?? '').trim();
+  return t === '' ? null : t;
+};
+
+const normalizarComparacionSubida = (v: string): string =>
+  v.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+const OPCIONES_ESTATUS: { label: string; value: EstatusViaje }[] = [
+  { label: 'Estimado', value: 'estimado' },
+  { label: 'Aprobado', value: 'aprobado' },
+  { label: 'Facturado', value: 'facturado' },
+  { label: 'Pagado', value: 'pagado' }
+];
+
+const ESTATUS_SEVERIDAD: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
+  estimado: 'info',
+  aprobado: 'warning',
+  facturado: 'success',
+  pagado: 'success'
+};
 
 const EstimacionesCrud = () => { 
   const [clientes, setClientes] = useState<EstimacionCliente[]>([]); 
   const [clienteSeleccionado, setClienteSeleccionado] = useState<EstimacionCliente | null>(null); 
-  const [viajesFiltrados, setViajesFiltrados] = useState<ViajeEstimacion[]>([]); 
-  const [viajeSeleccionado, setViajeSeleccionado] = useState<ViajeEstimacion | null>(null);
+  const [viajesFiltrados, setViajesFiltrados] = useState<ViajeEstimacion[]>([]);
+  const [viajesSeleccionados, setViajesSeleccionados] = useState<ViajeEstimacion[]>([]);
+  const [cambiarEstatusDialog, setCambiarEstatusDialog] = useState(false);
+  const [nuevoEstatus, setNuevoEstatus] = useState<EstatusViaje | null>(null);
+  const [guardandoEstatus, setGuardandoEstatus] = useState(false);
+
+  // --- Subir Excel para cambiar estatus en lote (a partir del Excel exportado) ---
+  const [subirExcelDialog, setSubirExcelDialog] = useState(false);
+  const [estatusDestinoSubida, setEstatusDestinoSubida] = useState<EstatusViaje | null>(null);
+  const [nombreArchivoSubido, setNombreArchivoSubido] = useState('');
+  const [filasSubidas, setFilasSubidas] = useState<FilaSubidaEstatus[]>([]);
+  const [procesandoSubida, setProcesandoSubida] = useState(false);
+  const [guardandoSubida, setGuardandoSubida] = useState(false);
   const [loading, setLoading] = useState({ clientes: true, viajes: false, opciones: false }); 
   const [filtros, setFiltros] = useState<FiltrosEstimacion>({
     fechaInicio: null,
@@ -47,7 +112,8 @@ const EstimacionesCrud = () => {
     operador: null,
     material: null,
     origen: null,
-    destino: null
+    destino: null,
+    estatus: null
   });
   const [opcionesFiltros, setOpcionesFiltros] = useState<{operadores: string[], materiales: string[], origenes: string[], destinos: string[]}>({
     operadores: [],
@@ -216,7 +282,8 @@ const EstimacionesCrud = () => {
       operador: null,
       material: null,
       origen: null,
-      destino: null
+      destino: null,
+      estatus: null
     });
     if (clienteSeleccionado) {
       // Recargar todos los viajes del cliente
@@ -237,7 +304,8 @@ const EstimacionesCrud = () => {
         operador: null,
         material: null,
         origen: null,
-        destino: null
+        destino: null,
+        estatus: null
       });
       setViajesFiltrados(viajes);
     } catch (error) {
@@ -247,29 +315,180 @@ const EstimacionesCrud = () => {
     }
   };
 
-  const handleClienteClick = async (cliente: EstimacionCliente) => { 
-    if (clienteSeleccionado?.id_cliente === cliente.id_cliente) { 
-      setClienteSeleccionado(null); 
-      setViajesFiltrados([]); 
-      setViajeSeleccionado(null);
-      return; 
-    } 
-    
-    setClienteSeleccionado(cliente); 
-    setViajeSeleccionado(null);
+  const handleClienteClick = async (cliente: EstimacionCliente) => {
+    if (clienteSeleccionado?.id_cliente === cliente.id_cliente) {
+      setClienteSeleccionado(null);
+      setViajesFiltrados([]);
+      setViajesSeleccionados([]);
+      return;
+    }
+
+    setClienteSeleccionado(cliente);
+    setViajesSeleccionados([]);
     await cargarViajesCliente(cliente);
   };
 
-  const handleViajeClick = (viaje: ViajeEstimacion) => {
-    if (viajeSeleccionado?.id === viaje.id) {
-      setViajeSeleccionado(null);
-      return;
-    }
-    setViajeSeleccionado(viaje);
-    // Aquí puedes agregar más lógica si necesitas mostrar detalles del viaje
+  const abrirCambiarEstatus = () => {
+    if (viajesSeleccionados.length === 0) return;
+    setNuevoEstatus(null);
+    setCambiarEstatusDialog(true);
   };
 
-  const mostrarError = (mensaje: string) => { 
+  const cerrarCambiarEstatus = () => {
+    if (guardandoEstatus) return;
+    setCambiarEstatusDialog(false);
+    setNuevoEstatus(null);
+  };
+
+  const guardarCambioEstatus = async () => {
+    if (!nuevoEstatus || viajesSeleccionados.length === 0) return;
+    setGuardandoEstatus(true);
+    try {
+      const ids = viajesSeleccionados.map(v => v.id);
+      await updateViajesEstatusBulk(ids, nuevoEstatus);
+      setViajesFiltrados(prev => prev.map(v => (ids.includes(v.id) ? { ...v, estatus: nuevoEstatus } : v)));
+      setViajesSeleccionados([]);
+      mostrarExito(`Estatus actualizado a "${nuevoEstatus}" en ${ids.length} viaje(s)`);
+      cerrarCambiarEstatus();
+    } catch (error) {
+      mostrarError('Error al actualizar el estatus de los viajes seleccionados');
+    } finally {
+      setGuardandoEstatus(false);
+    }
+  };
+
+  // --- Subir Excel: re-sube el Excel exportado (o cualquiera con columnas Folio/Folio
+  // BCO) y cambia a "estatusDestinoSubida" los viajes que hoy están en "estimado".
+  // Los viajes sin estatus (null) no se tocan automáticamente: se marcan como
+  // "confirmar" y el usuario tiene que tildarlos a mano en la tabla de previsualización.
+  const abrirSubirExcel = () => {
+    setEstatusDestinoSubida(null);
+    setNombreArchivoSubido('');
+    setFilasSubidas([]);
+    setSubirExcelDialog(true);
+  };
+
+  const cerrarSubirExcel = () => {
+    if (guardandoSubida) return;
+    setSubirExcelDialog(false);
+    setNombreArchivoSubido('');
+    setFilasSubidas([]);
+  };
+
+  const procesarArchivoSubido = async (file: File) => {
+    setProcesandoSubida(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const nombreHoja = wb.SheetNames.includes('Viajes Detallados') ? 'Viajes Detallados' : wb.SheetNames[0];
+      const hoja = wb.Sheets[nombreHoja];
+      const filasExcel = XLSX.utils.sheet_to_json<any>(hoja, { defval: '' });
+
+      if (filasExcel.length === 0) {
+        toast.current?.show({ severity: 'warn', summary: 'Archivo vacío', detail: 'El Excel no tiene filas de datos', life: 4000 });
+        setFilasSubidas([]);
+        return;
+      }
+
+      const brutas = filasExcel.map((fila, indice) => ({
+        fila: indice + 2,
+        folio: normalizarTextoSubida(fila['Folio']),
+        folioBco: normalizarTextoSubida(fila['Folio BCO'])
+      }));
+
+      const folios = Array.from(new Set(brutas.map(b => b.folio).filter((v): v is string => !!v)));
+      const foliosBco = Array.from(new Set(brutas.map(b => b.folioBco).filter((v): v is string => !!v)));
+
+      if (folios.length === 0 && foliosBco.length === 0) {
+        mostrarError('El Excel no tiene columnas "Folio" ni "Folio BCO" con datos');
+        setFilasSubidas([]);
+        return;
+      }
+
+      const viajesEncontrados = await fetchViajesPorIdentificadores(folios, foliosBco);
+      const porFolio = new Map<string, ViajeIdentificado>();
+      const porFolioBco = new Map<string, ViajeIdentificado>();
+      viajesEncontrados.forEach(v => {
+        if (v.folio) porFolio.set(normalizarComparacionSubida(v.folio), v);
+        if (v.folio_bco) porFolioBco.set(normalizarComparacionSubida(v.folio_bco), v);
+      });
+
+      // El identificador que se usa para buscar/comparar duplicados es Folio BCO si
+      // viene en la fila; si no, se cae a Folio, tal como pediste.
+      const conIdentificador = brutas.map(b => ({ ...b, identificador: b.folioBco || b.folio }));
+
+      const conteoIdentificador = new Map<string, number>();
+      conIdentificador.forEach(b => {
+        if (!b.identificador) return;
+        const key = normalizarComparacionSubida(b.identificador);
+        conteoIdentificador.set(key, (conteoIdentificador.get(key) || 0) + 1);
+      });
+
+      const procesadas: FilaSubidaEstatus[] = conIdentificador.map(b => {
+        if (!b.identificador) {
+          return { fila: b.fila, folio: b.folio, folioBco: b.folioBco, identificadorUsado: '', viaje: null, clasificacion: 'sinIdentificador', incluir: false };
+        }
+
+        const key = normalizarComparacionSubida(b.identificador);
+        if ((conteoIdentificador.get(key) || 0) > 1) {
+          return { fila: b.fila, folio: b.folio, folioBco: b.folioBco, identificadorUsado: b.identificador, viaje: null, clasificacion: 'duplicado', incluir: false };
+        }
+
+        const viaje = (b.folioBco ? porFolioBco.get(key) : porFolio.get(key)) ?? null;
+        if (!viaje) {
+          return { fila: b.fila, folio: b.folio, folioBco: b.folioBco, identificadorUsado: b.identificador, viaje: null, clasificacion: 'noEncontrado', incluir: false };
+        }
+
+        // Cualquier estatus actual (incluido "estimado") se puede cambiar al estatus
+        // seleccionado. Solo los viajes sin estatus todavía piden confirmación manual.
+        if (!viaje.estatus) {
+          return { fila: b.fila, folio: b.folio, folioBco: b.folioBco, identificadorUsado: b.identificador, viaje, clasificacion: 'confirmar', incluir: false };
+        }
+
+        return { fila: b.fila, folio: b.folio, folioBco: b.folioBco, identificadorUsado: b.identificador, viaje, clasificacion: 'actualizara', incluir: true };
+      });
+
+      setFilasSubidas(procesadas);
+    } catch (error) {
+      console.error('Error leyendo el archivo de estatus:', error);
+      mostrarError('No se pudo leer el archivo. Verifica que sea un Excel válido.');
+      setFilasSubidas([]);
+    } finally {
+      setProcesandoSubida(false);
+    }
+  };
+
+  const manejarArchivoSubido = async (e: FileUploadHandlerEvent) => {
+    const file = e.files?.[0];
+    if (!file) return;
+    setNombreArchivoSubido(file.name);
+    await procesarArchivoSubido(file);
+  };
+
+  const alternarIncluirFila = (fila: number) => {
+    setFilasSubidas(prev => prev.map(f => (f.fila === fila && f.clasificacion === 'confirmar' ? { ...f, incluir: !f.incluir } : f)));
+  };
+
+  const filasAActualizar = filasSubidas.filter(f => f.incluir && f.viaje);
+
+  const guardarSubidaEstatus = async () => {
+    if (!estatusDestinoSubida || filasAActualizar.length === 0) return;
+    setGuardandoSubida(true);
+    try {
+      const ids = Array.from(new Set(filasAActualizar.map(f => f.viaje!.id)));
+      await updateViajesEstatusBulk(ids, estatusDestinoSubida);
+      mostrarExito(`Estatus actualizado a "${estatusDestinoSubida}" en ${ids.length} viaje(s)`);
+      cerrarSubirExcel();
+      if (clienteSeleccionado) await cargarViajesCliente(clienteSeleccionado);
+    } catch (error) {
+      console.error('Error guardando el cambio de estatus desde Excel:', error);
+      mostrarError('No se pudo completar la actualización de estatus');
+    } finally {
+      setGuardandoSubida(false);
+    }
+  };
+
+  const mostrarError = (mensaje: string) => {
     toast.current?.show({ severity: 'error', summary: 'Error', detail: mensaje, life: 5000 }); 
   }; 
 
@@ -450,14 +669,28 @@ const EstimacionesCrud = () => {
                         Fecha de estimación: {new Date().toLocaleDateString('es-MX')}
                       </span>
                       <div className="flex gap-2">
-                        <Button 
-                          icon="pi pi-filter" 
-                          label="Filtrar" 
+                        <Button
+                          icon="pi pi-filter"
+                          label="Filtrar"
                           className="p-button-outlined"
                           onClick={() => setShowFiltros(true)}
                           disabled={loading.viajes}
                         />
-                        <Button 
+                        <Button
+                          icon="pi pi-flag"
+                          label="Cambiar Estatus"
+                          className="p-button-outlined p-button-warning"
+                          onClick={abrirCambiarEstatus}
+                          disabled={viajesSeleccionados.length === 0 || loading.viajes}
+                        />
+                        <Button
+                          icon="pi pi-upload"
+                          label="Subir Excel"
+                          className="p-button-outlined"
+                          onClick={abrirSubirExcel}
+                          disabled={loading.viajes}
+                        />
+                        <Button
                           icon="pi pi-download"
                           label="Exportar Excel"
                           className="p-button-success"
@@ -514,13 +747,13 @@ const EstimacionesCrud = () => {
                       emptyMessage="No se encontraron viajes con los filtros aplicados" 
                       className="p-datatable-sm" 
                       showGridlines
-                      selectionMode="single"
-                      selection={viajeSeleccionado}
-                      onSelectionChange={(e) => handleViajeClick(e.value as ViajeEstimacion)}
+                      selectionMode="multiple"
+                      selection={viajesSeleccionados}
+                      onSelectionChange={(e) => setViajesSeleccionados(e.value as ViajeEstimacion[])}
                       dataKey="id"
-                    > 
-                      <Column selectionMode="single" headerStyle={{ width: '3rem' }} />
-                      <Column field="numero_viaje" header="No. Viaje" style={{ width: '80px' }} /> 
+                    >
+                      <Column selectionMode="multiple" headerStyle={{ width: '3rem' }} />
+                      <Column field="numero_viaje" header="No. Viaje" style={{ width: '80px' }} />
                       <Column field="fecha" header="Fecha" body={fechaBodyTemplate} style={{ width: '120px' }} /> 
                       <Column field="folio" header="Folio" style={{ width: '120px' }} /> 
                       <Column field="folio_bco" header="Folio BCO" style={{ width: '90px' }} /> 
@@ -530,9 +763,17 @@ const EstimacionesCrud = () => {
                       <Column field="operador" header="Operador" />
                       <Column field="total_horas_renta" header="Hrs Renta" body={() => totalHorasRenta} />
                       <Column field="m3" header="M3" body={(row) => row.m3.toFixed(2)} style={{ width: '100px' }} /> 
-                      <Column field="precio" header="Precio Unitario" body={(row) => formatCurrency(row.precio)} style={{ width: '130px' }} /> 
-                      <Column 
-                        field="total_viaje" 
+                      <Column field="precio" header="Precio Unitario" body={(row) => formatCurrency(row.precio)} style={{ width: '130px' }} />
+                      <Column
+                        field="estatus"
+                        header="Estatus"
+                        body={(row: ViajeEstimacion) =>
+                          row.estatus ? <Tag severity={ESTATUS_SEVERIDAD[row.estatus] ?? 'info'} value={row.estatus} /> : '-'
+                        }
+                        style={{ width: '120px' }}
+                      />
+                      <Column
+                        field="total_viaje"
                         header="Total Viaje" 
                         body={(row) => (
                           <strong className="text-green-600">{formatCurrency(row.total_viaje)}</strong>
@@ -614,13 +855,24 @@ const EstimacionesCrud = () => {
 
             <div className="field">
               <label>Destino</label>
-              <Dropdown 
-                value={filtros.destino} 
+              <Dropdown
+                value={filtros.destino}
                 onChange={(e) => setFiltros({...filtros, destino: e.value})}
                 options={opcionesFiltros.destinos}
                 placeholder="Seleccionar destino"
                 showClear
                 filter
+              />
+            </div>
+
+            <div className="field">
+              <label>Estatus</label>
+              <Dropdown
+                value={filtros.estatus}
+                onChange={(e) => setFiltros({...filtros, estatus: e.value})}
+                options={[...OPCIONES_ESTATUS, { label: 'Sin estatus', value: '__sin_estatus__' }]}
+                placeholder="Seleccionar estatus"
+                showClear
               />
             </div>
           </div>
@@ -830,6 +1082,130 @@ const EstimacionesCrud = () => {
               autoFocus
             />
           </div>
+        </Dialog>
+
+        {/* Diálogo para cambiar el estatus de los viajes seleccionados */}
+        <Dialog
+          visible={cambiarEstatusDialog}
+          onHide={cerrarCambiarEstatus}
+          header="Cambiar Estatus"
+          style={{ width: '420px' }}
+          footer={
+            <div>
+              <Button
+                label="Cancelar"
+                icon="pi pi-times"
+                className="p-button-text"
+                onClick={cerrarCambiarEstatus}
+                disabled={guardandoEstatus}
+              />
+              <Button
+                label="Guardar"
+                icon="pi pi-check"
+                onClick={guardarCambioEstatus}
+                loading={guardandoEstatus}
+                disabled={!nuevoEstatus}
+              />
+            </div>
+          }
+        >
+          <p className="mt-0">
+            Se actualizará el estatus de <strong>{viajesSeleccionados.length}</strong> viaje(s) seleccionado(s).
+          </p>
+          <div className="field">
+            <label htmlFor="nuevoEstatus">Nuevo estatus</label>
+            <Dropdown
+              id="nuevoEstatus"
+              value={nuevoEstatus}
+              onChange={(e) => setNuevoEstatus(e.value)}
+              options={OPCIONES_ESTATUS}
+              placeholder="Selecciona un estatus"
+              className="w-full"
+            />
+          </div>
+        </Dialog>
+
+        {/* Diálogo: Subir Excel para cambiar estatus en lote */}
+        <Dialog
+          visible={subirExcelDialog}
+          onHide={cerrarSubirExcel}
+          header="Subir Excel: Cambiar Estatus"
+          style={{ width: '90vw', maxWidth: '1100px' }}
+          footer={
+            <div>
+              <Button label="Cancelar" icon="pi pi-times" text onClick={cerrarSubirExcel} disabled={guardandoSubida} />
+              <Button
+                label={`Guardar ${filasAActualizar.length} fila(s)`}
+                icon="pi pi-check"
+                onClick={guardarSubidaEstatus}
+                loading={guardandoSubida}
+                disabled={!estatusDestinoSubida || filasAActualizar.length === 0}
+              />
+            </div>
+          }
+        >
+          <div className="field">
+            <label htmlFor="estatusDestinoSubida" className="font-medium">Estatus al que pasarán los viajes</label>
+            <Dropdown
+              id="estatusDestinoSubida"
+              value={estatusDestinoSubida}
+              onChange={(e) => setEstatusDestinoSubida(e.value)}
+              options={OPCIONES_ESTATUS}
+              placeholder="Selecciona un estatus"
+              className="w-full"
+            />
+          </div>
+
+          <p className="text-color-secondary mt-2 mb-3">
+            Sube el Excel exportado (hoja &quot;Viajes Detallados&quot;, con columnas Folio y/o Folio BCO). Por cada fila: si trae{' '}
+            <strong>Folio BCO</strong> se busca por ese dato; si no, se busca por <strong>Folio</strong>. Solo se actualizan los viajes que
+            hoy están en estatus <Tag severity="info" value="estimado" />. Los que no tienen estatus quedan marcados para que confirmes uno
+            por uno si quieres incluirlos.
+          </p>
+
+          <FileUpload
+            name="subirExcelEstatus"
+            accept=".xlsx,.xls"
+            maxFileSize={10000000}
+            customUpload
+            uploadHandler={manejarArchivoSubido}
+            chooseLabel={nombreArchivoSubido || 'Seleccionar Excel'}
+            mode="basic"
+            auto
+            disabled={!estatusDestinoSubida || procesandoSubida || guardandoSubida}
+          />
+          {!estatusDestinoSubida && <small className="block mt-2 text-orange-500">Selecciona primero el estatus destino.</small>}
+
+          {procesandoSubida && (
+            <div className="flex justify-content-center mt-4">
+              <ProgressSpinner style={{ width: '40px', height: '40px' }} />
+            </div>
+          )}
+
+          {!procesandoSubida && filasSubidas.length > 0 && (
+            <DataTable value={filasSubidas} className="mt-4 p-datatable-sm" scrollable scrollHeight="400px" showGridlines dataKey="fila">
+              <Column header="Fila" body={(f: FilaSubidaEstatus) => f.fila} style={{ width: '60px' }} />
+              <Column header="Folio BCO" body={(f: FilaSubidaEstatus) => f.folioBco || '-'} />
+              <Column header="Folio" body={(f: FilaSubidaEstatus) => f.folio || '-'} />
+              <Column header="Estatus actual" body={(f: FilaSubidaEstatus) => f.viaje?.estatus || '-'} style={{ width: '130px' }} />
+              <Column
+                header="Situación"
+                body={(f: FilaSubidaEstatus) => <Tag severity={SEVERIDAD_CLASIFICACION[f.clasificacion]} value={ETIQUETA_CLASIFICACION[f.clasificacion]} />}
+                style={{ width: '260px' }}
+              />
+              <Column
+                header="Incluir"
+                body={(f: FilaSubidaEstatus) =>
+                  f.clasificacion === 'confirmar' || f.clasificacion === 'actualizara' ? (
+                    <Checkbox checked={f.incluir} disabled={f.clasificacion === 'actualizara'} onChange={() => alternarIncluirFila(f.fila)} />
+                  ) : (
+                    '-'
+                  )
+                }
+                style={{ width: '80px' }}
+              />
+            </DataTable>
+          )}
         </Dialog>
       </div>
     </div>

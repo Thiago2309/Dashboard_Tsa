@@ -27,7 +27,12 @@ export interface Viaje {
     cantidad_viajes?: number | null;
     total_materia?: number | null;
     observaciones?: string | null;
+    estatus?: EstatusViaje | null;
 }
+
+// Flujo de facturación del viaje: se define después de creado, así que puede
+// quedar vacío (null) hasta que alguien lo avance manualmente.
+export type EstatusViaje = 'estimado' | 'aprobado' | 'facturado' | 'pagado';
 
 // Helper function to transform Supabase response to Viaje interface
 const transformViajeData = (data: any): Viaje => ({
@@ -55,7 +60,8 @@ const transformViajeData = (data: any): Viaje => ({
     numero_viaje: data.numero_viaje || null,
     cantidad_viajes: data.cantidad_viajes || null,
     total_materia: data.total_materia || null,
-    observaciones: data.observaciones || null
+    observaciones: data.observaciones || null,
+    estatus: data.estatus || null
 });
 
 export const fetchViajes = async (): Promise<Viaje[]> => {
@@ -133,7 +139,8 @@ export const updateViaje = async (viaje: Viaje): Promise<Viaje> => {
             numero_viaje: viaje.numero_viaje,
             cantidad_viajes: viaje.cantidad_viajes,
             total_materia: viaje.total_materia,
-            observaciones: viaje.observaciones
+            observaciones: viaje.observaciones,
+            estatus: viaje.estatus
         })
         .eq('id', viaje.id)
         .select('*')
@@ -193,6 +200,8 @@ export const fetchM3 = async (): Promise<{ id: number; nombre: string; metros_cu
 };
 
 //obtener los viajes de los clientes cargados, para el resuemn de CXC
+// No incluye los viajes en estatus "pagado": ya se facturaron y se cobraron,
+// así que no deben seguir apareciendo en lo que el cliente todavía debe.
 export const fetchViajesPorCliente = async (id_cliente: number): Promise<any[]> => {
     const { data, error } = await supabase
         .from('viajes')
@@ -202,9 +211,15 @@ export const fetchViajesPorCliente = async (id_cliente: number): Promise<any[]> 
             folio_bco,
             folio,
             caphrsviajes,
-            total_materia
+            total_materia,
+            estatus
         `)
         .eq('id_cliente', id_cliente)
+        // ojo: usar .neq('estatus', 'pagado') excluiría también los viajes con estatus
+        // NULL (la mayoría, mientras no se les asigne uno), porque en SQL "NULL <> 'pagado'"
+        // no es verdadero. Por eso se listan explícitamente los valores que sí se deben
+        // incluir en vez de excluir solo "pagado".
+        .or('estatus.is.null,estatus.eq.estimado,estatus.eq.aprobado,estatus.eq.facturado')
         .order('fecha', { ascending: false });
 
     if (error) throw error;
@@ -281,6 +296,54 @@ export const createViajesBulk = async (viajes: Omit<Viaje, 'id'>[]): Promise<Via
     }
 
     return (data || []).map(transformViajeData);
+};
+
+export interface ViajeIdentificado {
+    id: number;
+    folio: string | null;
+    folio_bco: string | null;
+    estatus: EstatusViaje | null;
+}
+
+// Busca viajes por Folio y/o Folio BCO (usado al re-subir el Excel exportado
+// de Estimaciones, para ubicar a qué viaje corresponde cada fila).
+export const fetchViajesPorIdentificadores = async (folios: string[], foliosBco: string[]): Promise<ViajeIdentificado[]> => {
+    const encontrados = new Map<number, ViajeIdentificado>();
+
+    if (folios.length > 0) {
+        const { data, error } = await supabase
+            .from('viajes')
+            .select('id, folio, folio_bco, estatus')
+            .in('folio', folios);
+        if (error) throw error;
+        (data || []).forEach(v => encontrados.set(v.id, v));
+    }
+
+    if (foliosBco.length > 0) {
+        const { data, error } = await supabase
+            .from('viajes')
+            .select('id, folio, folio_bco, estatus')
+            .in('folio_bco', foliosBco);
+        if (error) throw error;
+        (data || []).forEach(v => encontrados.set(v.id, v));
+    }
+
+    return Array.from(encontrados.values());
+};
+
+// Actualiza el estatus de varios viajes a la vez (usado desde Estimaciones,
+// donde se seleccionan varios viajes de un cliente y se cambian de golpe).
+export const updateViajesEstatusBulk = async (ids: number[], estatus: EstatusViaje): Promise<void> => {
+    if (ids.length === 0) return;
+    const { error } = await supabase
+        .from('viajes')
+        .update({ estatus })
+        .in('id', ids);
+
+    if (error) {
+        console.error('Error actualizando el estatus de los viajes:', error);
+        throw error;
+    }
 };
 
 export const checkFolioExists = async (folio: string): Promise<boolean> => {

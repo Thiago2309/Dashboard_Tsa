@@ -2,12 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import NuevaFactura from './NuevaFactura';
-// import ListaFacturas from './ListaFacturas';
+import FacturarViajes from './FacturarViajes';
+import ListaFacturas from './ListaFacturas';
 import ConfiguracionFiscal from './ConfiguracionFiscal';
 
 const FacturacionPage = () => {
-    const [activeModule, setActiveModule] = useState('Nueva Factura');
+    const [activeModule, setActiveModule] = useState('Facturar Viajes');
     const searchParams = useSearchParams();
 
     useEffect(() => {
@@ -19,10 +19,10 @@ const FacturacionPage = () => {
 
     const renderModule = () => {
         switch (activeModule) {
-            case 'Nueva Factura':
-                return <NuevaFactura />;
-            // case 'Mis Facturas':
-            //     return <ListaFacturas />;
+            case 'Facturar Viajes':
+                return <FacturarViajes />;
+            case 'Mis Facturas':
+                return <ListaFacturas />;
             case 'Configuración Fiscal':
                 return <ConfiguracionFiscal />;
             default:
@@ -37,10 +37,10 @@ const FacturacionPage = () => {
                     {/* Menú horizontal estilo TableModule */}
                     <div style={styles.menu}>
                         <div
-                            style={activeModule === 'Nueva Factura' ? styles.activeMenuItem : styles.menuItem}
-                            onClick={() => setActiveModule('Nueva Factura')}
+                            style={activeModule === 'Facturar Viajes' ? styles.activeMenuItem : styles.menuItem}
+                            onClick={() => setActiveModule('Facturar Viajes')}
                         >
-                            Nueva Factura
+                            Facturar Viajes
                         </div>
                         <div
                             style={activeModule === 'Mis Facturas' ? styles.activeMenuItem : styles.menuItem}

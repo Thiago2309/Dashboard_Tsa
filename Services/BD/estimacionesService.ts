@@ -28,6 +28,7 @@ export interface ViajeEstimacion {
   origen?: string;
   destino?: string;
   horas_renta?: number;
+  estatus?: string | null;
 }
 
 // Interfaces para las relaciones
@@ -72,7 +73,8 @@ export interface FiltrosEstimacion {
   operador: string | null;
   material: string | null;
   origen: string | null;
-  destino: string | null; 
+  destino: string | null;
+  estatus: string | null;
 }
 
 // export const fetchClientesConViajes = async (): Promise<EstimacionCliente[]> => {
@@ -593,7 +595,8 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
       id_operador,
       id_material,
       id_m3,
-      id_precio_origen_destino
+      id_precio_origen_destino,
+      estatus
     `);
 
   // Aplicar filtros
@@ -605,6 +608,12 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
   }
   if (filtros.clienteId) {
     query = query.eq('id_cliente', filtros.clienteId);
+  }
+  // "__sin_estatus__" es el valor especial para filtrar los viajes sin estatus asignado (null)
+  if (filtros.estatus === '__sin_estatus__') {
+    query = query.is('estatus', null);
+  } else if (filtros.estatus) {
+    query = query.eq('estatus', filtros.estatus);
   }
 
   const { data: viajes, error } = await query.order('fecha', { ascending: false });
@@ -764,7 +773,8 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
       total_viaje: totalViaje,
       numero_viaje: index + 1,
       origen: origen,
-      destino: destino
+      destino: destino,
+      estatus: (viaje as any).estatus ?? null
     };
   });
 };
