@@ -62,7 +62,7 @@ const TableModule = () => {
                                     className={`menu-item ${activeModule === 'Viajes' ? 'active' : ''}`}
                                     onClick={() => setActiveModule('Viajes')}
                                 >
-                                    Viajes
+                                    Camion
                                 </div>
                                 <div
                                     className={`menu-item ${activeModule === 'Gastos' ? 'active' : ''}`}

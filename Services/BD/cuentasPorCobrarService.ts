@@ -64,15 +64,19 @@ export const fetchTodosClientesConCuentas = async (): Promise<ResumenCliente[]> 
 
     // 2. Obtener TODOS los viajes (paginando: PostgREST corta en 1000 filas por
     // consulta y la tabla "viajes" ya supera esa cifra) y agrupar por cliente
-    const viajesData = await fetchAllRows<{ id_cliente: number | null; caphrsviajes: number | null; total_materia: number | null }>(
+    const viajesData = await fetchAllRows<{ id_cliente: number | null; caphrsviajes: number | null; total_materia: number | null; estatus: string | null }>(
         (sb, from, to) =>
             sb.from('viajes')
-              .select('id_cliente, caphrsviajes, total_materia')
+              .select('id_cliente, caphrsviajes, total_materia, estatus')
               .range(from, to)
     );
 
+    // Los viajes ya en estatus "pagado" ya se cobraron (se facturaron y se pagaron),
+    // así que no deben seguir contando en lo que el cliente todavía debe.
+    const viajesPendientesDeCobro = (viajesData || []).filter(v => v.estatus !== 'pagado');
+
     // 3. Agrupar el total por cliente, incluyendo flete y material
-    const totalPorCliente = viajesData?.reduce((acc, viaje) => {
+    const totalPorCliente = viajesPendientesDeCobro?.reduce((acc, viaje) => {
         if (!viaje.id_cliente) return acc;
         const totalViaje = (viaje.caphrsviajes || 0) + (viaje.total_materia || 0);
         acc[viaje.id_cliente] = (acc[viaje.id_cliente] || 0) + totalViaje;
@@ -286,10 +290,10 @@ export const fetchCuentasPorCliente = async (id_cliente: number): Promise<Cuenta
         // 1. Obtener viajes del cliente
         const { data: viajes, error: errorViajes } = await supabase
             .from('viajes')
-            .select('id, caphrsviajes, total_materia')
+            .select('id, caphrsviajes, total_materia, estatus')
             .eq('id_cliente', id_cliente);
 
-        if (errorViajes) throw errorViajes;       
+        if (errorViajes) throw errorViajes;
          // 2. Obtener información del cliente (incluyendo porcentaje administrativo)
         const { data: cliente, error: errorCliente } = await supabase
             .from('clientes')
@@ -298,9 +302,12 @@ export const fetchCuentasPorCliente = async (id_cliente: number): Promise<Cuenta
             .single();
 
         if (errorCliente) throw errorCliente;
-        
+
+        // Los viajes ya en estatus "pagado" ya se cobraron, así que no cuentan en la deuda.
+        const viajesPendientesDeCobro = (viajes || []).filter(v => v.estatus !== 'pagado');
+
         // 3. Calcular total de deuda del cliente, incluyendo flete y material
-        let totalHorasViaje = viajes?.reduce((sum, viaje) => sum + (viaje.caphrsviajes || 0) + (viaje.total_materia || 0), 0) || 0;
+        let totalHorasViaje = viajesPendientesDeCobro.reduce((sum, viaje) => sum + (viaje.caphrsviajes || 0) + (viaje.total_materia || 0), 0);
         
         // 4. Aplicar porcentaje administrativo si existe
         if (cliente && cliente.porcentaje_administrativo && cliente.porcentaje_administrativo > 0) {

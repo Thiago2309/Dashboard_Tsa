@@ -19,6 +19,9 @@ import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
 import { InputText } from 'primereact/inputtext';
 import { InputNumber } from 'primereact/inputnumber';
+import { Dropdown } from 'primereact/dropdown';
+import { Calendar } from 'primereact/calendar';
+import { Checkbox } from 'primereact/checkbox';
 import { supabase } from '../../../../../Services/superbase.service';
 import { createViaje } from '../../../../../Services/BD/viajeService';
 import { anotarM3ManualEnObservaciones, extraerM3ManualDeObservaciones, quitarAnotacionM3Manual } from '../../../../../Services/BD/m3ManualUtil';
@@ -41,6 +44,62 @@ const LogisticaTabla = () => {
     // M3 manual: para camiones externos sin M3 en el catálogo. Si tiene valor, al Aprobar
     // se usa ese número en vez del M3 de catálogo (que aquí solo se muestra de lectura).
     const [m3Manual, setM3Manual] = useState<number | null>(null);
+    const [idCliente, setIdCliente] = useState<number | null>(null);
+    const [idOperador, setIdOperador] = useState<number | null>(null);
+    const [idPrecioOrigenDestino, setIdPrecioOrigenDestino] = useState<number | null>(null);
+    const [idMaterial, setIdMaterial] = useState<number | null>(null);
+    const [idM3, setIdM3] = useState<number | null>(null);
+    const [idInvitado, setIdInvitado] = useState<number | null>(null);
+    const [estadoEdit, setEstadoEdit] = useState<string>('pendiente');
+    const [horarioEdit, setHorarioEdit] = useState<string>('D');
+    const [enRentaEdit, setEnRentaEdit] = useState(false);
+    const [horasRentaEdit, setHorasRentaEdit] = useState<number | null>(null);
+    const [fechaAsignacionEdit, setFechaAsignacionEdit] = useState<Date | null>(null);
+
+    // Opciones para los dropdowns de edición
+    const [clientesOptions, setClientesOptions] = useState<{ id: number; empresa: string }[]>([]);
+    const [operadoresOptions, setOperadoresOptions] = useState<{ id: number; nombre: string }[]>([]);
+    const [preciosOptions, setPreciosOptions] = useState<{ id: number; label: string }[]>([]);
+    const [materialesOptions, setMaterialesOptions] = useState<{ id: number; nombre: string }[]>([]);
+    const [m3Options, setM3Options] = useState<{ id: number; nombre: string }[]>([]);
+    const [invitadosOptions, setInvitadosOptions] = useState<{ id: number; empresa: string }[]>([]);
+
+    const estadoOptionsEdit = [
+        { label: 'Pendiente', value: 'pendiente' },
+        { label: 'Asignado', value: 'asignado' },
+        { label: 'En Curso', value: 'en_curso' },
+        { label: 'Completado', value: 'completado' },
+        { label: 'Cancelado', value: 'cancelado' }
+    ];
+
+    const horarioOptionsEdit = [
+        { label: 'Día', value: 'D' },
+        { label: 'Noche', value: 'N' }
+    ];
+
+    useEffect(() => {
+        const cargarOpciones = async () => {
+            try {
+                const [clientesData, operadoresData, preciosData, materialesData, m3Data, invitadosData] = await Promise.all([
+                    fetchClientes(),
+                    fetchOperadores(),
+                    fetchPreciosOrigenDestino(),
+                    fetchMateriales(),
+                    fetchM3(),
+                    fetchInvitados()
+                ]);
+                setClientesOptions(clientesData);
+                setOperadoresOptions(operadoresData);
+                setPreciosOptions(preciosData);
+                setMaterialesOptions(materialesData);
+                setM3Options(m3Data);
+                setInvitadosOptions(invitadosData);
+            } catch (error) {
+                console.error('Error cargando opciones de edición:', error);
+            }
+        };
+        cargarOpciones();
+    }, []);
 
     // Cargar datos - usar useCallback para evitar recreación
     const cargarDatos = useCallback(async () => {
@@ -76,6 +135,17 @@ const LogisticaTabla = () => {
         setCantidadViajes(null);
         setObservaciones('');
         setM3Manual(null);
+        setIdCliente(null);
+        setIdOperador(null);
+        setIdPrecioOrigenDestino(null);
+        setIdMaterial(null);
+        setIdM3(null);
+        setIdInvitado(null);
+        setEstadoEdit('pendiente');
+        setHorarioEdit('D');
+        setEnRentaEdit(false);
+        setHorasRentaEdit(null);
+        setFechaAsignacionEdit(null);
         setSubmittedEdit(false);
     }, []);
 
@@ -88,6 +158,17 @@ const LogisticaTabla = () => {
         setCantidadViajes(rowData.cantidad_viajes || null);
         setObservaciones(quitarAnotacionM3Manual(rowData.observaciones) || '');
         setM3Manual(extraerM3ManualDeObservaciones(rowData.observaciones));
+        setIdCliente(rowData.id_cliente);
+        setIdOperador(rowData.id_operador);
+        setIdPrecioOrigenDestino(rowData.id_precio_origen_destino);
+        setIdMaterial(rowData.id_material);
+        setIdM3(rowData.id_m3);
+        setIdInvitado(rowData.id_invitado);
+        setEstadoEdit(rowData.estado || 'pendiente');
+        setHorarioEdit(rowData.horario || 'D');
+        setEnRentaEdit(rowData.en_renta || false);
+        setHorasRentaEdit(rowData.horas_renta || null);
+        setFechaAsignacionEdit(rowData.fecha_asignacion ? new Date(rowData.fecha_asignacion) : null);
         setSubmittedEdit(false);
         setEditDialog(true);
     }, []);
@@ -117,37 +198,26 @@ const LogisticaTabla = () => {
                 folio_bco: folioBco || null,
                 numero_viaje: numeroViaje || null,
                 cantidad_viajes: cantidadViajes || null,
-                id_cliente: editViaje?.id_cliente,
-                id_operador: editViaje?.id_operador,
-                id_precio_origen_destino: editViaje?.id_precio_origen_destino,
-                id_material: editViaje?.id_material,
-                id_m3: editViaje?.id_m3,
-                id_invitado: editViaje?.id_invitado,
-                estado: editViaje?.estado,
+                id_cliente: idCliente,
+                id_operador: idOperador,
+                id_precio_origen_destino: idPrecioOrigenDestino,
+                id_material: idMaterial,
+                id_m3: idM3,
+                id_invitado: idInvitado,
+                estado: estadoEdit,
                 observaciones: observacionesFinal,
-                fecha_asignacion: editViaje?.fecha_asignacion,
-                horario: editViaje?.horario,
-                en_renta: editViaje?.en_renta,
-                horas_renta: editViaje?.horas_renta
+                fecha_asignacion: fechaAsignacionEdit ? fechaAsignacionEdit.toISOString().split('T')[0] : null,
+                horario: horarioEdit,
+                en_renta: enRentaEdit,
+                horas_renta: enRentaEdit ? horasRentaEdit : null
             };
 
             console.log('Datos a actualizar:', datosActualizar);
 
             await updateViajeLogistica(datosActualizar as LogisticaViaje);
 
-            // Actualizar el estado local usando la función de actualización
-            setViajes(prevViajes =>
-                prevViajes.map(v =>
-                    v.id === editViaje?.id ? {
-                        ...v,
-                        folio: folio.trim(),
-                        folio_bco: folioBco,
-                        numero_viaje: numeroViaje,
-                        cantidad_viajes: cantidadViajes,
-                        observaciones: observacionesFinal
-                    } : v
-                )
-            );
+            // Recargar los datos para reflejar todos los campos editados (incluyendo nombres relacionados)
+            await cargarDatos();
 
             toast.current?.show({
                 severity: 'success',
@@ -169,7 +239,7 @@ const LogisticaTabla = () => {
         } finally {
             setLoadingEdit(false);
         }
-    }, [editViaje, folio, folioBco, numeroViaje, cantidadViajes, observaciones, m3Manual, cerrarDialog]);
+    }, [editViaje, folio, folioBco, numeroViaje, cantidadViajes, observaciones, m3Manual, idCliente, idOperador, idPrecioOrigenDestino, idMaterial, idM3, idInvitado, estadoEdit, horarioEdit, enRentaEdit, horasRentaEdit, fechaAsignacionEdit, cargarDatos, cerrarDialog]);
 
     // Función para Aprobar
     const handleAprobar = useCallback(async (rowData: LogisticaViaje) => {
@@ -514,7 +584,8 @@ const LogisticaTabla = () => {
                 header="Editar Viaje Logístico"
                 modal
                 className="p-fluid"
-                style={{ width: '500px' }}
+                style={{ width: '550px' }}
+                breakpoints={{ '960px': '80vw', '641px': '95vw' }}
                 footer={
                     <>
                         <Button 
@@ -579,6 +650,164 @@ const LogisticaTabla = () => {
                 </div>
 
                 <div className="field">
+                    <label htmlFor="fecha_asignacion">Fecha de Asignación</label>
+                    <Calendar
+                        id="fecha_asignacion"
+                        value={fechaAsignacionEdit}
+                        onChange={(e) => setFechaAsignacionEdit((e.value as Date) ?? null)}
+                        dateFormat="dd/mm/yy"
+                        showIcon
+                        className="w-full"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="cliente">Cliente</label>
+                    <Dropdown
+                        id="cliente"
+                        value={idCliente}
+                        options={clientesOptions}
+                        optionLabel="empresa"
+                        optionValue="id"
+                        onChange={(e) => setIdCliente(e.value)}
+                        placeholder="Selecciona un cliente"
+                        filter
+                        showClear
+                        className="w-full"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="operador">Operador</label>
+                    <Dropdown
+                        id="operador"
+                        value={idOperador}
+                        options={operadoresOptions}
+                        optionLabel="nombre"
+                        optionValue="id"
+                        onChange={(e) => setIdOperador(e.value)}
+                        placeholder="Selecciona un operador"
+                        filter
+                        showClear
+                        className="w-full"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="invitado">Invitado</label>
+                    <Dropdown
+                        id="invitado"
+                        value={idInvitado}
+                        options={invitadosOptions}
+                        optionLabel="empresa"
+                        optionValue="id"
+                        onChange={(e) => setIdInvitado(e.value)}
+                        placeholder="Selecciona un invitado"
+                        filter
+                        showClear
+                        className="w-full"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="origen_destino">Origen - Destino</label>
+                    <Dropdown
+                        id="origen_destino"
+                        value={idPrecioOrigenDestino}
+                        options={preciosOptions}
+                        optionLabel="label"
+                        optionValue="id"
+                        onChange={(e) => setIdPrecioOrigenDestino(e.value)}
+                        placeholder="Selecciona origen - destino"
+                        filter
+                        showClear
+                        className="w-full"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="material">Material</label>
+                    <Dropdown
+                        id="material"
+                        value={idMaterial}
+                        options={materialesOptions}
+                        optionLabel="nombre"
+                        optionValue="id"
+                        onChange={(e) => setIdMaterial(e.value)}
+                        placeholder="Selecciona un material"
+                        filter
+                        showClear
+                        className="w-full"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="m3">M3 (Catálogo)</label>
+                    <Dropdown
+                        id="m3"
+                        value={idM3}
+                        options={m3Options}
+                        optionLabel="nombre"
+                        optionValue="id"
+                        onChange={(e) => setIdM3(e.value)}
+                        placeholder="Selecciona un M3 de catálogo"
+                        filter
+                        showClear
+                        className="w-full"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="horario">Horario</label>
+                    <Dropdown
+                        id="horario"
+                        value={horarioEdit}
+                        options={horarioOptionsEdit}
+                        onChange={(e) => setHorarioEdit(e.value)}
+                        placeholder="Selecciona el horario"
+                        className="w-full"
+                    />
+                </div>
+
+                <div className="field">
+                    <label htmlFor="estado">Estado</label>
+                    <Dropdown
+                        id="estado"
+                        value={estadoEdit}
+                        options={estadoOptionsEdit}
+                        onChange={(e) => setEstadoEdit(e.value)}
+                        placeholder="Selecciona el estado"
+                        className="w-full"
+                    />
+                </div>
+
+                <div className="field-checkbox flex align-items-center gap-2">
+                    <Checkbox
+                        inputId="en_renta"
+                        checked={enRentaEdit}
+                        onChange={(e) => setEnRentaEdit(e.checked ?? false)}
+                    />
+                    <label htmlFor="en_renta">En Renta</label>
+                </div>
+
+                {enRentaEdit && (
+                    <div className="field">
+                        <label htmlFor="horas_renta">Horas de Renta</label>
+                        <InputNumber
+                            id="horas_renta"
+                            value={horasRentaEdit}
+                            onValueChange={(e) => setHorasRentaEdit(e.value ?? null)}
+                            placeholder="Ingresa las horas de renta"
+                            min={0}
+                            mode="decimal"
+                            minFractionDigits={0}
+                            maxFractionDigits={2}
+                            className="w-full"
+                        />
+                    </div>
+                )}
+
+                <div className="field">
                     <label htmlFor="m3_manual">M3 (Manual)</label>
                     <InputNumber
                         id="m3_manual"
@@ -606,19 +835,6 @@ const LogisticaTabla = () => {
                     />
                 </div>
 
-                {editViaje && (
-                    <div className="field">
-                        <label>Información del Viaje</label>
-                        <div className="text-sm text-500 p-2 bg-gray-50 border-round">
-                            <div><strong>Cliente:</strong> {editViaje.cliente_nombre}</div>
-                            <div><strong>Operador:</strong> {editViaje.operador_nombre}</div>
-                            <div><strong>Origen - Destino:</strong> {editViaje.origen} - {editViaje.destino}</div>
-                            <div><strong>Material:</strong> {editViaje.material_nombre}</div>
-                            <div><strong>M3:</strong> {editViaje.m3_nombre}</div>
-                            <div><strong>Estado:</strong> {editViaje.estado}</div>
-                        </div>
-                    </div>
-                )}
             </Dialog>
         </div>
     );

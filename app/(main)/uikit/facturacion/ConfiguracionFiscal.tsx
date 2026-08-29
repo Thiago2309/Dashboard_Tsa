@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { InputText } from 'primereact/inputtext';
 import { Button } from 'primereact/button';
+import { InputSwitch } from 'primereact/inputswitch';
 import { Toast } from 'primereact/toast';
 import { getConfiguracionFiscal, actualizarConfiguracionFiscal } from '../../../../Services/BD/facturacion/fiscalApiService';
 
@@ -10,6 +11,7 @@ const ConfiguracionFiscal = () => {
     const [config, setConfig] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [apiKey, setApiKey] = useState('');
+    const [modoSimulacion, setModoSimulacion] = useState(true);
     const toast = useRef<Toast>(null);
 
     useEffect(() => {
@@ -21,6 +23,7 @@ const ConfiguracionFiscal = () => {
             const data = await getConfiguracionFiscal();
             setConfig(data);
             setApiKey(data.api_key || '');
+            setModoSimulacion(data.modo_simulacion ?? true);
         } catch (error: any) {
             toast.current?.show({
                 severity: 'error',
@@ -34,7 +37,7 @@ const ConfiguracionFiscal = () => {
     const guardarConfiguracion = async () => {
         setLoading(true);
         try {
-            await actualizarConfiguracionFiscal({ api_key: apiKey });
+            await actualizarConfiguracionFiscal({ api_key: apiKey, modo_simulacion: modoSimulacion });
             toast.current?.show({
                 severity: 'success',
                 summary: 'Configuración guardada',
@@ -102,13 +105,25 @@ const ConfiguracionFiscal = () => {
                             className="w-full"
                         />
                         <small className="text-gray-500">
-                            Obtén tu API Key en https://fiscalapi.com/dashboard
+                            Obtén tu API Key en https://www.facturadorelectronico.com
                         </small>
                     </div>
                 </div>
+                <div className="col-12 md:col-6">
+                    <div className="field flex align-items-center gap-3">
+                        <InputSwitch checked={modoSimulacion} onChange={(e) => setModoSimulacion(e.value)} />
+                        <div>
+                            <label className="block font-medium">Modo simulación</label>
+                            <small className="text-gray-500">
+                                Activado: aprobar una factura genera un timbrado simulado (sin llamar a facturadorelectronico.com).
+                                Desactívalo cuando tengas el API Key real para timbrar de verdad.
+                            </small>
+                        </div>
+                    </div>
+                </div>
                 <div className="col-12">
-                    <Button 
-                        label="Guardar Configuración" 
+                    <Button
+                        label="Guardar Configuración"
                         icon="pi pi-save" 
                         onClick={guardarConfiguracion}
                         loading={loading}

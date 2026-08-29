@@ -52,6 +52,14 @@ const normalizeId = (v: any): number | string | null => {
     return Number.isNaN(n) ? v : n;
 };
 
+const OPCIONES_ESTATUS_FILTRO = [
+    { label: 'Estimado', value: 'estimado' },
+    { label: 'Aprobado', value: 'aprobado' },
+    { label: 'Facturado', value: 'facturado' },
+    { label: 'Pagado', value: 'pagado' },
+    { label: 'Sin estatus', value: '__sin_estatus__' }
+];
+
 // Encabezados esperados en el Excel de carga masiva (ver también la plantilla descargable)
 const COLUMNAS_PLANTILLA_CARGA = [
     'Fecha', 'Cliente', 'Origen', 'Destino', 'Material', 'M3', 'M3 (manual)',
@@ -188,7 +196,8 @@ const Crud = () => {
         operador: null,
         material: null,
         origen: null,
-        destino: null
+        destino: null,
+        estatus: null
     });
     const [opcionesFiltros, setOpcionesFiltros] = useState<{operadores: string[], materiales: string[], origenes: string[], destinos: string[]}>({
         operadores: [],
@@ -269,6 +278,13 @@ const Crud = () => {
             resultados = resultados.filter(v => (v.destino || '').toLowerCase().includes(filtros.destino!.toLowerCase()));
         }
 
+        // Filtrar por estatus ("__sin_estatus__" = viajes sin estatus asignado)
+        if (filtros.estatus === '__sin_estatus__') {
+            resultados = resultados.filter(v => !v.estatus);
+        } else if (filtros.estatus) {
+            resultados = resultados.filter(v => v.estatus === filtros.estatus);
+        }
+
         console.log('Resultados filtrados:', resultados.length);
         setFilteredViajes(resultados);
         setShowFiltros(false);
@@ -288,7 +304,8 @@ const Crud = () => {
             operador: null,
             material: null,
             origen: null,
-            destino: null
+            destino: null,
+            estatus: null
         });
         setFilteredViajes([]);
     };
@@ -942,6 +959,22 @@ const Crud = () => {
         );
     }
 
+    const ESTATUS_SEVERIDAD: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
+        estimado: 'info',
+        aprobado: 'warning',
+        facturado: 'success',
+        pagado: 'success'
+    };
+
+    const estatusBodyTemplate = (rowData: Viaje) => {
+        return (
+            <>
+                <span className="p-column-title">Estatus</span>
+                {rowData.estatus ? <Tag severity={ESTATUS_SEVERIDAD[rowData.estatus] ?? 'info'} value={rowData.estatus} /> : '-'}
+            </>
+        );
+    }
+
     const cantidadViajesBodyTemplate = (rowData: Viaje) => {
         return (
             <>
@@ -1073,6 +1106,7 @@ const Crud = () => {
                         <Column field="invitado_nombre" header="Invitado" sortable body={invitadoBodyTemplate}></Column>
                         <Column field="horario" header="Horario" sortable body={horarioBodyTemplate}></Column>
                         <Column field="observaciones" header="Observaciones" sortable body={observacionesBodyTemplate}></Column>
+                        <Column field="estatus" header="Estatus" sortable body={estatusBodyTemplate}></Column>
                         <Column field="caphrsviajes" header="Total Flete" sortable body={caphrsviajesBodyTemplate} style={{ width: '150px', minWidth: '120px' }}></Column>
                         <Column field="total_material" header="Total Material" sortable body={totalMaterialBodyTemplate} style={{ width: '150px', minWidth: '120px' }}></Column>
                         <Column header="Acción" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }}></Column>
@@ -1510,13 +1544,24 @@ const Crud = () => {
 
                         <div className="field">
                         <label>Destino</label>
-                        <Dropdown 
-                            value={filtros.destino} 
+                        <Dropdown
+                            value={filtros.destino}
                             onChange={(e) => setFiltros({...filtros, destino: e.value})}
                             options={opcionesFiltros.destinos}
                             placeholder="Seleccionar destino"
                             showClear
                             filter
+                        />
+                        </div>
+
+                        <div className="field">
+                        <label>Estatus</label>
+                        <Dropdown
+                            value={filtros.estatus}
+                            onChange={(e) => setFiltros({...filtros, estatus: e.value})}
+                            options={OPCIONES_ESTATUS_FILTRO}
+                            placeholder="Seleccionar estatus"
+                            showClear
                         />
                         </div>
                     </div>
