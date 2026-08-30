@@ -16,6 +16,7 @@ import { fetchTodosClientesConCuentas, actualizarPago,
             registrarPagoConHistorial 
         } from '../../../../Services/BD/cuentasPorCobrarService';
 import { fetchViajesPorCliente } from '../../../../Services/BD/viajeService';
+import { fetchRentaMaquinariaPorCliente, RentaMaquinaria } from '../../../../Services/BD/inventario/maquinaria/rentaMaquinariaService';
 import { supabase } from '@/Services/superbase.service';
 import { Dropdown } from 'primereact/dropdown';
 import { InputText } from 'primereact/inputtext';
@@ -34,6 +35,7 @@ const CxcCrud = () => {
     });
     const [totalGeneral, setTotalGeneral] = useState<number>(0);
     const [viajesCliente, setViajesCliente] = useState<any[]>([]);
+    const [rentasCliente, setRentasCliente] = useState<RentaMaquinaria[]>([]);
     const [pagoDialog, setPagoDialog] = useState(false);
     const [editFechaDialog, setEditFechaDialog] = useState(false);
     const [montoPago, setMontoPago] = useState<number | null>(0); // Ajusta el tipo
@@ -108,47 +110,63 @@ const CxcCrud = () => {
         }
     };
 
+    // Trae viajes y/o rentas de maquinaria según la(s) etiqueta(s) del cliente
+    const cargarViajesYRentas = async (cliente: ResumenCliente) => {
+        const tieneCamion = cliente.etiquetas?.includes('camion');
+        const tieneMaquinaria = cliente.etiquetas?.includes('maquinaria');
+
+        const [viajes, rentas] = await Promise.all([
+            tieneCamion ? fetchViajesPorCliente(cliente.id_cliente) : Promise.resolve([]),
+            tieneMaquinaria ? fetchRentaMaquinariaPorCliente(cliente.id_cliente) : Promise.resolve([])
+        ]);
+
+        return { viajes, rentas };
+    };
+
     // ACTUALZIA DATOS DEL CLIENTE ACTIVO (UTIL PARA LLAMARLO EN FUNCIONES)
     const actualizarDatosClienteSeleccionado = async () => {
         if (!clienteSeleccionado) return;
-    
+
         try {
             const data = await fetchTodosClientesConCuentas();
             setResumenClientes(data);
             setTotalGeneral(data.reduce((sum, c) => sum + c.total_adeudado, 0));
-            const [cuentas, viajes] = await Promise.all([
+            const [cuentas, { viajes, rentas }] = await Promise.all([
                 fetchCuentasPorCliente(clienteSeleccionado.id_cliente),
-                fetchViajesPorCliente(clienteSeleccionado.id_cliente)
+                cargarViajesYRentas(clienteSeleccionado)
             ]);
             setCuentasCliente(cuentas);
             setViajesCliente(viajes);
+            setRentasCliente(rentas);
         } catch (error) {
             mostrarError('Error al actualizar detalles del cliente');
         }
     };
-    
+
 
     const handleClienteClick = async (cliente: ResumenCliente) => {
         if (clienteSeleccionado?.id_cliente === cliente.id_cliente) {
             setClienteSeleccionado(null);
             setCuentasCliente([]);
             setViajesCliente([]);
+            setRentasCliente([]);
             setHistorialPagos([]); // Limpiar historial al deseleccionar
             return;
         }
-    
+
         setLoading({ clientes: false, detalles: true, viajes: true });
         setClienteSeleccionado(cliente);
-    
+
         try {
-            const [cuentas, viajes] = await Promise.all([
+            const [cuentas, { viajes, rentas }] = await Promise.all([
                 fetchCuentasPorCliente(cliente.id_cliente),
-                fetchViajesPorCliente(cliente.id_cliente),
+                cargarViajesYRentas(cliente),
             ]);
-    
+
             setCuentasCliente(cuentas);
             setViajesCliente(viajes);
-    
+            setRentasCliente(rentas);
+
             // Paso 5: Cargar historial de pagos de la PRIMERA cuenta (asumiendo 1 cuenta/cliente)
             if (cuentas.length > 0) {
                 const historial = await fetchHistorialPagos(cuentas[0].id!); // Usamos el ID de la primera cuenta
@@ -329,12 +347,13 @@ const CxcCrud = () => {
             setResumenClientes(data);
             setTotalGeneral(data.reduce((sum, c) => sum + c.total_adeudado, 0));
             if (clienteSeleccionado) {
-                const [cuentas, viajes] = await Promise.all([
+                const [cuentas, { viajes, rentas }] = await Promise.all([
                     fetchCuentasPorCliente(clienteSeleccionado.id_cliente),
-                    fetchViajesPorCliente(clienteSeleccionado.id_cliente)
+                    cargarViajesYRentas(clienteSeleccionado)
                 ]);
                 setCuentasCliente(cuentas);
                 setViajesCliente(viajes);
+                setRentasCliente(rentas);
             }
         } catch (error) {
             mostrarError('Error al actualizar datos');
@@ -392,15 +411,26 @@ const CxcCrud = () => {
                                     <span className="font-medium">{row.id_cliente}</span>
                                 )}
                             />
-                            <Column 
-                                field="cliente_nombre" 
-                                header="Cliente" 
+                            <Column
+                                field="cliente_nombre"
+                                header="Cliente"
                                 body={(row) => (
                                     <span className="font-medium">{row.cliente_nombre}</span>
                                 )}
                             />
-                            <Column 
-                                field="total_horas_viaje" 
+                            <Column
+                                header="Etiqueta"
+                                body={(row: ResumenCliente) => (
+                                    <div className="flex gap-1 flex-wrap">
+                                        {(!row.etiquetas || row.etiquetas.length === 0) && '-'}
+                                        {row.etiquetas?.map(etiqueta => (
+                                            <Tag key={etiqueta} value={etiqueta === 'camion' ? 'Camión' : 'Maquinaria'} severity={etiqueta === 'camion' ? 'info' : 'warning'} />
+                                        ))}
+                                    </div>
+                                )}
+                            />
+                            <Column
+                                field="total_horas_viaje"
                                 header="Total de Deuda" 
                                 body={(row) => formatCurrency(row.total_horas_viaje || 0)}
                             />
@@ -438,10 +468,18 @@ const CxcCrud = () => {
 
                         {clienteSeleccionado && (
                             <div className="mt-5">
-                                <Card 
+                                <Card
                                     title={`Detalles de cuentas - ${clienteSeleccionado.cliente_nombre}`}
                                     subTitle={`Total A Cobrar: ${formatCurrency(Math.max(0, clienteSeleccionado.total_adeudado))}`}
                                 >
+                                    <div className="flex gap-2 mb-3">
+                                        {(!clienteSeleccionado.etiquetas || clienteSeleccionado.etiquetas.length === 0) && (
+                                            <span className="text-500 text-sm">Sin etiqueta asignada</span>
+                                        )}
+                                        {clienteSeleccionado.etiquetas?.map(etiqueta => (
+                                            <Tag key={etiqueta} value={etiqueta === 'camion' ? 'Camión' : 'Maquinaria'} severity={etiqueta === 'camion' ? 'info' : 'warning'} />
+                                        ))}
+                                    </div>
                                     {loading.detalles ? (
                                         <div className="flex justify-content-center">
                                             <ProgressSpinner />
@@ -575,6 +613,35 @@ const CxcCrud = () => {
                                                         <Column field="folio_bco" header="Folio BCO" body={(row) => row.folio_bco ? row.folio_bco : '-'} />
                                                         <Column field="caphrsviajes" header="Total Flete" body={(row) => formatCurrency(row.caphrsviajes || 0)} />
                                                         <Column field="total_materia" header="Total Material" body={(row) => formatCurrency(row.total_materia || 0)} />
+                                                    </DataTable>
+                                                </div>
+                                            )}
+
+                                            {!loading.viajes && rentasCliente.length > 0 && (
+                                                <div className="mt-5">
+                                                    <h4>Rentas de Maquinaria Relacionadas</h4>
+                                                    <DataTable
+                                                        value={rentasCliente}
+                                                        paginator
+                                                        rows={5}
+                                                        emptyMessage="No se encontraron rentas de maquinaria"
+                                                        className="p-datatable-sm"
+                                                    >
+                                                        <Column field="id" header="Id de Renta" />
+                                                        <Column
+                                                            field="fecha"
+                                                            header="Fecha"
+                                                            body={(row) => {
+                                                                if (!row.fecha) return '-';
+                                                                const [year, month, day] = row.fecha.split('T')[0].split('-');
+                                                                return `${day}-${month}-${year}`;
+                                                            }}
+                                                        />
+                                                        <Column field="folio" header="Folio" body={(row) => row.folio || '-'} />
+                                                        <Column field="maquina_nombre" header="Máquina" body={(row) => row.maquina_nombre || '-'} />
+                                                        <Column field="operador_nombre" header="Operador" body={(row) => row.operador_nombre || '-'} />
+                                                        <Column field="hrs" header="Hrs" body={(row) => row.hrs ?? '-'} />
+                                                        <Column field="total" header="Total" body={(row) => formatCurrency(row.total || 0)} />
                                                     </DataTable>
                                                 </div>
                                             )}

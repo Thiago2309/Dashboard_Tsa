@@ -12,6 +12,16 @@ const fetchTodosLosViajesConInvitado = (): Promise<{ id_invitado: string | numbe
           .range(from, to)
     );
 
+// Nota: se usa total_invitado (lo que se le PAGA al invitado), no total (lo que se le
+// cobra al cliente) — un mismo registro de renta puede tener cliente e invitado a la vez.
+const fetchTodosLosRentasConInvitado = (): Promise<{ id_invitado: number | null; total_invitado: number | null }[]> =>
+    fetchAllRows((sb, from, to) =>
+        sb.from('renta_maquinaria')
+          .select('id_invitado, total_invitado')
+          .not('id_invitado', 'is', null)
+          .range(from, to)
+    );
+
 export interface CuentaPorPagarBase {
     id?: number;
     id_entidad: number | null;
@@ -41,6 +51,7 @@ export interface ResumenEntidad {
     total_monto_pagado: number;
     cuentas_pendientes: number;
     tipo: TipoEntidad;
+    etiquetas?: string[]; // solo aplica a Invitado: 'camion' y/o 'maquinaria'
 }
 
 export interface PagoCxP {
@@ -176,23 +187,34 @@ export const fetchEntidadesConCuentas = async (tipo?: TipoEntidad): Promise<Resu
     if (tipo === 'Proveedor') return resumenProveedores;
 
     // Para invitados: el Monto Total se calcula dinámicamente sumando el FLETE (caphrsviajes)
-    // de sus viajes vinculados y descontando su % de participación sobre esa suma, igual que
-    // en Cuentas por Cobrar (no se confía en el saldo acumulado manualmente en
-    // cuentas_por_pagar, que puede quedar desactualizado). El material (total_materia) no
-    // forma parte del pago del invitado.
+    // de sus viajes vinculados (si tiene etiqueta "camion") y/o el total de sus rentas de
+    // maquinaria vinculadas (si tiene etiqueta "maquinaria"), y descontando su % de
+    // participación sobre esa suma, igual que en Cuentas por Cobrar (no se confía en el saldo
+    // acumulado manualmente en cuentas_por_pagar, que puede quedar desactualizado). El
+    // material (total_materia) no forma parte del pago del invitado.
     if (tipo === 'Invitado') {
         const { data: invitados, error: errorInvitados } = await supabase
             .from('invitados')
-            .select('id, empresa, porcentaje_participacion');
+            .select('id, empresa, porcentaje_participacion, etiquetas');
 
         if (errorInvitados) throw errorInvitados;
 
-        const viajesInvitados = await fetchTodosLosViajesConInvitado();
+        const [viajesInvitados, rentasInvitados] = await Promise.all([
+            fetchTodosLosViajesConInvitado(),
+            fetchTodosLosRentasConInvitado()
+        ]);
 
         const totalViajesPorInvitado = viajesInvitados.reduce((acc, v) => {
             if (!v.id_invitado) return acc;
             const key = String(v.id_invitado);
             acc[key] = (acc[key] || 0) + (v.caphrsviajes || 0);
+            return acc;
+        }, {} as Record<string, number>);
+
+        const totalRentasPorInvitado = rentasInvitados.reduce((acc, r) => {
+            if (!r.id_invitado) return acc;
+            const key = String(r.id_invitado);
+            acc[key] = (acc[key] || 0) + (r.total_invitado || 0);
             return acc;
         }, {} as Record<string, number>);
 
@@ -202,9 +224,18 @@ export const fetchEntidadesConCuentas = async (tipo?: TipoEntidad): Promise<Resu
             .eq('tipo_entidad', 'Invitado');
 
         return invitados?.map(invitado => {
-            const totalViajes = totalViajesPorInvitado[String(invitado.id)] || 0;
+            const etiquetas: string[] = (invitado as any).etiquetas || [];
+
+            let totalDeuda = 0;
+            if (etiquetas.includes('camion')) {
+                totalDeuda += totalViajesPorInvitado[String(invitado.id)] || 0;
+            }
+            if (etiquetas.includes('maquinaria')) {
+                totalDeuda += totalRentasPorInvitado[String(invitado.id)] || 0;
+            }
+
             const porcentaje = (invitado.porcentaje_participacion || 0) / 100;
-            const saldoCalculado = totalViajes * (1 - porcentaje);
+            const saldoCalculado = totalDeuda * (1 - porcentaje);
 
             const cuentas = cuentasInvitado?.filter(c => c.id_entidad === invitado.id) || [];
             const totalPagado = cuentas.reduce((sum, c) => sum + (c.monto || 0), 0);
@@ -216,7 +247,8 @@ export const fetchEntidadesConCuentas = async (tipo?: TipoEntidad): Promise<Resu
                 total_adeudado: Math.max(0, Number((saldoCalculado - totalPagado).toFixed(2))),
                 total_monto_pagado: totalPagado,
                 cuentas_pendientes: pendientes,
-                tipo: 'Invitado' as TipoEntidad
+                tipo: 'Invitado' as TipoEntidad,
+                etiquetas
             };
         }) || [];
     }
@@ -258,22 +290,38 @@ export const fetchEntidadesConCuentas = async (tipo?: TipoEntidad): Promise<Resu
 const fetchCuentasInvitado = async (id_entidad: number): Promise<CuentaPorPagar[]> => {
     const { data: invitado, error: errorInvitado } = await supabase
         .from('invitados')
-        .select('empresa, porcentaje_participacion')
+        .select('empresa, porcentaje_participacion, etiquetas')
         .eq('id', id_entidad)
         .single();
 
     if (errorInvitado) throw errorInvitado;
 
-    const { data: viajes, error: errorViajes } = await supabase
-        .from('viajes')
-        .select('caphrsviajes')
-        .eq('id_invitado', String(id_entidad));
+    const etiquetas: string[] = (invitado as any).etiquetas || [];
+    let totalDeuda = 0;
 
-    if (errorViajes) throw errorViajes;
+    if (etiquetas.includes('camion')) {
+        const { data: viajes, error: errorViajes } = await supabase
+            .from('viajes')
+            .select('caphrsviajes')
+            .eq('id_invitado', String(id_entidad));
 
-    const totalViajes = viajes?.reduce((sum, v) => sum + (v.caphrsviajes || 0), 0) || 0;
+        if (errorViajes) throw errorViajes;
+        totalDeuda += viajes?.reduce((sum, v) => sum + (v.caphrsviajes || 0), 0) || 0;
+    }
+
+    if (etiquetas.includes('maquinaria')) {
+        // total_invitado: lo que se le PAGA al invitado, no lo que se le cobra al cliente.
+        const { data: rentas, error: errorRentas } = await supabase
+            .from('renta_maquinaria')
+            .select('total_invitado')
+            .eq('id_invitado', id_entidad);
+
+        if (errorRentas) throw errorRentas;
+        totalDeuda += rentas?.reduce((sum, r) => sum + (r.total_invitado || 0), 0) || 0;
+    }
+
     const porcentaje = (invitado.porcentaje_participacion || 0) / 100;
-    const saldoCalculado = Number((totalViajes * (1 - porcentaje)).toFixed(2));
+    const saldoCalculado = Number((totalDeuda * (1 - porcentaje)).toFixed(2));
 
     const { data: cuentas, error: errorCuentas } = await supabase
         .from('cuentas_por_pagar')

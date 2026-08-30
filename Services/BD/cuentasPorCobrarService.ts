@@ -27,6 +27,7 @@ export interface ResumenCliente {
     total_horas_viaje: number;  // Cambiado de ReactNode a number
     total_monto_pagado: number; // Cambiado de función a number
     cuentas_pendientes: number;
+    etiquetas: string[]; // 'camion' y/o 'maquinaria', según lo que tenga el cliente
 }
 
 const transformCuentaData = (data: any): CuentaPorCobrar => ({
@@ -47,13 +48,14 @@ const transformCuentaData = (data: any): CuentaPorCobrar => ({
 });
 
 export const fetchTodosClientesConCuentas = async (): Promise<ResumenCliente[]> => {
-    // 1. Obtener los clientes con sus cuentas
+    // 1. Obtener los clientes con sus cuentas y sus etiquetas (camion/maquinaria)
     const { data: clientesData, error: errorClientes } = await supabase
         .from('clientes')
         .select(`
             id,
             empresa,
             porcentaje_administrativo,
+            etiquetas,
             cuentas_por_cobrar (
                 id,
                 monto
@@ -75,11 +77,25 @@ export const fetchTodosClientesConCuentas = async (): Promise<ResumenCliente[]> 
     // así que no deben seguir contando en lo que el cliente todavía debe.
     const viajesPendientesDeCobro = (viajesData || []).filter(v => v.estatus !== 'pagado');
 
-    // 3. Agrupar el total por cliente, incluyendo flete y material
-    const totalPorCliente = viajesPendientesDeCobro?.reduce((acc, viaje) => {
+    // 3. Agrupar el total de viajes por cliente, incluyendo flete y material
+    const totalViajesPorCliente = viajesPendientesDeCobro?.reduce((acc, viaje) => {
         if (!viaje.id_cliente) return acc;
         const totalViaje = (viaje.caphrsviajes || 0) + (viaje.total_materia || 0);
         acc[viaje.id_cliente] = (acc[viaje.id_cliente] || 0) + totalViaje;
+        return acc;
+    }, {} as Record<number, number>);
+
+    // 3b. Obtener TODAS las rentas de maquinaria y agrupar su total por cliente
+    const rentasData = await fetchAllRows<{ id_cliente: number | null; total: number | null }>(
+        (sb, from, to) =>
+            sb.from('renta_maquinaria')
+              .select('id_cliente, total')
+              .range(from, to)
+    );
+
+    const totalRentasPorCliente = (rentasData || []).reduce((acc, renta) => {
+        if (!renta.id_cliente) return acc;
+        acc[renta.id_cliente] = (acc[renta.id_cliente] || 0) + (renta.total || 0);
         return acc;
     }, {} as Record<number, number>);
 
@@ -88,9 +104,18 @@ export const fetchTodosClientesConCuentas = async (): Promise<ResumenCliente[]> 
         const totalMontoPagado = cliente.cuentas_por_cobrar
             ?.reduce((sum, cuenta) => sum + (cuenta.monto || 0), 0) || 0;
 
-         // Calcular total de deuda con descuento administrativo si aplica
-        let totalHorasViaje = totalPorCliente[cliente.id] || 0;
-        
+        const etiquetas: string[] = cliente.etiquetas || [];
+
+        // Solo se suma lo de viajes si el cliente tiene la etiqueta "camion", y lo de
+        // renta de maquinaria si tiene la etiqueta "maquinaria". Si tiene ambas, se suman.
+        let totalHorasViaje = 0;
+        if (etiquetas.includes('camion')) {
+            totalHorasViaje += totalViajesPorCliente[cliente.id] || 0;
+        }
+        if (etiquetas.includes('maquinaria')) {
+            totalHorasViaje += totalRentasPorCliente[cliente.id] || 0;
+        }
+
         // Aplicar porcentaje administrativo si existe
         if (cliente.porcentaje_administrativo && cliente.porcentaje_administrativo > 0) {
             const porcentajeAdmin = cliente.porcentaje_administrativo / 100;
@@ -103,7 +128,8 @@ export const fetchTodosClientesConCuentas = async (): Promise<ResumenCliente[]> 
             total_adeudado: totalHorasViaje - totalMontoPagado,
             total_horas_viaje: totalHorasViaje,
             total_monto_pagado: totalMontoPagado,
-            cuentas_pendientes: cliente.cuentas_por_cobrar?.length || 0
+            cuentas_pendientes: cliente.cuentas_por_cobrar?.length || 0,
+            etiquetas
         } as ResumenCliente;
     }) || [];
 };
@@ -287,29 +313,45 @@ export const fetchTodosClientesConCuentas = async (): Promise<ResumenCliente[]> 
 
 export const fetchCuentasPorCliente = async (id_cliente: number): Promise<CuentaPorCobrar[]> => {
     try {
-        // 1. Obtener viajes del cliente
-        const { data: viajes, error: errorViajes } = await supabase
-            .from('viajes')
-            .select('id, caphrsviajes, total_materia, estatus')
-            .eq('id_cliente', id_cliente);
-
-        if (errorViajes) throw errorViajes;
-         // 2. Obtener información del cliente (incluyendo porcentaje administrativo)
+        // 1. Obtener información del cliente (etiquetas y porcentaje administrativo)
         const { data: cliente, error: errorCliente } = await supabase
             .from('clientes')
-            .select('porcentaje_administrativo')
+            .select('porcentaje_administrativo, etiquetas')
             .eq('id', id_cliente)
             .single();
 
         if (errorCliente) throw errorCliente;
 
-        // Los viajes ya en estatus "pagado" ya se cobraron, así que no cuentan en la deuda.
-        const viajesPendientesDeCobro = (viajes || []).filter(v => v.estatus !== 'pagado');
+        const etiquetas: string[] = cliente?.etiquetas || [];
 
-        // 3. Calcular total de deuda del cliente, incluyendo flete y material
-        let totalHorasViaje = viajesPendientesDeCobro.reduce((sum, viaje) => sum + (viaje.caphrsviajes || 0) + (viaje.total_materia || 0), 0);
-        
-        // 4. Aplicar porcentaje administrativo si existe
+        // 2. Según la etiqueta del cliente, buscar en viajes (camion) y/o renta_maquinaria (maquinaria)
+        let totalHorasViaje = 0;
+
+        if (etiquetas.includes('camion')) {
+            const { data: viajes, error: errorViajes } = await supabase
+                .from('viajes')
+                .select('id, caphrsviajes, total_materia, estatus')
+                .eq('id_cliente', id_cliente);
+
+            if (errorViajes) throw errorViajes;
+
+            // Los viajes ya en estatus "pagado" ya se cobraron, así que no cuentan en la deuda.
+            const viajesPendientesDeCobro = (viajes || []).filter(v => v.estatus !== 'pagado');
+            totalHorasViaje += viajesPendientesDeCobro.reduce((sum, viaje) => sum + (viaje.caphrsviajes || 0) + (viaje.total_materia || 0), 0);
+        }
+
+        if (etiquetas.includes('maquinaria')) {
+            const { data: rentas, error: errorRentas } = await supabase
+                .from('renta_maquinaria')
+                .select('total')
+                .eq('id_cliente', id_cliente);
+
+            if (errorRentas) throw errorRentas;
+
+            totalHorasViaje += (rentas || []).reduce((sum, renta) => sum + (renta.total || 0), 0);
+        }
+
+        // 3. Aplicar porcentaje administrativo si existe
         if (cliente && cliente.porcentaje_administrativo && cliente.porcentaje_administrativo > 0) {
             const porcentajeAdmin = cliente.porcentaje_administrativo / 100;
             totalHorasViaje = totalHorasViaje * (1 - porcentajeAdmin);

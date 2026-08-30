@@ -3,6 +3,7 @@
 import { supabase } from '@/Services/superbase.service';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
+import { RentaMaquinaria } from './inventario/maquinaria/rentaMaquinariaService';
 
 export interface EstimacionCliente {
   id_cliente: number;
@@ -12,6 +13,7 @@ export interface EstimacionCliente {
   total_viajes: number;
   total_m3: number;
   total_cobrar: number;
+  etiquetas: string[]; // 'camion' y/o 'maquinaria'
 }
 
 export interface ViajeEstimacion {
@@ -137,6 +139,7 @@ export const fetchClientesConViajesUltraRapido = async (): Promise<EstimacionCli
         empresa,
         contacto,
         obra,
+        etiquetas,
         viajes!left(
           id,
           caphrsviajes,
@@ -152,7 +155,7 @@ export const fetchClientesConViajesUltraRapido = async (): Promise<EstimacionCli
     return data.map(cliente => {
       const viajes = cliente.viajes || [];
       const total_viajes = viajes.length;
-      
+
       const total_m3 = viajes.reduce((sum, viaje) => {
         return sum + (viaje.m3?.[0]?.metros_cubicos || 0);
       }, 0);
@@ -166,7 +169,8 @@ export const fetchClientesConViajesUltraRapido = async (): Promise<EstimacionCli
         obra: cliente.obra,
         total_viajes,
         total_m3,
-        total_cobrar
+        total_cobrar,
+        etiquetas: (cliente as any).etiquetas || []
       };
     });
   } catch (error) {
@@ -1558,4 +1562,167 @@ const formatCurrencyForExport = (value: number) => {
     style: 'currency',
     currency: 'MXN'
   }).format(value);
+};
+
+// =============================================
+// EXPORTACIÓN A EXCEL: RENTA DE MAQUINARIA (cliente con etiqueta "maquinaria")
+// =============================================
+export const exportarEstimacionMaquinariaExcel = async (
+  rentas: RentaMaquinaria[],
+  cliente: EstimacionCliente
+): Promise<boolean> => {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Sistema de Estimaciones - Tsa';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Renta de Maquinaria');
+
+    // 1. ENCABEZADO DE LA EMPRESA
+    const row1 = worksheet.getRow(1);
+    row1.getCell(2).value = 'TRANSPORTES, TERRACERÍAS Y AGREGADOS';
+    row1.getCell(2).font = { bold: true, size: 14, color: { argb: 'FF0000' } };
+    row1.getCell(2).alignment = { horizontal: 'center' };
+    worksheet.mergeCells(1, 2, 1, 8);
+
+    const row2 = worksheet.getRow(2);
+    row2.getCell(2).value = 'FC S.A. DE C.V.';
+    row2.getCell(2).font = { bold: true, size: 12, color: { argb: 'FF0000' } };
+    row2.getCell(2).alignment = { horizontal: 'center' };
+    worksheet.mergeCells(2, 2, 2, 8);
+
+    // 2. INFORMACIÓN DE LA ESTIMACIÓN
+    const infoStartRow = 4;
+    const rowCliente = worksheet.getRow(infoStartRow);
+    rowCliente.getCell(1).value = 'CLIENTE:';
+    rowCliente.getCell(1).font = { bold: true };
+    rowCliente.getCell(2).value = cliente.cliente_nombre;
+    worksheet.mergeCells(infoStartRow, 2, infoStartRow, 4);
+    rowCliente.getCell(5).value = 'FECHA:';
+    rowCliente.getCell(5).font = { bold: true };
+    rowCliente.getCell(6).value = new Date().toLocaleDateString('es-MX');
+    worksheet.mergeCells(infoStartRow, 6, infoStartRow, 8);
+
+    const rowObra = worksheet.getRow(infoStartRow + 1);
+    rowObra.getCell(1).value = 'OBRA:';
+    rowObra.getCell(1).font = { bold: true };
+    rowObra.getCell(2).value = cliente.obra || 'No especificada';
+    worksheet.mergeCells(infoStartRow + 1, 2, infoStartRow + 1, 4);
+    rowObra.getCell(5).value = 'RESPONSABLE:';
+    rowObra.getCell(5).font = { bold: true };
+    rowObra.getCell(6).value = cliente.contacto || 'No especificado';
+    worksheet.mergeCells(infoStartRow + 1, 6, infoStartRow + 1, 8);
+
+    // 3. TABLA DE DETALLE
+    const tableStartRow = infoStartRow + 3;
+    const headers = ['Fecha', 'Estimación', 'Folio', 'Máquina', 'Operador', 'Hrs', 'Precio', 'Total', 'Observaciones'];
+    const headersRow = worksheet.getRow(tableStartRow);
+    headers.forEach((header, index) => {
+      const cell = headersRow.getCell(index + 1);
+      cell.value = header;
+      cell.font = { bold: true, size: 11 };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E6F3FF' } };
+    });
+
+    rentas.forEach((renta, index) => {
+      const row = worksheet.getRow(tableStartRow + index + 1);
+      row.getCell(1).value = renta.fecha ? new Date(renta.fecha).toLocaleDateString('es-MX') : '';
+      row.getCell(2).value = renta.estimacion || '';
+      row.getCell(3).value = renta.folio || '';
+      row.getCell(4).value = renta.maquina_nombre || '';
+      row.getCell(5).value = renta.operador_nombre || '';
+      row.getCell(6).value = renta.hrs ?? 0;
+      row.getCell(6).numFmt = '#,##0.00';
+      row.getCell(7).value = renta.precio ?? 0;
+      row.getCell(7).numFmt = '"$"#,##0.00';
+      row.getCell(8).value = renta.total ?? 0;
+      row.getCell(8).numFmt = '"$"#,##0.00';
+      row.getCell(9).value = renta.observaciones || '';
+    });
+
+    const totalHrs = rentas.reduce((sum, r) => sum + (r.hrs || 0), 0);
+    const totalCobrar = rentas.reduce((sum, r) => sum + (r.total || 0), 0);
+    const iva = totalCobrar * 0.16;
+    const totalConIva = totalCobrar + iva;
+
+    const totalRowIndex = tableStartRow + rentas.length + 1;
+    const totalRow = worksheet.getRow(totalRowIndex);
+    totalRow.getCell(1).value = 'TOTALES';
+    totalRow.getCell(1).font = { bold: true };
+    totalRow.getCell(6).value = totalHrs;
+    totalRow.getCell(6).numFmt = '#,##0.00';
+    totalRow.getCell(6).font = { bold: true };
+    totalRow.getCell(8).value = totalCobrar;
+    totalRow.getCell(8).numFmt = '"$"#,##0.00';
+    totalRow.getCell(8).font = { bold: true };
+
+    const subRow = worksheet.getRow(totalRowIndex + 2);
+    subRow.getCell(7).value = 'SUB TOTAL';
+    subRow.getCell(7).font = { bold: true };
+    subRow.getCell(7).alignment = { horizontal: 'right' };
+    subRow.getCell(8).value = totalCobrar;
+    subRow.getCell(8).numFmt = '"$"#,##0.00';
+    subRow.getCell(8).font = { bold: true };
+
+    const ivaRow = worksheet.getRow(totalRowIndex + 3);
+    ivaRow.getCell(7).value = 'IVA 16%';
+    ivaRow.getCell(7).font = { bold: true };
+    ivaRow.getCell(7).alignment = { horizontal: 'right' };
+    ivaRow.getCell(8).value = iva;
+    ivaRow.getCell(8).numFmt = '"$"#,##0.00';
+    ivaRow.getCell(8).font = { bold: true };
+
+    const totalFinalRow = worksheet.getRow(totalRowIndex + 4);
+    totalFinalRow.getCell(7).value = 'TOTAL';
+    totalFinalRow.getCell(7).font = { bold: true, size: 12 };
+    totalFinalRow.getCell(7).alignment = { horizontal: 'right' };
+    totalFinalRow.getCell(8).value = totalConIva;
+    totalFinalRow.getCell(8).numFmt = '"$"#,##0.00';
+    totalFinalRow.getCell(8).font = { bold: true, size: 12 };
+
+    // Bordes de la tabla (encabezados + datos + fila de totales)
+    for (let row = tableStartRow; row <= totalRowIndex; row++) {
+      const worksheetRow = worksheet.getRow(row);
+      for (let col = 1; col <= 9; col++) {
+        worksheetRow.getCell(col).border = {
+          top: { style: 'thin', color: { argb: '000000' } },
+          left: { style: 'thin', color: { argb: '000000' } },
+          bottom: { style: 'thin', color: { argb: '000000' } },
+          right: { style: 'thin', color: { argb: '000000' } }
+        };
+      }
+    }
+
+    worksheet.columns = [
+      { width: 12 }, // Fecha
+      { width: 14 }, // Estimación
+      { width: 14 }, // Folio
+      { width: 22 }, // Máquina
+      { width: 20 }, // Operador
+      { width: 10 }, // Hrs
+      { width: 14 }, // Precio
+      { width: 15 }, // Total
+      { width: 30 }  // Observaciones
+    ];
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Estimacion_Maquinaria_${cliente.cliente_nombre.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    return true;
+  } catch (error) {
+    console.error('Error al exportar estimación de maquinaria a Excel:', error);
+    throw error;
+  }
 };

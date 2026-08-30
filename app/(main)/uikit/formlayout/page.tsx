@@ -3,13 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from 'primereact/button';
 import ViajesModule from './viajes';
-import GastosModule from './gastos';
-import CajaNegraModule from './cajanegra';
+// import GastosModule from './gastos';
 import OrigenDestino from './PrecioOriengenDestino';
 import ClientesCrud from './clientes';
 import OperadoresCrud from './operador';
 import InvitadosCrud from './invitados';
-import ProvedoresCrud from './provedores';
 import MaterialCrud from './material';
 
 import { useSearchParams } from 'next/navigation';
@@ -29,18 +27,14 @@ const TableModule = () => {
         switch (activeModule) {
             case 'Viajes':
                 return <ViajesModule />;
-            case 'Gastos':
-                return <GastosModule />;
-            case 'Caja Negra':
-                return <CajaNegraModule />;
+            // case 'Gastos':
+            //     return <GastosModule />;
             case 'Precio Origen - Destino':
                 return <OrigenDestino />;
             case 'Clientes':
                 return <ClientesCrud />;
             // case 'Operadores':
             //     return <OperadoresCrud />;
-            case 'Provedores':
-                return <ProvedoresCrud />;
             case 'Material':
                 return <MaterialCrud />;
             case 'Invitados':
@@ -64,18 +58,12 @@ const TableModule = () => {
                                 >
                                     Camion
                                 </div>
-                                <div
+                                {/* <div
                                     className={`menu-item ${activeModule === 'Gastos' ? 'active' : ''}`}
                                     onClick={() => setActiveModule('Gastos')}
                                 >
                                     Gastos
-                                </div>
-                                <div
-                                    className={`menu-item ${activeModule === 'Caja Negra' ? 'active' : ''}`}
-                                    onClick={() => setActiveModule('Caja Negra')}
-                                >
-                                    Caja Chica
-                                </div>
+                                </div> */}
                                 <div
                                     className={`menu-item ${activeModule === 'Precio Origen - Destino' ? 'active' : ''}`}
                                     onClick={() => setActiveModule('Precio Origen - Destino')}
@@ -94,12 +82,6 @@ const TableModule = () => {
                                 >
                                     Operadores
                                 </div> */}
-                                <div
-                                    className={`menu-item ${activeModule === 'Provedores' ? 'active' : ''}`}
-                                    onClick={() => setActiveModule('Provedores')}
-                                >
-                                    Provedores
-                                </div>
                                 <div
                                     className={`menu-item ${activeModule === 'Material' ? 'active' : ''}`}
                                     onClick={() => setActiveModule('Material')}

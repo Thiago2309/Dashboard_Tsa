@@ -8,13 +8,15 @@ import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
 import { Dropdown } from 'primereact/dropdown';
 import { RadioButton } from 'primereact/radiobutton';
+import { MultiSelect } from 'primereact/multiselect';
+import { Tag } from 'primereact/tag';
 import React, { useEffect, useRef, useState } from 'react';
-import { 
-    fetchInvitados, 
-    createInvitado, 
-    updateInvitado, 
-    deleteInvitado, 
-    Invitado 
+import {
+    fetchInvitados,
+    createInvitado,
+    updateInvitado,
+    deleteInvitado,
+    Invitado
 } from '../../../../Services/BD/invitadosService';
 
 const InvitadosCrud = () => {
@@ -31,6 +33,7 @@ const InvitadosCrud = () => {
         obra: '',
         porcentaje_participacion: 0,
         estatus: 1,
+        etiquetas: [],
     };
 
     const [invitados, setInvitados] = useState<Invitado[]>([]);
@@ -57,6 +60,11 @@ const InvitadosCrud = () => {
     const usosCFDI = [
         { label: 'G01 - Adquisición de mercancías', value: 'G01' },
         { label: 'G03 - Gastos en general', value: 'G03' },
+    ];
+
+    const etiquetasOptions = [
+        { label: 'Camión', value: 'camion' },
+        { label: 'Maquinaria', value: 'maquinaria' }
     ];
 
     useEffect(() => {
@@ -103,7 +111,8 @@ const InvitadosCrud = () => {
                 }
                 setInvitadoDialog(false);
                 setInvitado(emptyInvitado);
-                fetchInvitados().then(setInvitados);
+                // No se vuelve a pedir fetchInvitados() aquí: create/updateInvitado ya
+                // devuelven el registro completo (incluye etiquetas).
             } catch (error) {
                 toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Error al guardar invitado', life: 3000 });
             }
@@ -212,6 +221,17 @@ const InvitadosCrud = () => {
         return <span>{rowData.porcentaje_participacion ? `${rowData.porcentaje_participacion}%` : '0%'}</span>;
     };
 
+    const etiquetasBodyTemplate = (rowData: Invitado) => {
+        if (!rowData.etiquetas || rowData.etiquetas.length === 0) return <span>-</span>;
+        return (
+            <div className="flex gap-1 flex-wrap">
+                {rowData.etiquetas.map(etiqueta => (
+                    <Tag key={etiqueta} value={etiqueta === 'camion' ? 'Camión' : 'Maquinaria'} severity={etiqueta === 'camion' ? 'info' : 'warning'} />
+                ))}
+            </div>
+        );
+    };
+
     const estatusBodyTemplate = (rowData: Invitado) => {
         return (
             <span className={`p-tag ${rowData.estatus === 1 ? 'p-tag-success' : 'p-tag-danger'}`}>
@@ -286,6 +306,7 @@ const InvitadosCrud = () => {
                     >
                         <Column selectionMode="multiple" headerStyle={{ width: '3rem' }}></Column>
                         <Column field="empresa" header="Empresa" sortable body={empresaBodyTemplate}></Column>
+                        <Column field="etiquetas" header="Etiqueta" body={etiquetasBodyTemplate} style={{ minWidth: '150px' }}></Column>
                         <Column field="contacto" header="Contacto" sortable body={contactoBodyTemplate}></Column>
                         <Column field="telefono" header="Teléfono" sortable body={telefonoBodyTemplate}></Column>
                         <Column field="direccion" header="Dirección" sortable body={direccionBodyTemplate}></Column>
@@ -419,6 +440,19 @@ const InvitadosCrud = () => {
                                 value={invitado.obra || ''}
                                 onChange={(e) => setInvitado({ ...invitado, obra: e.target.value })}
                             />
+                        </div>
+
+                        <div className="field">
+                            <label htmlFor="etiquetas">Etiqueta</label>
+                            <MultiSelect
+                                id="etiquetas"
+                                value={invitado.etiquetas || []}
+                                options={etiquetasOptions}
+                                onChange={(e) => setInvitado({ ...invitado, etiquetas: e.value })}
+                                placeholder="Selecciona camión y/o maquinaria"
+                                display="chip"
+                            />
+                            <small>Determina si el invitado se relaciona con Viajes (Camión), Renta de Maquinaria, o ambos.</small>
                         </div>
 
                         <div className="field">
