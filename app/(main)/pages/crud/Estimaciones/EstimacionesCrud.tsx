@@ -15,12 +15,14 @@ import { Dialog } from 'primereact/dialog';
 import { PickList } from 'primereact/picklist';
 import { Checkbox } from 'primereact/checkbox';
 import { RadioButton } from 'primereact/radiobutton';
+import { SelectButton } from 'primereact/selectbutton';
 import { FileUpload, FileUploadHandlerEvent } from 'primereact/fileupload';
 import * as XLSX from 'xlsx';
 import {
   fetchClientesConViajesUltraRapido as fetchClientesConViajes,
   fetchViajesConFiltrosOptimizado as fetchViajesConFiltros,
   exportarEstimacionExcel,
+  exportarEstimacionMaquinariaExcel,
   fetchOpcionesFiltros,
   fetchConfiguracionesExportacion,
   guardarConfiguracionExportacion,
@@ -33,6 +35,31 @@ import {
   ConfiguracionExportacion
 } from '../../../../../Services/BD/estimacionesService';
 import { updateViajesEstatusBulk, fetchViajesPorIdentificadores, ViajeIdentificado, EstatusViaje } from '../../../../../Services/BD/viajeService';
+import { fetchRentaMaquinariaPorCliente, RentaMaquinaria } from '../../../../../Services/BD/inventario/maquinaria/rentaMaquinariaService';
+
+type TipoEstimacion = 'camion' | 'maquinaria';
+
+const OPCIONES_TIPO_ESTIMACION: { label: string; value: TipoEstimacion }[] = [
+  { label: 'Camión', value: 'camion' },
+  { label: 'Maquinaria', value: 'maquinaria' }
+];
+
+// Clientes sin etiqueta asignada se tratan como "camion" para no romper el comportamiento previo.
+const tiposDisponiblesCliente = (cliente: EstimacionCliente): TipoEstimacion[] => {
+  const tags = (cliente.etiquetas || []) as TipoEstimacion[];
+  return tags.length > 0 ? tags : ['camion'];
+};
+
+const etiquetasBodyEstimacion = (etiquetas: string[] | undefined) => {
+  if (!etiquetas || etiquetas.length === 0) return <span>-</span>;
+  return (
+    <div className="flex gap-1 flex-wrap">
+      {etiquetas.map(etiqueta => (
+        <Tag key={etiqueta} value={etiqueta === 'camion' ? 'Camión' : 'Maquinaria'} severity={etiqueta === 'camion' ? 'info' : 'warning'} />
+      ))}
+    </div>
+  );
+};
 
 type ColumnaExportacion = { key: string; label: string };
 
@@ -89,10 +116,12 @@ const ESTATUS_SEVERIDAD: Record<string, 'info' | 'warning' | 'success' | 'danger
 };
 
 const EstimacionesCrud = () => { 
-  const [clientes, setClientes] = useState<EstimacionCliente[]>([]); 
-  const [clienteSeleccionado, setClienteSeleccionado] = useState<EstimacionCliente | null>(null); 
+  const [clientes, setClientes] = useState<EstimacionCliente[]>([]);
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<EstimacionCliente | null>(null);
   const [viajesFiltrados, setViajesFiltrados] = useState<ViajeEstimacion[]>([]);
   const [viajesSeleccionados, setViajesSeleccionados] = useState<ViajeEstimacion[]>([]);
+  const [tipoVista, setTipoVista] = useState<TipoEstimacion>('camion');
+  const [rentasFiltradas, setRentasFiltradas] = useState<RentaMaquinaria[]>([]);
   const [cambiarEstatusDialog, setCambiarEstatusDialog] = useState(false);
   const [nuevoEstatus, setNuevoEstatus] = useState<EstatusViaje | null>(null);
   const [guardandoEstatus, setGuardandoEstatus] = useState(false);
@@ -252,6 +281,35 @@ const EstimacionesCrud = () => {
     }
   };
 
+  // Filtra las rentas de maquinaria localmente (fecha y operador), ya que renta_maquinaria
+  // no tiene material/origen/destino/estatus como los viajes.
+  const filtrarRentasLocal = (rentas: RentaMaquinaria[], f: FiltrosEstimacion): RentaMaquinaria[] => {
+    return rentas.filter(r => {
+      if (f.fechaInicio) {
+        const inicioStr = f.fechaInicio.toISOString().split('T')[0];
+        if ((r.fecha || '').split('T')[0] < inicioStr) return false;
+      }
+      if (f.fechaFin) {
+        const finStr = f.fechaFin.toISOString().split('T')[0];
+        if ((r.fecha || '').split('T')[0] > finStr) return false;
+      }
+      if (f.operador && !(r.operador_nombre || '').toLowerCase().includes(f.operador.toLowerCase())) return false;
+      return true;
+    });
+  };
+
+  const cargarRentasCliente = async (cliente: EstimacionCliente) => {
+    setLoading(prev => ({...prev, viajes: true}));
+    try {
+      const rentas = await fetchRentaMaquinariaPorCliente(cliente.id_cliente);
+      setRentasFiltradas(rentas);
+    } catch (error) {
+      mostrarError(`Error al cargar rentas de maquinaria de ${cliente.cliente_nombre}`);
+    } finally {
+      setLoading(prev => ({...prev, viajes: false}));
+    }
+  };
+
   const aplicarFiltros = async () => {
     if (!clienteSeleccionado) {
       mostrarError('Selecciona un cliente primero');
@@ -260,13 +318,20 @@ const EstimacionesCrud = () => {
 
     setLoading(prev => ({...prev, viajes: true}));
     try {
-      const viajes = await fetchViajesConFiltros({
-        ...filtros,
-        clienteId: clienteSeleccionado.id_cliente
-      });
-      setViajesFiltrados(viajes);
+      if (tipoVista === 'camion') {
+        const viajes = await fetchViajesConFiltros({
+          ...filtros,
+          clienteId: clienteSeleccionado.id_cliente
+        });
+        setViajesFiltrados(viajes);
+        mostrarExito(`Filtros aplicados: ${viajes.length} viajes encontrados`);
+      } else {
+        const todas = await fetchRentaMaquinariaPorCliente(clienteSeleccionado.id_cliente);
+        const filtradas = filtrarRentasLocal(todas, filtros);
+        setRentasFiltradas(filtradas);
+        mostrarExito(`Filtros aplicados: ${filtradas.length} renta(s) de maquinaria encontradas`);
+      }
       setShowFiltros(false);
-      mostrarExito(`Filtros aplicados: ${viajes.length} viajes encontrados`);
     } catch (error) {
       mostrarError('Error al aplicar filtros');
     } finally {
@@ -286,10 +351,14 @@ const EstimacionesCrud = () => {
       estatus: null
     });
     if (clienteSeleccionado) {
-      // Recargar todos los viajes del cliente
-      cargarViajesCliente(clienteSeleccionado);
+      if (tipoVista === 'camion') {
+        cargarViajesCliente(clienteSeleccionado);
+      } else {
+        cargarRentasCliente(clienteSeleccionado);
+      }
     } else {
       setViajesFiltrados([]);
+      setRentasFiltradas([]);
     }
     mostrarExito('Filtros limpiados');
   };
@@ -309,7 +378,7 @@ const EstimacionesCrud = () => {
       });
       setViajesFiltrados(viajes);
     } catch (error) {
-      mostrarError(`Error al cargar viajes de ${cliente.cliente_nombre}`); 
+      mostrarError(`Error al cargar viajes de ${cliente.cliente_nombre}`);
     } finally {
       setLoading(prev => ({...prev, viajes: false}));
     }
@@ -319,13 +388,33 @@ const EstimacionesCrud = () => {
     if (clienteSeleccionado?.id_cliente === cliente.id_cliente) {
       setClienteSeleccionado(null);
       setViajesFiltrados([]);
+      setRentasFiltradas([]);
       setViajesSeleccionados([]);
       return;
     }
 
     setClienteSeleccionado(cliente);
     setViajesSeleccionados([]);
-    await cargarViajesCliente(cliente);
+    const tipos = tiposDisponiblesCliente(cliente);
+    const tipoInicial: TipoEstimacion = tipos.includes('camion') ? 'camion' : tipos[0];
+    setTipoVista(tipoInicial);
+    if (tipoInicial === 'camion') {
+      await cargarViajesCliente(cliente);
+    } else {
+      await cargarRentasCliente(cliente);
+    }
+  };
+
+  // Cambia entre la vista de Camión y Maquinaria para el cliente ya seleccionado
+  const cambiarTipoVista = async (tipo: TipoEstimacion) => {
+    if (!clienteSeleccionado || tipo === tipoVista) return;
+    setTipoVista(tipo);
+    setViajesSeleccionados([]);
+    if (tipo === 'camion') {
+      await cargarViajesCliente(clienteSeleccionado);
+    } else {
+      await cargarRentasCliente(clienteSeleccionado);
+    }
   };
 
   const abrirCambiarEstatus = () => {
@@ -506,9 +595,34 @@ const EstimacionesCrud = () => {
     return `${day}-${month}-${year}`; 
   }; 
 
-  // Función para exportar a Excel
+  // Función para exportar a Excel (rama según tipoVista: Camión usa el flujo existente
+  // con hojas/columnas personalizables; Maquinaria usa una hoja estándar más simple).
   const exportarAExcel = async () => {
-    if (!clienteSeleccionado || viajesFiltrados.length === 0) {
+    if (!clienteSeleccionado) {
+      mostrarError('No hay datos para exportar');
+      return;
+    }
+
+    if (tipoVista === 'maquinaria') {
+      if (rentasFiltradas.length === 0) {
+        mostrarError('No hay datos para exportar');
+        return;
+      }
+      setLoading(prev => ({...prev, viajes: true}));
+      try {
+        await exportarEstimacionMaquinariaExcel(rentasFiltradas, clienteSeleccionado);
+        mostrarExito('Estimación de maquinaria exportada a Excel correctamente');
+        setExportDialog(false);
+      } catch (error) {
+        console.error('Error al exportar:', error);
+        mostrarError('Error al exportar la estimación a Excel');
+      } finally {
+        setLoading(prev => ({...prev, viajes: false}));
+      }
+      return;
+    }
+
+    if (viajesFiltrados.length === 0) {
       mostrarError('No hay datos para exportar');
       return;
     }
@@ -525,7 +639,7 @@ const EstimacionesCrud = () => {
     try {
       // Intenta cargar el logo (opcional)
       let logoBase64: string | undefined;
-      
+
       try {
         // Ruta relativa desde public - ASÍ ES CORRECTO:
         logoBase64 = await convertirImagenABase64('/img/Logo.png');
@@ -534,7 +648,7 @@ const EstimacionesCrud = () => {
         console.warn('No se pudo cargar el logo, exportando sin él:', logoError);
         // Continuar sin logo
       }
-      
+
       await exportarEstimacionExcel(
         viajesFiltrados,
         clienteSeleccionado,
@@ -547,7 +661,7 @@ const EstimacionesCrud = () => {
           incluirResumenPorMaterial
         }
       );
-      
+
       mostrarExito('Estimación exportada a Excel correctamente');
       setExportDialog(false);
     } catch (error) {
@@ -589,11 +703,16 @@ const EstimacionesCrud = () => {
     }
   };
 
-  // Calcular totales
+  // Calcular totales (Camión)
   const totalViajes = viajesFiltrados.length;
   const totalM3 = viajesFiltrados.reduce((sum, viaje) => sum + viaje.m3, 0);
   const totalCobrar = viajesFiltrados.reduce((sum, viaje) => sum + viaje.total_viaje, 0);
   const totalHorasRenta = viajesFiltrados.reduce((sum, viaje) => sum + (viaje.horas_renta || 0), 0);
+
+  // Calcular totales (Maquinaria)
+  const totalRentas = rentasFiltradas.length;
+  const totalHrsMaquinaria = rentasFiltradas.reduce((sum, r) => sum + (r.hrs || 0), 0);
+  const totalCobrarMaquinaria = rentasFiltradas.reduce((sum, r) => sum + (r.total || 0), 0);
 
   return ( 
     <div className="grid"> 
@@ -631,16 +750,20 @@ const EstimacionesCrud = () => {
               rowsPerPageOptions={[5, 10, 25]}
               showGridlines
             >
-              <Column 
-                field="cliente_nombre" 
-                header="Cliente" 
+              <Column
+                field="cliente_nombre"
+                header="Cliente"
                 body={(row) => (
                   <span className="font-medium">{row.cliente_nombre}</span>
                 )}
               />
-              <Column 
-                field="total_viajes" 
-                header="Total Viajes" 
+              <Column
+                header="Etiqueta"
+                body={(row: EstimacionCliente) => etiquetasBodyEstimacion(row.etiquetas)}
+              />
+              <Column
+                field="total_viajes"
+                header="Total Viajes"
               />
               <Column 
                 field="total_m3" 
@@ -661,46 +784,63 @@ const EstimacionesCrud = () => {
 
             {clienteSeleccionado && ( 
               <div className="mt-5"> 
-                <Card 
-                  title={`Estimación - ${clienteSeleccionado.cliente_nombre}`} 
+                <Card
+                  title={`Estimación - ${clienteSeleccionado.cliente_nombre}`}
                   subTitle={
-                    <div className="flex justify-content-between align-items-center">
-                      <span>
-                        Fecha de estimación: {new Date().toLocaleDateString('es-MX')}
-                      </span>
-                      <div className="flex gap-2">
-                        <Button
-                          icon="pi pi-filter"
-                          label="Filtrar"
-                          className="p-button-outlined"
-                          onClick={() => setShowFiltros(true)}
-                          disabled={loading.viajes}
-                        />
-                        <Button
-                          icon="pi pi-flag"
-                          label="Cambiar Estatus"
-                          className="p-button-outlined p-button-warning"
-                          onClick={abrirCambiarEstatus}
-                          disabled={viajesSeleccionados.length === 0 || loading.viajes}
-                        />
-                        <Button
-                          icon="pi pi-upload"
-                          label="Subir Excel"
-                          className="p-button-outlined"
-                          onClick={abrirSubirExcel}
-                          disabled={loading.viajes}
-                        />
-                        <Button
-                          icon="pi pi-download"
-                          label="Exportar Excel"
-                          className="p-button-success"
-                          onClick={abrirDialogoExportacion}
-                          disabled={viajesFiltrados.length === 0 || loading.viajes}
-                        />
+                    <div className="flex flex-column gap-2">
+                      <div className="flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div className="flex align-items-center gap-3">
+                          <span>
+                            Fecha de estimación: {new Date().toLocaleDateString('es-MX')}
+                          </span>
+                          {etiquetasBodyEstimacion(clienteSeleccionado.etiquetas)}
+                          {tiposDisponiblesCliente(clienteSeleccionado).length > 1 && (
+                            <SelectButton
+                              value={tipoVista}
+                              onChange={(e) => { if (e.value) cambiarTipoVista(e.value); }}
+                              options={OPCIONES_TIPO_ESTIMACION}
+                              disabled={loading.viajes}
+                            />
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            icon="pi pi-filter"
+                            label="Filtrar"
+                            className="p-button-outlined"
+                            onClick={() => setShowFiltros(true)}
+                            disabled={loading.viajes}
+                          />
+                          {tipoVista === 'camion' && (
+                            <>
+                              <Button
+                                icon="pi pi-flag"
+                                label="Cambiar Estatus"
+                                className="p-button-outlined p-button-warning"
+                                onClick={abrirCambiarEstatus}
+                                disabled={viajesSeleccionados.length === 0 || loading.viajes}
+                              />
+                              <Button
+                                icon="pi pi-upload"
+                                label="Subir Excel"
+                                className="p-button-outlined"
+                                onClick={abrirSubirExcel}
+                                disabled={loading.viajes}
+                              />
+                            </>
+                          )}
+                          <Button
+                            icon="pi pi-download"
+                            label="Exportar Excel"
+                            className="p-button-success"
+                            onClick={abrirDialogoExportacion}
+                            disabled={(tipoVista === 'camion' ? viajesFiltrados.length === 0 : rentasFiltradas.length === 0) || loading.viajes}
+                          />
+                        </div>
                       </div>
                     </div>
                   }
-                > 
+                >
                   {/* Información del cliente */}
                   <div className="grid mb-4">
                     <div className="col-12 md:col-4">
@@ -710,7 +850,7 @@ const EstimacionesCrud = () => {
                       <strong>Responsable:</strong> {clienteSeleccionado.contacto || 'No especificado'}
                     </div>
                     <div className="col-12 md:col-4">
-                      <strong>Total Viajes:</strong> {totalViajes}
+                      <strong>{tipoVista === 'camion' ? 'Total Viajes:' : 'Total Rentas:'}</strong> {tipoVista === 'camion' ? totalViajes : totalRentas}
                     </div>
                   </div>
 
@@ -719,8 +859,8 @@ const EstimacionesCrud = () => {
                     <div className="col-12 md:col-6">
                       <Card className="bg-blue-50">
                         <div className="flex justify-content-between">
-                          <span>Total M3:</span>
-                          <strong>{totalM3.toFixed(2)} m³</strong>
+                          <span>{tipoVista === 'camion' ? 'Total M3:' : 'Total Hrs:'}</span>
+                          <strong>{tipoVista === 'camion' ? `${totalM3.toFixed(2)} m³` : `${totalHrsMaquinaria.toFixed(2)} hrs`}</strong>
                         </div>
                       </Card>
                     </div>
@@ -728,24 +868,24 @@ const EstimacionesCrud = () => {
                       <Card className="bg-green-50">
                         <div className="flex justify-content-between">
                           <span>Total a Cobrar:</span>
-                          <strong>{formatCurrency(totalCobrar)}</strong>
+                          <strong>{formatCurrency(tipoVista === 'camion' ? totalCobrar : totalCobrarMaquinaria)}</strong>
                         </div>
                       </Card>
                     </div>
                   </div>
 
-                  {loading.viajes ? ( 
-                    <div className="flex justify-content-center"> 
-                      <ProgressSpinner /> 
-                    </div> 
-                  ) : ( 
-                    <DataTable 
-                      value={viajesFiltrados} 
+                  {loading.viajes ? (
+                    <div className="flex justify-content-center">
+                      <ProgressSpinner />
+                    </div>
+                  ) : tipoVista === 'camion' ? (
+                    <DataTable
+                      value={viajesFiltrados}
                       paginator
                       rows={10}
                       rowsPerPageOptions={[5, 10, 25, 50]}
-                      emptyMessage="No se encontraron viajes con los filtros aplicados" 
-                      className="p-datatable-sm" 
+                      emptyMessage="No se encontraron viajes con los filtros aplicados"
+                      className="p-datatable-sm"
                       showGridlines
                       selectionMode="multiple"
                       selection={viajesSeleccionados}
@@ -754,15 +894,15 @@ const EstimacionesCrud = () => {
                     >
                       <Column selectionMode="multiple" headerStyle={{ width: '3rem' }} />
                       <Column field="numero_viaje" header="No. Viaje" style={{ width: '80px' }} />
-                      <Column field="fecha" header="Fecha" body={fechaBodyTemplate} style={{ width: '120px' }} /> 
-                      <Column field="folio" header="Folio" style={{ width: '120px' }} /> 
-                      <Column field="folio_bco" header="Folio BCO" style={{ width: '90px' }} /> 
-                      <Column field="origen" header="Origen" /> 
-                      <Column field="destino" header="Destino" /> 
-                      <Column field="material" header="Material" /> 
+                      <Column field="fecha" header="Fecha" body={fechaBodyTemplate} style={{ width: '120px' }} />
+                      <Column field="folio" header="Folio" style={{ width: '120px' }} />
+                      <Column field="folio_bco" header="Folio BCO" style={{ width: '90px' }} />
+                      <Column field="origen" header="Origen" />
+                      <Column field="destino" header="Destino" />
+                      <Column field="material" header="Material" />
                       <Column field="operador" header="Operador" />
                       <Column field="total_horas_renta" header="Hrs Renta" body={() => totalHorasRenta} />
-                      <Column field="m3" header="M3" body={(row) => row.m3.toFixed(2)} style={{ width: '100px' }} /> 
+                      <Column field="m3" header="M3" body={(row) => row.m3.toFixed(2)} style={{ width: '100px' }} />
                       <Column field="precio" header="Precio Unitario" body={(row) => formatCurrency(row.precio)} style={{ width: '130px' }} />
                       <Column
                         field="estatus"
@@ -774,28 +914,67 @@ const EstimacionesCrud = () => {
                       />
                       <Column
                         field="total_viaje"
-                        header="Total Viaje" 
+                        header="Total Viaje"
                         body={(row) => (
                           <strong className="text-green-600">{formatCurrency(row.total_viaje)}</strong>
-                        )} 
+                        )}
                         style={{ width: '130px' }}
-                      /> 
+                      />
                     </DataTable>
-                  )} 
-                </Card> 
+                  ) : (
+                    <DataTable
+                      value={rentasFiltradas}
+                      paginator
+                      rows={10}
+                      rowsPerPageOptions={[5, 10, 25, 50]}
+                      emptyMessage="No se encontraron rentas de maquinaria con los filtros aplicados"
+                      className="p-datatable-sm"
+                      showGridlines
+                      dataKey="id"
+                    >
+                      <Column field="fecha" header="Fecha" body={(row: RentaMaquinaria) => (row.fecha ? row.fecha.split('T')[0].split('-').reverse().join('-') : '-')} style={{ width: '110px' }} />
+                      <Column field="estimacion" header="Estimación" body={(row: RentaMaquinaria) => row.estimacion || '-'} style={{ width: '120px' }} />
+                      <Column field="folio" header="Folio" body={(row: RentaMaquinaria) => row.folio || '-'} style={{ width: '110px' }} />
+                      <Column field="maquina_nombre" header="Máquina" body={(row: RentaMaquinaria) => row.maquina_nombre || '-'} />
+                      <Column field="operador_nombre" header="Operador" body={(row: RentaMaquinaria) => row.operador_nombre || '-'} />
+                      <Column field="hrs" header="Hrs" body={(row: RentaMaquinaria) => (row.hrs != null ? row.hrs.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '-')} style={{ width: '100px' }} />
+                      <Column field="precio" header="Precio" body={(row: RentaMaquinaria) => formatCurrency(row.precio || 0)} style={{ width: '130px' }} />
+                      <Column
+                        field="total"
+                        header="Total"
+                        body={(row: RentaMaquinaria) => (
+                          <strong className="text-green-600">{formatCurrency(row.total || 0)}</strong>
+                        )}
+                        style={{ width: '130px' }}
+                      />
+                      <Column field="observaciones" header="Observaciones" body={(row: RentaMaquinaria) => row.observaciones || '-'} />
+                    </DataTable>
+                  )}
+                </Card>
               </div> 
             )} 
           </>
         )} 
 
         {/* Diálogo de Filtros */}
-        <Dialog 
-          visible={showFiltros} 
-          onHide={() => setShowFiltros(false)} 
-          header="Filtrar Viajes" 
+        <Dialog
+          visible={showFiltros}
+          onHide={() => setShowFiltros(false)}
+          header={tipoVista === 'camion' ? 'Filtrar Viajes' : 'Filtrar Rentas de Maquinaria'}
           style={{ width: '500px' }}
         >
           <div className="p-fluid">
+            {clienteSeleccionado && tiposDisponiblesCliente(clienteSeleccionado).length > 1 && (
+              <div className="field">
+                <label>Tipo</label>
+                <SelectButton
+                  value={tipoVista}
+                  onChange={(e) => { if (e.value) setTipoVista(e.value); }}
+                  options={OPCIONES_TIPO_ESTIMACION}
+                />
+              </div>
+            )}
+
             <div className="field">
               <label>Rango de Fechas</label>
               <div className="flex gap-2">
@@ -830,51 +1009,55 @@ const EstimacionesCrud = () => {
               />
             </div>
             
-            <div className="field">
-              <label>Material</label>
-              <Dropdown 
-                value={filtros.material} 
-                onChange={(e) => setFiltros({...filtros, material: e.value})}
-                options={opcionesFiltros.materiales}
-                placeholder="Seleccionar material"
-                showClear
-                filter
-              />
-            </div>
-            <div className="field">
-              <label>Origen</label>
-              <Dropdown 
-                value={filtros.origen} 
-                onChange={(e) => setFiltros({...filtros, origen: e.value})}
-                options={opcionesFiltros.origenes}
-                placeholder="Seleccionar origen"
-                showClear
-                filter
-              />
-            </div>
+            {tipoVista === 'camion' && (
+              <>
+                <div className="field">
+                  <label>Material</label>
+                  <Dropdown
+                    value={filtros.material}
+                    onChange={(e) => setFiltros({...filtros, material: e.value})}
+                    options={opcionesFiltros.materiales}
+                    placeholder="Seleccionar material"
+                    showClear
+                    filter
+                  />
+                </div>
+                <div className="field">
+                  <label>Origen</label>
+                  <Dropdown
+                    value={filtros.origen}
+                    onChange={(e) => setFiltros({...filtros, origen: e.value})}
+                    options={opcionesFiltros.origenes}
+                    placeholder="Seleccionar origen"
+                    showClear
+                    filter
+                  />
+                </div>
 
-            <div className="field">
-              <label>Destino</label>
-              <Dropdown
-                value={filtros.destino}
-                onChange={(e) => setFiltros({...filtros, destino: e.value})}
-                options={opcionesFiltros.destinos}
-                placeholder="Seleccionar destino"
-                showClear
-                filter
-              />
-            </div>
+                <div className="field">
+                  <label>Destino</label>
+                  <Dropdown
+                    value={filtros.destino}
+                    onChange={(e) => setFiltros({...filtros, destino: e.value})}
+                    options={opcionesFiltros.destinos}
+                    placeholder="Seleccionar destino"
+                    showClear
+                    filter
+                  />
+                </div>
 
-            <div className="field">
-              <label>Estatus</label>
-              <Dropdown
-                value={filtros.estatus}
-                onChange={(e) => setFiltros({...filtros, estatus: e.value})}
-                options={[...OPCIONES_ESTATUS, { label: 'Sin estatus', value: '__sin_estatus__' }]}
-                placeholder="Seleccionar estatus"
-                showClear
-              />
-            </div>
+                <div className="field">
+                  <label>Estatus</label>
+                  <Dropdown
+                    value={filtros.estatus}
+                    onChange={(e) => setFiltros({...filtros, estatus: e.value})}
+                    options={[...OPCIONES_ESTATUS, { label: 'Sin estatus', value: '__sin_estatus__' }]}
+                    placeholder="Seleccionar estatus"
+                    showClear
+                  />
+                </div>
+              </>
+            )}
           </div>
           
           <div className="flex justify-content-between gap-2 mt-4">
@@ -931,11 +1114,22 @@ const EstimacionesCrud = () => {
             <strong>Resumen de la estimación:</strong>
             <ul className="mt-2 mb-0">
               <li><strong>Cliente:</strong> {clienteSeleccionado?.cliente_nombre}</li>
+              <li><strong>Tipo:</strong> {tipoVista === 'camion' ? 'Camión' : 'Maquinaria'}</li>
               <li><strong>Obra:</strong> {clienteSeleccionado?.obra || 'No especificada'}</li>
-              <li><strong>Viajes:</strong> {totalViajes}</li>
-              <li><strong>Total M3:</strong> {totalM3.toFixed(2)}</li>
-              <li><strong>Total a Cobrar:</strong> {formatCurrency(totalCobrar)}</li>
-              {filtros.fechaInicio && filtros.fechaFin && (
+              {tipoVista === 'camion' ? (
+                <>
+                  <li><strong>Viajes:</strong> {totalViajes}</li>
+                  <li><strong>Total M3:</strong> {totalM3.toFixed(2)}</li>
+                  <li><strong>Total a Cobrar:</strong> {formatCurrency(totalCobrar)}</li>
+                </>
+              ) : (
+                <>
+                  <li><strong>Rentas:</strong> {totalRentas}</li>
+                  <li><strong>Total Hrs:</strong> {totalHrsMaquinaria.toFixed(2)}</li>
+                  <li><strong>Total a Cobrar:</strong> {formatCurrency(totalCobrarMaquinaria)}</li>
+                </>
+              )}
+              {tipoVista === 'camion' && filtros.fechaInicio && filtros.fechaFin && (
                 <li>
                   <strong>Rango de fechas:</strong> {filtros.fechaInicio.toLocaleDateString('es-MX')} - {filtros.fechaFin.toLocaleDateString('es-MX')}
                 </li>
@@ -945,6 +1139,14 @@ const EstimacionesCrud = () => {
 
           <Divider />
 
+          {tipoVista === 'maquinaria' && (
+            <p className="text-color-secondary">
+              La renta de maquinaria se exporta en una sola hoja estándar (Fecha, Estimación, Folio, Máquina, Operador, Hrs, Precio, Total y Observaciones), con subtotal, IVA y total.
+            </p>
+          )}
+
+          {tipoVista === 'camion' && (
+          <>
           <div className="field">
             <label className="font-medium">¿Cómo quieres exportar la información?</label>
             <div className="flex gap-4 mt-2">
@@ -1044,6 +1246,8 @@ const EstimacionesCrud = () => {
                 </div>
               )}
             </div>
+          )}
+          </>
           )}
         </Dialog>
 

@@ -8,6 +8,8 @@ import { InputNumber } from 'primereact/inputnumber';
 import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
 import { Dropdown } from 'primereact/dropdown';
+import { MultiSelect } from 'primereact/multiselect';
+import { Tag } from 'primereact/tag';
 import React, { useEffect, useRef, useState } from 'react';
 import { fetchClientes, createCliente, updateCliente, deleteCliente, Cliente } from '../../../../Services/BD/clientesService';
 import { RadioButton } from 'primereact/radiobutton';
@@ -26,6 +28,7 @@ const ClientesCrud = () => {
         obra: '',
         estatus: undefined,
         porcentaje_administrativo: 0,
+        etiquetas: [],
     };
 
     const [clientesList, setClientesList] = useState<Cliente[]>([]);
@@ -47,6 +50,11 @@ const ClientesCrud = () => {
     const TipoCliente = [
         { label: 'Efectivo', value: 'Efectivo' },
         { label: 'Facturado', value: 'Facturado' }
+    ];
+
+    const etiquetasOptions = [
+        { label: 'Camión', value: 'camion' },
+        { label: 'Maquinaria', value: 'maquinaria' }
     ];
 
     const usosCFDI = [
@@ -99,9 +107,12 @@ const ClientesCrud = () => {
                 }
                 setClienteDialog(false);
                 setCliente(emptyCliente);
-                fetchClientes().then(setClientesList);
-            } catch (error) {
-                toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Error saving Cliente', life: 3000 });
+                // No se vuelve a pedir fetchClientes() aquí: el objeto que devuelve
+                // updateCliente/createCliente ya viene completo (incluye etiquetas), y
+                // pedirlo de nuevo de inmediato podía sobrescribir ese resultado correcto
+                // con una respuesta que no traía la columna "etiquetas".
+            } catch (error: any) {
+                toast.current?.show({ severity: 'error', summary: 'Error', detail: error?.message || 'Error saving Cliente', life: 5000 });
             }
         }
     };
@@ -275,6 +286,17 @@ const ClientesCrud = () => {
         );
     };
 
+    const etiquetasBodyTemplate = (rowData: Cliente) => {
+        if (!rowData.etiquetas || rowData.etiquetas.length === 0) return <span>-</span>;
+        return (
+            <div className="flex gap-1 flex-wrap">
+                {rowData.etiquetas.map(etiqueta => (
+                    <Tag key={etiqueta} value={etiqueta === 'camion' ? 'Camión' : 'Maquinaria'} severity={etiqueta === 'camion' ? 'info' : 'warning'} />
+                ))}
+            </div>
+        );
+    };
+
     const estatusBodyTemplate = (rowData: Cliente) => {
         return (
             <span className={`product-badge p-tag ${rowData.estatus ? 'p-tag-success' : 'p-tag-danger'}`}>
@@ -350,6 +372,7 @@ const ClientesCrud = () => {
                         <Column selectionMode="multiple" headerStyle={{ width: '4rem' }}></Column>
                         <Column field="id" header="Id" sortable body={idBodyTemplate}></Column>
                         <Column field="empresa" header="Empresa" sortable body={empresaBodyTemplate}></Column>
+                        <Column field="etiquetas" header="Etiqueta" body={etiquetasBodyTemplate} style={{ minWidth: '150px' }}></Column>
                         <Column field="contacto" header="Contacto" sortable body={contactoBodyTemplate}></Column>
                         <Column field="telefono" header="Teléfono" sortable body={TelefonoBodyTemplate}></Column>
                         <Column field="direccion" header="Dirección" sortable body={direccionBodyTemplate}></Column>
@@ -471,6 +494,19 @@ const ClientesCrud = () => {
                                 </div>
                             </>
                         )}
+
+                        <div className="field">
+                            <label htmlFor="etiquetas">Etiqueta</label>
+                            <MultiSelect
+                                id="etiquetas"
+                                value={cliente.etiquetas || []}
+                                options={etiquetasOptions}
+                                onChange={(e) => setCliente({ ...cliente, etiquetas: e.value })}
+                                placeholder="Selecciona camión y/o maquinaria"
+                                display="chip"
+                            />
+                            <small>Determina si el cliente se relaciona con Viajes (Camión), Renta de Maquinaria, o ambos.</small>
+                        </div>
 
                         <div className="field">
                             <label htmlFor="porcentaje_administrativo">% Administrativo</label>

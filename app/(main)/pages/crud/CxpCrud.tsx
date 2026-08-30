@@ -14,6 +14,8 @@ import { Dropdown } from 'primereact/dropdown';
 import { InputText } from 'primereact/inputtext';
 import { InputTextarea } from 'primereact/inputtextarea';
 import { TabView, TabPanel } from 'primereact/tabview';
+import { RadioButton } from 'primereact/radiobutton';
+import * as XLSX from 'xlsx';
 import {
     fetchEntidadesConCuentas,
     fetchCuentasPorEntidad,
@@ -29,6 +31,7 @@ import {
     TipoEntidad
 } from '../../../../Services/BD/CxPService';
 import { fetchViajesPorInvitado } from '../../../../Services/BD/viajeService';
+import { fetchRentaMaquinariaPorInvitado, RentaMaquinaria } from '../../../../Services/BD/inventario/maquinaria/rentaMaquinariaService';
 
 const TIPOS_DISPONIBLES: { label: string; value: TipoEntidad }[] = [
     { label: 'Proveedores', value: 'Proveedor' },
@@ -46,6 +49,7 @@ const CxpCrud = () => {
         viajes: false
     });
     const [viajesInvitado, setViajesInvitado] = useState<any[]>([]);
+    const [rentasInvitado, setRentasInvitado] = useState<RentaMaquinaria[]>([]);
     const [totalGeneral, setTotalGeneral] = useState<number>(0);
     const [pagoDialog, setPagoDialog] = useState(false);
     const [editFechaDialog, setEditFechaDialog] = useState(false);
@@ -62,6 +66,13 @@ const CxpCrud = () => {
     const [nuevaCuentaDialog, setNuevaCuentaDialog] = useState(false);
     const [proveedores, setProveedores] = useState<{id: number, nombre: string}[]>([]);
     const [invitados, setInvitados] = useState<{id: number, nombre: string}[]>([]);
+
+    // --- Exportar Excel: viajes y/o rentas relacionados del invitado seleccionado ---
+    const [exportDialog, setExportDialog] = useState(false);
+    const [exportTipo, setExportTipo] = useState<'todo' | 'viajes' | 'rentas'>('todo');
+    const [exportRango, setExportRango] = useState<'todo' | 'rango'>('todo');
+    const [exportFechaInicio, setExportFechaInicio] = useState<Date | null>(null);
+    const [exportFechaFin, setExportFechaFin] = useState<Date | null>(null);
     const [nuevaCuenta, setNuevaCuenta] = useState<Omit<CuentaPorPagar, 'id'>>({
         id_entidad: 0,
         tipo_entidad: tipoEntidad,
@@ -81,6 +92,7 @@ const CxpCrud = () => {
             setCuentasEntidad([]);
             setHistorialPagos([]);
             setViajesInvitado([]);
+            setRentasInvitado([]);
             try {
                 const [entidades, proveedoresData, invitadosData] = await Promise.all([
                     fetchEntidadesConCuentas(tipoEntidad),
@@ -101,12 +113,26 @@ const CxpCrud = () => {
         cargarDatosIniciales();
     }, [tipoEntidad]);
 
+    // Trae viajes y/o rentas de maquinaria del invitado según su(s) etiqueta(s), igual que en CxC
+    const cargarViajesYRentasInvitado = async (entidad: ResumenEntidad) => {
+        const tieneCamion = entidad.etiquetas?.includes('camion');
+        const tieneMaquinaria = entidad.etiquetas?.includes('maquinaria');
+
+        const [viajes, rentas] = await Promise.all([
+            tieneCamion ? fetchViajesPorInvitado(entidad.id_entidad) : Promise.resolve([]),
+            tieneMaquinaria ? fetchRentaMaquinariaPorInvitado(entidad.id_entidad) : Promise.resolve([])
+        ]);
+
+        return { viajes, rentas };
+    };
+
     const handleEntidadClick = async (entidad: ResumenEntidad) => {
         if (entidadSeleccionada?.id_entidad === entidad.id_entidad) {
             setEntidadSeleccionada(null);
             setCuentasEntidad([]);
             setHistorialPagos([]);
             setViajesInvitado([]);
+            setRentasInvitado([]);
             return;
         }
 
@@ -134,10 +160,12 @@ const CxpCrud = () => {
             }
 
             if (tipoEntidad === 'Invitado') {
-                const viajes = await fetchViajesPorInvitado(entidad.id_entidad);
+                const { viajes, rentas } = await cargarViajesYRentasInvitado(entidad);
                 setViajesInvitado(viajes);
+                setRentasInvitado(rentas);
             } else {
                 setViajesInvitado([]);
+                setRentasInvitado([]);
             }
         } catch (error) {
             mostrarError(`Error al cargar datos de ${entidad.entidad_nombre}`);
@@ -327,6 +355,72 @@ const CxpCrud = () => {
         });
     };
 
+    const abrirDialogoExportar = () => {
+        setExportTipo('todo');
+        setExportRango('todo');
+        setExportFechaInicio(null);
+        setExportFechaFin(null);
+        setExportDialog(true);
+    };
+
+    const dentroDelRango = (fechaISO: string | null | undefined): boolean => {
+        if (exportRango === 'todo') return true;
+        if (!fechaISO) return false;
+        const fecha = fechaISO.split('T')[0];
+        if (exportFechaInicio && fecha < exportFechaInicio.toISOString().split('T')[0]) return false;
+        if (exportFechaFin && fecha > exportFechaFin.toISOString().split('T')[0]) return false;
+        return true;
+    };
+
+    const exportarViajesYRentas = () => {
+        if (!entidadSeleccionada) return;
+
+        const incluirViajes = exportTipo === 'todo' || exportTipo === 'viajes';
+        const incluirRentas = exportTipo === 'todo' || exportTipo === 'rentas';
+
+        const viajesFiltrados = incluirViajes ? viajesInvitado.filter(v => dentroDelRango(v.fecha)) : [];
+        const rentasFiltradas = incluirRentas ? rentasInvitado.filter(r => dentroDelRango(r.fecha)) : [];
+
+        if (viajesFiltrados.length === 0 && rentasFiltradas.length === 0) {
+            mostrarError('No hay registros para exportar con los filtros seleccionados');
+            return;
+        }
+
+        const wb = XLSX.utils.book_new();
+
+        if (viajesFiltrados.length > 0) {
+            const filasViajes = viajesFiltrados.map(v => ({
+                'Id de Viaje': v.id,
+                Fecha: v.fecha ? v.fecha.split('T')[0] : '',
+                Folio: v.folio || '',
+                'Folio BCO': v.folio_bco || '',
+                'Total Flete': v.caphrsviajes || 0,
+                'Total Material': v.total_materia || 0
+            }));
+            const wsViajes = XLSX.utils.json_to_sheet(filasViajes);
+            XLSX.utils.book_append_sheet(wb, wsViajes, 'Viajes');
+        }
+
+        if (rentasFiltradas.length > 0) {
+            const filasRentas = rentasFiltradas.map(r => ({
+                'Id de Renta': r.id,
+                Fecha: r.fecha ? r.fecha.split('T')[0] : '',
+                Folio: r.folio || '',
+                Máquina: r.maquina_nombre || '',
+                Operador: r.operador_nombre || '',
+                Hrs: r.hrs ?? '',
+                'Precio Invitado': r.precio_invitado ?? '',
+                'Total a Pagar': r.total_invitado ?? 0
+            }));
+            const wsRentas = XLSX.utils.json_to_sheet(filasRentas);
+            XLSX.utils.book_append_sheet(wb, wsRentas, 'Rentas de Maquinaria');
+        }
+
+        const nombreArchivo = `${entidadSeleccionada.entidad_nombre.replace(/[^a-zA-Z0-9]/g, '_')}_CxP_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, nombreArchivo);
+        setExportDialog(false);
+    };
+
     const fechaBodyTemplate = (rowData: CuentaPorPagar) => {
         return new Date(rowData.fecha).toLocaleDateString('es-MX');
     };
@@ -447,6 +541,19 @@ const CxpCrud = () => {
                                     <span className="font-medium">{row.entidad_nombre}</span>
                                 )}
                             />
+                            {tipoEntidad === 'Invitado' && (
+                                <Column
+                                    header="Etiqueta"
+                                    body={(row: ResumenEntidad) => (
+                                        <div className="flex gap-1 flex-wrap">
+                                            {(!row.etiquetas || row.etiquetas.length === 0) && '-'}
+                                            {row.etiquetas?.map(etiqueta => (
+                                                <Tag key={etiqueta} value={etiqueta === 'camion' ? 'Camión' : 'Maquinaria'} severity={etiqueta === 'camion' ? 'info' : 'warning'} />
+                                            ))}
+                                        </div>
+                                    )}
+                                />
+                            )}
                             <Column
                                 header="Total de la Deuda"
                                 body={(row) => formatCurrency(row.total_adeudado + row.total_monto_pagado)}
@@ -482,6 +589,25 @@ const CxpCrud = () => {
                                     title={`Detalles de cuentas - ${entidadSeleccionada.entidad_nombre}`}
                                     subTitle={`Total Adeudado: ${formatCurrency(entidadSeleccionada.total_adeudado)}`}
                                 >
+                                    {tipoEntidad === 'Invitado' && (
+                                        <div className="flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                                            <div className="flex gap-2">
+                                                {(!entidadSeleccionada.etiquetas || entidadSeleccionada.etiquetas.length === 0) && (
+                                                    <span className="text-500 text-sm">Sin etiqueta asignada</span>
+                                                )}
+                                                {entidadSeleccionada.etiquetas?.map(etiqueta => (
+                                                    <Tag key={etiqueta} value={etiqueta === 'camion' ? 'Camión' : 'Maquinaria'} severity={etiqueta === 'camion' ? 'info' : 'warning'} />
+                                                ))}
+                                            </div>
+                                            <Button
+                                                icon="pi pi-file-excel"
+                                                label="Exportar Viajes/Rentas"
+                                                className="p-button-outlined p-button-success p-button-sm"
+                                                onClick={abrirDialogoExportar}
+                                                disabled={viajesInvitado.length === 0 && rentasInvitado.length === 0}
+                                            />
+                                        </div>
+                                    )}
                                     {loading.detalles ? (
                                         <div className="flex justify-content-center">
                                             <ProgressSpinner />
@@ -601,6 +727,35 @@ const CxpCrud = () => {
                                                         <Column field="folio_bco" header="Folio BCO" body={(row) => row.folio_bco ? row.folio_bco : '-'} />
                                                         <Column field="caphrsviajes" header="Total Flete" body={(row) => formatCurrency(row.caphrsviajes || 0)} />
                                                         <Column field="total_materia" header="Total Material" body={(row) => formatCurrency(row.total_materia || 0)} />
+                                                    </DataTable>
+                                                </div>
+                                            )}
+
+                                            {tipoEntidad === 'Invitado' && !loading.viajes && rentasInvitado.length > 0 && (
+                                                <div className="mt-5">
+                                                    <h4>Rentas de Maquinaria Relacionadas ({rentasInvitado.length})</h4>
+                                                    <DataTable
+                                                        value={rentasInvitado}
+                                                        paginator
+                                                        rows={5}
+                                                        emptyMessage="No se encontraron rentas de maquinaria"
+                                                        className="p-datatable-sm"
+                                                    >
+                                                        <Column field="id" header="Id de Renta" />
+                                                        <Column
+                                                            field="fecha"
+                                                            header="Fecha"
+                                                            body={(row) => {
+                                                                if (!row.fecha) return '-';
+                                                                const [year, month, day] = row.fecha.split('T')[0].split('-');
+                                                                return `${day}-${month}-${year}`;
+                                                            }}
+                                                        />
+                                                        <Column field="folio" header="Folio" body={(row) => row.folio || '-'} />
+                                                        <Column field="maquina_nombre" header="Máquina" body={(row) => row.maquina_nombre || '-'} />
+                                                        <Column field="operador_nombre" header="Operador" body={(row) => row.operador_nombre || '-'} />
+                                                        <Column field="hrs" header="Hrs" body={(row) => row.hrs ?? '-'} />
+                                                        <Column field="total_invitado" header="Total a Pagar" body={(row) => formatCurrency(row.total_invitado || 0)} />
                                                     </DataTable>
                                                 </div>
                                             )}
@@ -857,6 +1012,73 @@ const CxpCrud = () => {
                             onClick={guardarEdicionPago}
                             disabled={!nuevoMonto || nuevoMonto <= 0}
                         />
+                    </div>
+                </Dialog>
+
+                {/* Diálogo para exportar viajes/rentas del invitado a Excel */}
+                <Dialog
+                    visible={exportDialog}
+                    onHide={() => setExportDialog(false)}
+                    header={`Exportar - ${entidadSeleccionada?.entidad_nombre || ''}`}
+                    style={{ width: '480px' }}
+                    footer={
+                        <div>
+                            <Button label="Cancelar" icon="pi pi-times" className="p-button-text" onClick={() => setExportDialog(false)} />
+                            <Button label="Exportar" icon="pi pi-download" onClick={exportarViajesYRentas} />
+                        </div>
+                    }
+                >
+                    <div className="field">
+                        <label className="font-medium">¿Qué quieres exportar?</label>
+                        <div className="flex flex-column gap-2 mt-2">
+                            <div className="flex align-items-center">
+                                <RadioButton inputId="expTodo" name="exportTipo" value="todo" checked={exportTipo === 'todo'} onChange={() => setExportTipo('todo')} />
+                                <label htmlFor="expTodo" className="ml-2">Todo (viajes y rentas de maquinaria)</label>
+                            </div>
+                            <div className="flex align-items-center">
+                                <RadioButton inputId="expViajes" name="exportTipo" value="viajes" checked={exportTipo === 'viajes'} onChange={() => setExportTipo('viajes')} />
+                                <label htmlFor="expViajes" className="ml-2">Solo viajes</label>
+                            </div>
+                            <div className="flex align-items-center">
+                                <RadioButton inputId="expRentas" name="exportTipo" value="rentas" checked={exportTipo === 'rentas'} onChange={() => setExportTipo('rentas')} />
+                                <label htmlFor="expRentas" className="ml-2">Solo rentas de maquinaria</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="field mt-4">
+                        <label className="font-medium">Rango de fechas</label>
+                        <div className="flex flex-column gap-2 mt-2">
+                            <div className="flex align-items-center">
+                                <RadioButton inputId="expRangoTodo" name="exportRango" value="todo" checked={exportRango === 'todo'} onChange={() => setExportRango('todo')} />
+                                <label htmlFor="expRangoTodo" className="ml-2">Todas las fechas</label>
+                            </div>
+                            <div className="flex align-items-center">
+                                <RadioButton inputId="expRangoFechas" name="exportRango" value="rango" checked={exportRango === 'rango'} onChange={() => setExportRango('rango')} />
+                                <label htmlFor="expRangoFechas" className="ml-2">Por rango de fechas</label>
+                            </div>
+                        </div>
+
+                        {exportRango === 'rango' && (
+                            <div className="flex gap-2 mt-2">
+                                <Calendar
+                                    value={exportFechaInicio}
+                                    onChange={(e) => setExportFechaInicio(e.value ?? null)}
+                                    dateFormat="yy-mm-dd"
+                                    placeholder="Fecha inicio"
+                                    showIcon
+                                    readOnlyInput
+                                />
+                                <Calendar
+                                    value={exportFechaFin}
+                                    onChange={(e) => setExportFechaFin(e.value ?? null)}
+                                    dateFormat="yy-mm-dd"
+                                    placeholder="Fecha fin"
+                                    showIcon
+                                    readOnlyInput
+                                />
+                            </div>
+                        )}
                     </div>
                 </Dialog>
             </div>

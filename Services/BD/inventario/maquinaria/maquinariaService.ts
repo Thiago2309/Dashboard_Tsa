@@ -14,6 +14,7 @@ export interface Maquinaria {
     operador_id: number | null;
     responsable_id: number | null;
     estatus: EstatusMaquinaria;
+    precio_hrs: number | null;
     operador_nombre?: string;
     responsable_nombre?: string;
     created_at?: string;
@@ -33,16 +34,47 @@ const transformMaquinariaData = (data: any): Maquinaria => ({
     operador_id: data.operador_id,
     responsable_id: data.responsable_id,
     estatus: data.estatus || 'Activo',
+    precio_hrs: data.precio_hrs ?? null,
     operador_nombre: data.operador_nombre || '',
     responsable_nombre: data.responsable_nombre || '',
     created_at: data.created_at,
     updated_at: data.updated_at
 });
 
-// Obtener todas las maquinarias (incluye nombre de operador/responsable via vista)
+// Resuelve operador_nombre/responsable_nombre a partir de la tabla operador.
+// Se consulta la tabla base "maquinaria" en vez de la vista fetch_maquinaria para que
+// cualquier columna nueva (como precio_hrs) se refleje de inmediato sin depender de
+// que la vista en Supabase también se actualice.
+const resolverNombresOperadores = async (maquinarias: any[]): Promise<any[]> => {
+    const ids = Array.from(new Set([
+        ...maquinarias.map(m => m.operador_id),
+        ...maquinarias.map(m => m.responsable_id)
+    ].filter(Boolean)));
+
+    if (ids.length === 0) return maquinarias;
+
+    const { data: operadoresData, error } = await supabase
+        .from('operador')
+        .select('id, nombre')
+        .in('id', ids as any[]);
+
+    if (error) {
+        console.error('Error al obtener operadores para maquinaria:', error);
+        return maquinarias;
+    }
+
+    const nombresMap = new Map<number, string>((operadoresData || []).map((o: any) => [o.id, o.nombre]));
+    return maquinarias.map(m => ({
+        ...m,
+        operador_nombre: m.operador_id ? nombresMap.get(m.operador_id) : '',
+        responsable_nombre: m.responsable_id ? nombresMap.get(m.responsable_id) : ''
+    }));
+};
+
+// Obtener todas las maquinarias (incluye nombre de operador/responsable)
 export const fetchMaquinarias = async (): Promise<Maquinaria[]> => {
     const { data, error } = await supabase
-        .from('fetch_maquinaria')
+        .from('maquinaria')
         .select('*')
         .order('id', { ascending: true });
 
@@ -50,13 +82,14 @@ export const fetchMaquinarias = async (): Promise<Maquinaria[]> => {
         console.error('Error al obtener maquinaria:', error);
         throw new Error(error.message);
     }
-    return (data || []).map(transformMaquinariaData);
+    const conNombres = await resolverNombresOperadores(data || []);
+    return conNombres.map(transformMaquinariaData);
 };
 
 // Obtener una maquinaria por ID
 export const fetchMaquinariaById = async (id: number): Promise<Maquinaria | null> => {
     const { data, error } = await supabase
-        .from('fetch_maquinaria')
+        .from('maquinaria')
         .select('*')
         .eq('id', id)
         .single();
@@ -65,7 +98,8 @@ export const fetchMaquinariaById = async (id: number): Promise<Maquinaria | null
         console.error('Error al obtener maquinaria:', error);
         return null;
     }
-    return transformMaquinariaData(data);
+    const [conNombre] = await resolverNombresOperadores([data]);
+    return transformMaquinariaData(conNombre);
 };
 
 // Operadores disponibles para vincular como Operador o Responsable

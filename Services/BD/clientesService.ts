@@ -1,6 +1,8 @@
 import { supabase } from '../superbase.service';
 import { crearCuentaInicialParaCliente } from './cuentasPorCobrarService';
 
+export type EtiquetaCliente = 'camion' | 'maquinaria';
+
 export interface Cliente {
     id?: number;
     empresa: string;
@@ -15,6 +17,7 @@ export interface Cliente {
     obra?: string;
     porcentaje_administrativo?: number;
     estatus?: number; // 1 = Activo, 0 = Inactivo
+    etiquetas?: EtiquetaCliente[]; // Camion (viajes) y/o Maquinaria (renta_maquinaria)
 }
 
 // Helper function to transform Supabase response to Cliente interface
@@ -32,6 +35,7 @@ const transformClienteData = (data: any): Cliente => ({
     obra: data.obra || '-',
     porcentaje_administrativo: data.porcentaje_administrativo ?? 0,
     estatus: data.estatus ?? 1, // Default to 0 if not provided
+    etiquetas: data.etiquetas || [],
 });
 
 // Obtener todos los registros de Clientes
@@ -49,7 +53,8 @@ export const fetchClientes = async (): Promise<Cliente[]> => {
         ...cliente,
         nombre: cliente.empresa,
         empresa: cliente.empresa,
-        porcentaje_administrativo: cliente.porcentaje_administrativo || 0
+        porcentaje_administrativo: cliente.porcentaje_administrativo || 0,
+        etiquetas: cliente.etiquetas || []
     }));
 };
 
@@ -100,7 +105,8 @@ export const updateCliente = async (cliente: Cliente): Promise<Cliente> => {
             regimen_fiscal: cliente.regimen_fiscal,
             obra: cliente.obra,
             porcentaje_administrativo: cliente.porcentaje_administrativo,
-            estatus: cliente.estatus
+            estatus: cliente.estatus,
+            etiquetas: cliente.etiquetas || []
         })
         .eq('id', cliente.id)
         .select('*')

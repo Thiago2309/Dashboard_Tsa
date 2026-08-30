@@ -84,6 +84,7 @@ const AppMenu = () => {
                         items: [
                             { label: 'Bitácora', icon: 'pi pi-fw pi-book', to: '/taller/bitacora' },
                             { label: 'Estatus General', icon: 'pi pi-fw pi-th-large', to: '/taller/estatus' },
+                            { label: 'Rendimiento', icon: 'pi pi-fw pi-chart-line', to: '/taller/rendimiento' },
                         ]
                     },
                     {
@@ -107,6 +108,8 @@ const AppMenu = () => {
                         icon: 'pi pi-fw pi-shopping-cart',
                         items: [
                             { label: 'Requisiciones de Compra', icon: 'pi pi-fw pi-shopping-cart', to: '/compras' },
+                            { label: 'Caja Chica', icon: 'pi pi-fw pi-wallet', to: '/compras/caja-chica' },
+                            { label: 'Proveedores', icon: 'pi pi-fw pi-users', to: '/compras/proveedores' },
                         ]
                     },
                     {
@@ -172,7 +175,14 @@ const AppMenu = () => {
                         label: 'Admin. de Viajes',
                         icon: 'pi pi-fw pi-truck',
                         items: [
-                            { label: 'Viajes', icon: 'pi pi-fw pi-truck', to: '/uikit/formlayout' },
+                            {
+                                label: 'Bitacora',
+                                icon: 'pi pi-fw pi-truck',
+                                items: [
+                                    { label: 'Camion', icon: 'pi pi-fw pi-truck', to: '/uikit/formlayout' },
+                                    { label: 'Maquinaria', icon: 'pi pi-fw pi-cog', to: '/uikit/formlayout/maquinaria' },
+                                ]
+                            },
                             { label: 'Resumen', icon: 'pi pi-fw pi-file', to: '/uikit/input' },
                             { label: 'Nomina', icon: 'pi pi-fw pi-user', to: '/uikit/floatlabel' },
                             { label: 'Facturación', icon: 'pi pi-fw pi-mobile', to: '/uikit/facturacion', class: 'rotated-icon' },

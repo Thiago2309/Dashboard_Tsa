@@ -15,6 +15,7 @@ export interface Invitado {
     obra?: string;
     porcentaje_participacion?: number;
     estatus?: number;
+    etiquetas?: string[]; // 'camion' y/o 'maquinaria', igual que en Cliente
     created_at?: string;
     updated_at?: string;
 }

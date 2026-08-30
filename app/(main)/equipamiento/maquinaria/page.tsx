@@ -43,7 +43,8 @@ const MaquinariaCrud = () => {
         obra: '',
         operador_id: null,
         responsable_id: null,
-        estatus: 'Activo'
+        estatus: 'Activo',
+        precio_hrs: null
     };
 
     const [maquinarias, setMaquinarias] = useState<Maquinaria[]>([]);
@@ -178,6 +179,10 @@ const MaquinariaCrud = () => {
         <span>{rowData.año ? rowData.año : '-'}</span>
     );
 
+    const precioHrsBodyTemplate = (rowData: Maquinaria) => (
+        <span>{rowData.precio_hrs != null ? rowData.precio_hrs.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }) : '-'}</span>
+    );
+
     const estatusBodyTemplate = (rowData: Maquinaria) => {
         let severity: 'success' | 'warning' | 'danger' | 'info' = 'success';
         if (rowData.estatus === 'Mantenimiento') severity = 'warning';
@@ -281,6 +286,7 @@ const MaquinariaCrud = () => {
                         <Column field="no_serie" header="No. Serie" body={(r) => textBodyTemplate(r.no_serie)} sortable style={{ width: '130px' }} />
                         <Column field="ubicacion" header="Ubicación" body={(r) => textBodyTemplate(r.ubicacion)} sortable style={{ width: '130px' }} />
                         <Column field="obra" header="Obra" body={(r) => textBodyTemplate(r.obra)} sortable style={{ width: '130px' }} />
+                        <Column field="precio_hrs" header="Precio x Hora" body={precioHrsBodyTemplate} sortable style={{ width: '130px' }} />
                         <Column field="operador_nombre" header="Operador" body={(r) => textBodyTemplate(r.operador_nombre)} sortable style={{ width: '130px' }} />
                         <Column field="responsable_nombre" header="Responsable" body={(r) => textBodyTemplate(r.responsable_nombre)} sortable style={{ width: '130px' }} />
                         <Column field="estatus" header="Estatus" body={estatusBodyTemplate} sortable style={{ width: '130px' }} />
@@ -338,6 +344,15 @@ const MaquinariaCrud = () => {
                                 <div className="field">
                                     <label htmlFor="obra">Obra</label>
                                     <InputText id="obra" value={maquinaria.obra || ''} onChange={(e) => setMaquinaria({ ...maquinaria, obra: e.target.value })} />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid">
+                            <div className="col-6">
+                                <div className="field">
+                                    <label htmlFor="precio_hrs">Precio x Hora</label>
+                                    <InputNumber id="precio_hrs" value={maquinaria.precio_hrs} onValueChange={(e) => setMaquinaria({ ...maquinaria, precio_hrs: e.value ?? null })} mode="currency" currency="MXN" locale="es-MX" min={0} className="w-full" />
                                 </div>
                             </div>
                         </div>
