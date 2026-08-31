@@ -14,6 +14,7 @@ export interface Camion {
     numero_cilindros: number | null;
     color: string | null;
     estatus: 'Activo' | 'Mantenimiento' | 'Inactivo' | 'Dado de Baja';
+    gps: boolean;
     fecha_registro?: string;
     ultimo_servicio: string | null;
     kilometraje_actual: number | null;
@@ -46,6 +47,21 @@ export const fetchCamionesActivos = async (): Promise<Camion[]> => {
 
     if (error) {
         console.error('Error al obtener camiones activos:', error);
+        throw new Error(error.message);
+    }
+    return data || [];
+};
+
+// Obtener camiones con GPS activado
+export const fetchCamionesConGPS = async (): Promise<Camion[]> => {
+    const { data, error } = await supabase
+        .from('m3')
+        .select('*')
+        .eq('gps', true)
+        .order('nombre', { ascending: true });
+
+    if (error) {
+        console.error('Error al obtener camiones con GPS:', error);
         throw new Error(error.message);
     }
     return data || [];

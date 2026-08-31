@@ -8,6 +8,7 @@ import { InputText } from 'primereact/inputtext';
 import { InputNumber } from 'primereact/inputnumber';
 import { Dialog } from 'primereact/dialog';
 import { Dropdown } from 'primereact/dropdown';
+import { InputSwitch } from 'primereact/inputswitch';
 import { Tag } from 'primereact/tag';
 import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
@@ -44,7 +45,8 @@ const MaquinariaCrud = () => {
         operador_id: null,
         responsable_id: null,
         estatus: 'Activo',
-        precio_hrs: null
+        precio_hrs: null,
+        gps: false
     };
 
     const [maquinarias, setMaquinarias] = useState<Maquinaria[]>([]);
@@ -191,6 +193,12 @@ const MaquinariaCrud = () => {
         return <Tag severity={severity} value={rowData.estatus} />;
     };
 
+    const gpsBodyTemplate = (rowData: Maquinaria) => (
+        rowData.gps
+            ? <Tag severity="success" icon="pi pi-map-marker" value="Con GPS" />
+            : <Tag severity="danger" icon="pi pi-map-marker" value="Sin GPS" />
+    );
+
     const actionBodyTemplate = (rowData: Maquinaria) => (
         <div className="flex gap-2">
             <Button icon="pi pi-pencil" rounded severity="info" onClick={() => editMaquinaria(rowData)} tooltip="Editar" />
@@ -290,6 +298,7 @@ const MaquinariaCrud = () => {
                         <Column field="operador_nombre" header="Operador" body={(r) => textBodyTemplate(r.operador_nombre)} sortable style={{ width: '130px' }} />
                         <Column field="responsable_nombre" header="Responsable" body={(r) => textBodyTemplate(r.responsable_nombre)} sortable style={{ width: '130px' }} />
                         <Column field="estatus" header="Estatus" body={estatusBodyTemplate} sortable style={{ width: '130px' }} />
+                        <Column field="gps" header="GPS" body={gpsBodyTemplate} sortable style={{ width: '110px' }} />
                         <Column header="Documentos" body={documentosBodyTemplate} style={{ width: '100px' }} exportable={false} />
                         <Column header="Acciones" body={actionBodyTemplate} style={{ width: '120px' }} exportable={false} />
                     </DataTable>
@@ -398,6 +407,15 @@ const MaquinariaCrud = () => {
                                     {maquinaria.estatus === 'Mantenimiento' && (
                                         <small className="text-500">Al guardar se generará (o reutilizará) una bitácora en Taller.</small>
                                     )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid">
+                            <div className="col-12">
+                                <div className="field-checkbox flex align-items-center gap-2">
+                                    <InputSwitch inputId="gps" checked={!!maquinaria.gps} onChange={(e) => setMaquinaria({ ...maquinaria, gps: e.value })} />
+                                    <label htmlFor="gps" className="m-0">Cuenta con GPS</label>
                                 </div>
                             </div>
                         </div>

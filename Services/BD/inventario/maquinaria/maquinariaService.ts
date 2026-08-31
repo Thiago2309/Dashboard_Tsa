@@ -15,6 +15,7 @@ export interface Maquinaria {
     responsable_id: number | null;
     estatus: EstatusMaquinaria;
     precio_hrs: number | null;
+    gps: boolean;
     operador_nombre?: string;
     responsable_nombre?: string;
     created_at?: string;
@@ -35,6 +36,7 @@ const transformMaquinariaData = (data: any): Maquinaria => ({
     responsable_id: data.responsable_id,
     estatus: data.estatus || 'Activo',
     precio_hrs: data.precio_hrs ?? null,
+    gps: !!data.gps,
     operador_nombre: data.operador_nombre || '',
     responsable_nombre: data.responsable_nombre || '',
     created_at: data.created_at,
@@ -80,6 +82,22 @@ export const fetchMaquinarias = async (): Promise<Maquinaria[]> => {
 
     if (error) {
         console.error('Error al obtener maquinaria:', error);
+        throw new Error(error.message);
+    }
+    const conNombres = await resolverNombresOperadores(data || []);
+    return conNombres.map(transformMaquinariaData);
+};
+
+// Obtener maquinarias con GPS activado
+export const fetchMaquinariasConGPS = async (): Promise<Maquinaria[]> => {
+    const { data, error } = await supabase
+        .from('maquinaria')
+        .select('*')
+        .eq('gps', true)
+        .order('equipo', { ascending: true });
+
+    if (error) {
+        console.error('Error al obtener maquinaria con GPS:', error);
         throw new Error(error.message);
     }
     const conNombres = await resolverNombresOperadores(data || []);
