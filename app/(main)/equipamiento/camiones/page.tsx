@@ -9,6 +9,7 @@ import { InputNumber } from 'primereact/inputnumber';
 import { Dialog } from 'primereact/dialog';
 import { Dropdown } from 'primereact/dropdown';
 import { Calendar } from 'primereact/calendar';
+import { InputSwitch } from 'primereact/inputswitch';
 import { Tag } from 'primereact/tag';
 import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
@@ -39,6 +40,7 @@ const CamionesCrud = () => {
         numero_cilindros: null,
         color: '',
         estatus: 'Activo',
+        gps: false,
         ultimo_servicio: null,
         kilometraje_actual: null,
         observaciones: ''
@@ -242,6 +244,12 @@ const CamionesCrud = () => {
         return <span>{color && color.toString().trim() !== '' ? color : '-'}</span>;
     }
 
+    const gpsBodyTemplate = (rowData: Camion) => (
+        rowData.gps
+            ? <Tag severity="success" icon="pi pi-map-marker" value="Con GPS" />
+            : <Tag severity="danger" icon="pi pi-map-marker" value="Sin GPS" />
+    );
+
     const actionBodyTemplate = (rowData: Camion) => (
         <div className="flex gap-2">
             <Button icon="pi pi-pencil" rounded severity="info" onClick={() => editCamion(rowData)} tooltip="Editar" />
@@ -339,6 +347,7 @@ const CamionesCrud = () => {
                         <Column field="metros_cubicos" header="Capacidad (m³)" sortable style={{ width: '130px' }} />
                         <Column field="color" header="Color" body={colorBodyTemplate} sortable style={{ width: '100px' }} />
                         <Column field="estatus" header="Estatus" body={estatusBodyTemplate} sortable style={{ width: '130px' }} />
+                        <Column field="gps" header="GPS" body={gpsBodyTemplate} sortable style={{ width: '110px' }} />
                         <Column header="Documentos" body={documentosBodyTemplate} style={{ width: '100px' }} exportable={false} />
                         <Column header="Acciones" body={actionBodyTemplate} style={{ width: '120px' }} exportable={false} />
                     </DataTable>
@@ -408,6 +417,15 @@ const CamionesCrud = () => {
                                     {camion.estatus === 'Mantenimiento' && (
                                         <small className="text-500">Al guardar se generará (o reutilizará) una bitácora en Taller.</small>
                                     )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid">
+                            <div className="col-12">
+                                <div className="field-checkbox flex align-items-center gap-2">
+                                    <InputSwitch inputId="gps" checked={!!camion.gps} onChange={(e) => setCamion({ ...camion, gps: e.value })} />
+                                    <label htmlFor="gps" className="m-0">Cuenta con GPS</label>
                                 </div>
                             </div>
                         </div>
