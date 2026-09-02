@@ -12,6 +12,7 @@ import { MultiSelect } from 'primereact/multiselect';
 import { Tag } from 'primereact/tag';
 import React, { useEffect, useRef, useState } from 'react';
 import { fetchClientes, createCliente, updateCliente, deleteCliente, Cliente } from '../../../../Services/BD/clientesService';
+import { REGIMENES_FISCALES_SAT, USOS_CFDI_SAT } from '../../../../Services/BD/facturacion/catalogosSat';
 import { RadioButton } from 'primereact/radiobutton';
 
 const ClientesCrud = () => {
@@ -25,6 +26,7 @@ const ClientesCrud = () => {
         metodo_pago: undefined,
         uso_cfdi: '',
         regimen_fiscal: '',
+        codigo_postal: '',
         obra: '',
         estatus: undefined,
         porcentaje_administrativo: 0,
@@ -57,11 +59,15 @@ const ClientesCrud = () => {
         { label: 'Maquinaria', value: 'maquinaria' }
     ];
 
-    const usosCFDI = [
-        { label: 'G01 - Adquisición de mercancías', value: 'G01' },
-        { label: 'G03 - Gastos en general', value: 'G03' },
-        // Agrega más opciones según sea necesario
-    ];
+    // Catálogo oficial del SAT "c_UsoCFDI" (CFDI 4.0). Nota: el SAT restringe
+    // qué usos son válidos según el régimen fiscal del receptor (por ejemplo,
+    // los D0x de deducciones personales solo aplican a personas físicas); si
+    // más adelante alguien elige uno incompatible con su régimen, Facturador.com
+    // lo rechazará igual que pasó con el régimen fiscal.
+    // Catálogos oficiales del SAT (CFDI 4.0), compartidos con Configuración
+    // Fiscal — ver Services/BD/facturacion/catalogosSat.ts.
+    const usosCFDI = USOS_CFDI_SAT;
+    const regimenesFiscales = REGIMENES_FISCALES_SAT;
 
     useEffect(() => {
         fetchClientes().then(setClientesList);
@@ -481,16 +487,37 @@ const ClientesCrud = () => {
                                         options={usosCFDI}
                                         onChange={(e) => setCliente({ ...cliente, uso_cfdi: e.value })}
                                         placeholder="Seleccione uso CFDI"
+                                        filter
                                     />
                                 </div>
 
                                 <div className="field">
                                     <label htmlFor="regimen_fiscal">Régimen Fiscal</label>
-                                    <InputText
+                                    <Dropdown
                                         id="regimen_fiscal"
-                                        value={cliente.regimen_fiscal || ''}
-                                        onChange={(e) => setCliente({ ...cliente, regimen_fiscal: e.target.value })}
+                                        value={cliente.regimen_fiscal}
+                                        options={regimenesFiscales}
+                                        onChange={(e) => setCliente({ ...cliente, regimen_fiscal: e.value })}
+                                        placeholder="Seleccione régimen fiscal"
+                                        filter
                                     />
+                                    <small className="text-500">
+                                        Debe coincidir con el régimen registrado ante el SAT para este RFC (ver su Constancia de Situación Fiscal).
+                                    </small>
+                                </div>
+
+                                <div className="field">
+                                    <label htmlFor="codigo_postal">Código Postal (domicilio fiscal SAT)</label>
+                                    <InputText
+                                        id="codigo_postal"
+                                        value={cliente.codigo_postal === '-' ? '' : cliente.codigo_postal || ''}
+                                        maxLength={5}
+                                        keyfilter="pnum"
+                                        onChange={(e) => setCliente({ ...cliente, codigo_postal: e.target.value })}
+                                    />
+                                    <small className="text-500">
+                                        El de su Constancia de Situación Fiscal, no el de la obra/entrega.
+                                    </small>
                                 </div>
                             </>
                         )}

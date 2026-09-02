@@ -34,6 +34,15 @@ const validarCliente = (cliente: ClienteFiscal): { valid: boolean; message?: str
     if (!cliente.uso_cfdi) {
         return { valid: false, message: `El cliente "${cliente.empresa}" no tiene uso de CFDI registrado.` };
     }
+    // El régimen fiscal debe ser un código del catálogo SAT (3 dígitos), no el
+    // nombre de la empresa u otro texto libre — de lo contrario Facturador.com
+    // rechaza el timbrado con un error de esquema difícil de interpretar.
+    if (!cliente.regimen_fiscal || !/^\d{3}$/.test(cliente.regimen_fiscal)) {
+        return {
+            valid: false,
+            message: `El régimen fiscal del cliente "${cliente.empresa}" ("${cliente.regimen_fiscal || 'vacío'}") no es un código SAT válido. Corrígelo en Clientes (debe ser un código de 3 dígitos, ej. 601, 612, 626).`
+        };
+    }
     return { valid: true };
 };
 
