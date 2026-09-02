@@ -7,7 +7,7 @@ import { Button } from 'primereact/button';
 import { Tag } from 'primereact/tag';
 import { Toast } from 'primereact/toast';
 import { Dialog } from 'primereact/dialog';
-import { getFacturas, descargarFactura, cancelarFactura, aprobarFacturaDeViajes } from '../../../../Services/BD/facturacion/fiscalApiService';
+import { getFacturas, descargarFactura, cancelarFactura, aprobarFacturaDeViajes, eliminarFacturaBorrador, regenerarArchivosFactura } from '../../../../Services/BD/facturacion/fiscalApiService';
 
 const ESTADOS: Record<string, { severity: 'warning' | 'success' | 'danger' | 'info'; label: string }> = {
     PENDIENTE: { severity: 'warning', label: 'Pendiente de aprobar' },
@@ -20,6 +20,7 @@ const ListaFacturas = () => {
     const [facturas, setFacturas] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [aprobandoId, setAprobandoId] = useState<number | null>(null);
+    const [regenerandoId, setRegenerandoId] = useState<number | null>(null);
     const [selectedFactura, setSelectedFactura] = useState<any>(null);
     const [showDetalleDialog, setShowDetalleDialog] = useState(false);
     const toast = useRef<Toast>(null);
@@ -93,6 +94,32 @@ const ListaFacturas = () => {
         }
     };
 
+    const eliminar = async (factura: any) => {
+        if (!window.confirm(`¿Eliminar esta factura ${ESTADOS[factura.status]?.label?.toLowerCase() || factura.status}? Esto libera los viajes ligados para poder volver a facturarlos.`)) return;
+        try {
+            await eliminarFacturaBorrador(factura.id);
+            toast.current?.show({ severity: 'success', summary: 'Eliminada', detail: 'La factura se eliminó y sus viajes ya pueden volver a facturarse', life: 4000 });
+            cargarFacturas();
+        } catch (error: any) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: error.message, life: 3000 });
+        }
+    };
+
+    const reintentarArchivos = async (factura: any) => {
+        setRegenerandoId(factura.id);
+        try {
+            const resultado = await regenerarArchivosFactura(factura.id);
+            if (resultado.success) {
+                toast.current?.show({ severity: 'success', summary: 'Listo', detail: 'XML y PDF regenerados', life: 3000 });
+                cargarFacturas();
+            } else {
+                toast.current?.show({ severity: 'error', summary: 'Error', detail: resultado.error, life: 5000 });
+            }
+        } finally {
+            setRegenerandoId(null);
+        }
+    };
+
     const descargar = async (id: number, tipo: 'xml' | 'pdf') => {
         try {
             await descargarFactura(id, tipo);
@@ -109,20 +136,39 @@ const ListaFacturas = () => {
     const actionBodyTemplate = (rowData: any) => (
         <div className="flex gap-2">
             <Button icon="pi pi-eye" rounded severity="info" tooltip="Ver detalles" onClick={() => verDetalles(rowData)} />
-            {rowData.status === 'PENDIENTE' && (
+            {(rowData.status === 'PENDIENTE' || rowData.status === 'ERROR') && (
                 <Button
                     icon="pi pi-check"
                     rounded
                     severity="success"
-                    tooltip="Aprobar / Timbrar"
+                    tooltip={rowData.status === 'ERROR' ? 'Reintentar timbrado' : 'Aprobar / Timbrar'}
                     loading={aprobandoId === rowData.id}
                     onClick={() => aprobar(rowData)}
                 />
             )}
+            {(rowData.status === 'PENDIENTE' || rowData.status === 'ERROR') && (
+                <Button
+                    icon="pi pi-trash"
+                    rounded
+                    severity="danger"
+                    tooltip="Eliminar (libera los viajes para volver a facturarlos)"
+                    onClick={() => eliminar(rowData)}
+                />
+            )}
+            {rowData.status === 'TIMBRADA' && (!rowData.pdf || !rowData.xml) && (
+                <Button
+                    icon="pi pi-refresh"
+                    rounded
+                    severity="warning"
+                    tooltip="Reintentar generar XML/PDF (no vuelve a timbrar)"
+                    loading={regenerandoId === rowData.id}
+                    onClick={() => reintentarArchivos(rowData)}
+                />
+            )}
             {rowData.status === 'TIMBRADA' && (
                 <>
-                    <Button icon="pi pi-file-pdf" rounded severity="danger" tooltip="Descargar PDF" onClick={() => descargar(rowData.id, 'pdf')} />
-                    <Button icon="pi pi-file" rounded severity="secondary" tooltip="Descargar XML" onClick={() => descargar(rowData.id, 'xml')} />
+                    <Button icon="pi pi-file-pdf" rounded severity="danger" tooltip="Descargar PDF" disabled={!rowData.pdf} onClick={() => descargar(rowData.id, 'pdf')} />
+                    <Button icon="pi pi-file" rounded severity="secondary" tooltip="Descargar XML" disabled={!rowData.xml} onClick={() => descargar(rowData.id, 'xml')} />
                     <Button icon="pi pi-times" rounded severity="danger" tooltip="Cancelar factura" onClick={() => cancelar(rowData)} />
                 </>
             )}

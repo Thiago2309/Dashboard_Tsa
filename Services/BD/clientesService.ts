@@ -14,6 +14,11 @@ export interface Cliente {
     metodo_pago?: 'Efectivo' | 'Transferencia';
     uso_cfdi?: string;
     regimen_fiscal?: string;
+    // Código postal REAL registrado ante el SAT para el RFC de este cliente
+    // (domicilio fiscal del receptor). El SAT lo exige en cada CFDI 4.0 y
+    // debe coincidir con su Constancia de Situación Fiscal, no con el
+    // domicilio comercial/de entrega.
+    codigo_postal?: string;
     obra?: string;
     porcentaje_administrativo?: number;
     estatus?: number; // 1 = Activo, 0 = Inactivo
@@ -32,6 +37,7 @@ const transformClienteData = (data: any): Cliente => ({
     metodo_pago: data.metodo_pago || '-',
     uso_cfdi: data.uso_cfdi || '-',
     regimen_fiscal: data.regimen_fiscal || '-',
+    codigo_postal: data.codigo_postal || '-',
     obra: data.obra || '-',
     porcentaje_administrativo: data.porcentaje_administrativo ?? 0,
     estatus: data.estatus ?? 1, // Default to 0 if not provided
@@ -103,6 +109,7 @@ export const updateCliente = async (cliente: Cliente): Promise<Cliente> => {
             metodo_pago: cliente.metodo_pago,
             uso_cfdi: cliente.uso_cfdi,
             regimen_fiscal: cliente.regimen_fiscal,
+            codigo_postal: cliente.codigo_postal,
             obra: cliente.obra,
             porcentaje_administrativo: cliente.porcentaje_administrativo,
             estatus: cliente.estatus,
