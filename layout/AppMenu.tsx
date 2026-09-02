@@ -42,7 +42,10 @@ const AppMenu = () => {
         // Visible para: TODOS
         {
             label: 'Home',
-            items: [{ label: 'Dashboard', icon: 'pi pi-fw pi-home', to: '/' }]
+            items: [
+                { label: 'Dashboard', icon: 'pi pi-fw pi-home', to: '/' },
+                { label: 'Reloj Checador', icon: 'pi pi-fw pi-clock', to: '/uikit/checador' },
+            ]
         },
 
         // ========== SECCIÓN GESTION ==========
@@ -60,6 +63,8 @@ const AppMenu = () => {
                 items: [
                     { label: 'Empleados', icon: 'pi pi-users', to: '/uikit/RH' },
                     { label: 'Vacaciones', icon: 'pi pi-calendar', to: '/uikit/RH/Vacaciones' },
+                    { label: 'Listado de Asistencia', icon: 'pi pi-fw pi-check-square', to: '/uikit/asistencia' },
+                    { label: 'Zonas del Checador', icon: 'pi pi-fw pi-map', to: '/uikit/checador-zonas' },
                 ]
             },
         ] : []),
