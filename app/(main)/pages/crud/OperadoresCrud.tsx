@@ -58,7 +58,9 @@ const OperadoresCrud = () => {
       jefe_inmediato_id: null,
       es_ceo: false,
       puesto_id: null,
-      es_externo: false
+      es_externo: false,
+      hora_entrada_prog: '08:00',
+      hora_salida_prog: '18:00'
     });
     const [selectedOperadores, setSelectedOperadores] = useState<Operador[]>([]);
     const [submitted, setSubmitted] = useState(false);
@@ -137,7 +139,9 @@ const OperadoresCrud = () => {
             jefe_inmediato_id: null,
             es_ceo: false,
             puesto_id: null,
-            es_externo: false
+            es_externo: false,
+            hora_entrada_prog: '08:00',
+            hora_salida_prog: '18:00'
         });
         setSubmitted(false);
         setOperadorDialog(true);
@@ -882,6 +886,66 @@ const OperadoresCrud = () => {
                                         id="direccion"
                                         value={operador.direccion || ''}
                                         onChange={(e) => setOperador({ ...operador, direccion: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="col-12 md:col-6">
+                                <div className="field">
+                                    <label htmlFor="hora_entrada_prog">Hora de entrada</label>
+                                    <Calendar
+                                        id="hora_entrada_prog"
+                                        value={
+                                            operador.hora_entrada_prog
+                                                ? (() => {
+                                                    const [h, m] = operador.hora_entrada_prog!.split(':').map(Number);
+                                                    const d = new Date();
+                                                    d.setHours(h, m, 0, 0);
+                                                    return d;
+                                                })()
+                                                : null
+                                        }
+                                        onChange={(e) =>
+                                            setOperador({
+                                                ...operador,
+                                                hora_entrada_prog: e.value
+                                                    ? `${String(e.value.getHours()).padStart(2, '0')}:${String(e.value.getMinutes()).padStart(2, '0')}`
+                                                    : ''
+                                            })
+                                        }
+                                        timeOnly
+                                        hourFormat="24"
+                                        showIcon
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="col-12 md:col-6">
+                                <div className="field">
+                                    <label htmlFor="hora_salida_prog">Hora de salida</label>
+                                    <Calendar
+                                        id="hora_salida_prog"
+                                        value={
+                                            operador.hora_salida_prog
+                                                ? (() => {
+                                                    const [h, m] = operador.hora_salida_prog!.split(':').map(Number);
+                                                    const d = new Date();
+                                                    d.setHours(h, m, 0, 0);
+                                                    return d;
+                                                })()
+                                                : null
+                                        }
+                                        onChange={(e) =>
+                                            setOperador({
+                                                ...operador,
+                                                hora_salida_prog: e.value
+                                                    ? `${String(e.value.getHours()).padStart(2, '0')}:${String(e.value.getMinutes()).padStart(2, '0')}`
+                                                    : ''
+                                            })
+                                        }
+                                        timeOnly
+                                        hourFormat="24"
+                                        showIcon
                                     />
                                 </div>
                             </div>
