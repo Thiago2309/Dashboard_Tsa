@@ -274,9 +274,12 @@ const minutosDelDiaCancun = (fecha: Date): number => {
 
 // Calcula las horas ("HH:mm") en las que el empleado debe reportarse durante su turno,
 // sin contar la hora de entrada (ya cubierta por el checado normal) ni de salida.
+// Soporta turnos que cruzan la medianoche (ej. entrada 23:00, salida 07:00): en ese caso
+// "fin" se trata como el día siguiente, y los slots después de medianoche se muestran en formato HH:mm normal.
 export const calcularSlotsReporte = (horaEntradaProg: string, horaSalidaProg: string, intervaloMinutos: number): string[] => {
     const inicio = minutosDeHHmm(horaEntradaProg);
-    const fin = minutosDeHHmm(horaSalidaProg);
+    let fin = minutosDeHHmm(horaSalidaProg);
+    if (fin <= inicio) fin += 24 * 60;
     const pasoMin = Math.round(intervaloMinutos);
     if (pasoMin <= 0 || fin <= inicio) return [];
 
@@ -289,38 +292,56 @@ export const calcularSlotsReporte = (horaEntradaProg: string, horaSalidaProg: st
     return slots;
 };
 
-// Cruza los horarios esperados del día con los reportes realmente registrados,
+// Minutos transcurridos desde el inicio del turno hasta el minuto del día dado, envolviendo
+// la medianoche cuando hace falta. Comparar todo en esta escala (en vez de hora del día cruda)
+// es lo que permite que los turnos nocturnos clasifiquen correctamente sus slots.
+const minutosDesdeInicioTurno = (minutoDelDia: number, inicioTurnoMin: number): number => ((minutoDelDia - inicioTurnoMin) % 1440 + 1440) % 1440;
+
+// Calcula el instante real (Date) en que termina el turno que comenzó en `fechaStr`, considerando
+// turnos que cruzan la medianoche (el fin cae en el día siguiente).
+export const calcularFinTurno = (fechaStr: string, horaEntradaProg: string, horaSalidaProg: string): Date => {
+    const inicioMin = minutosDeHHmm(horaEntradaProg);
+    let finMin = minutosDeHHmm(horaSalidaProg);
+    if (finMin <= inicioMin) finMin += 24 * 60;
+    const fin = new Date(fechaStr + 'T00:00:00');
+    fin.setMinutes(fin.getMinutes() + finMin);
+    return fin;
+};
+
+// Cruza los horarios esperados del turno con los reportes realmente registrados,
 // determinando si cada uno se cumplió a tiempo, tarde, o no se reportó.
 export const calcularEstatusSlots = (
     slots: string[],
     reportes: ReportePeriodico[],
     toleranciaMinutos: number,
     intervaloMinutos: number,
-    ahora: Date
+    ahora: Date,
+    horaEntradaProg: string
 ): EstadoSlotReporte[] => {
-    const ahoraMin = minutosDelDiaCancun(ahora);
+    const inicioTurnoMin = minutosDeHHmm(horaEntradaProg);
+    const ahoraElapsed = minutosDesdeInicioTurno(minutosDelDiaCancun(ahora), inicioTurnoMin);
     const intervaloMin = Math.round(intervaloMinutos);
     const disponibles = [...reportes].sort((a, b) => new Date(a.hora_real).getTime() - new Date(b.hora_real).getTime());
     const usados = new Set<number>();
 
     return slots.map((slot) => {
-        const slotMin = minutosDeHHmm(slot);
+        const slotElapsed = minutosDesdeInicioTurno(minutosDeHHmm(slot), inicioTurnoMin);
 
         const idx = disponibles.findIndex((r, i) => {
             if (usados.has(i)) return false;
-            const rMin = minutosDelDiaCancun(new Date(r.hora_real));
-            return rMin >= slotMin - toleranciaMinutos && rMin < slotMin + intervaloMin;
+            const rElapsed = minutosDesdeInicioTurno(minutosDelDiaCancun(new Date(r.hora_real)), inicioTurnoMin);
+            return rElapsed >= slotElapsed - toleranciaMinutos && rElapsed < slotElapsed + intervaloMin;
         });
 
         if (idx !== -1) {
             usados.add(idx);
             const reporte = disponibles[idx];
-            const rMin = minutosDelDiaCancun(new Date(reporte.hora_real));
-            return { slot, estatus: rMin <= slotMin + toleranciaMinutos ? 'a_tiempo' : 'tarde', reporte };
+            const rElapsed = minutosDesdeInicioTurno(minutosDelDiaCancun(new Date(reporte.hora_real)), inicioTurnoMin);
+            return { slot, estatus: rElapsed <= slotElapsed + toleranciaMinutos ? 'a_tiempo' : 'tarde', reporte };
         }
 
-        if (ahoraMin < slotMin) return { slot, estatus: 'futuro' };
-        if (ahoraMin <= slotMin + toleranciaMinutos) return { slot, estatus: 'pendiente' };
+        if (ahoraElapsed < slotElapsed) return { slot, estatus: 'futuro' };
+        if (ahoraElapsed <= slotElapsed + toleranciaMinutos) return { slot, estatus: 'pendiente' };
         return { slot, estatus: 'no_reportado' };
     });
 };

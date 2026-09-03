@@ -107,9 +107,9 @@ const ChecadorEmpleado = () => {
     const toleranciaReporte = operador?.reporte_periodico_tolerancia_minutos || 5;
 
     const estadosSlots = React.useMemo(() => {
-        if (slotsHoy.length === 0) return [];
-        return calcularEstatusSlots(slotsHoy, reportesHoy, toleranciaReporte, operador?.reporte_periodico_intervalo_minutos || 60, horaActual);
-    }, [slotsHoy, reportesHoy, toleranciaReporte, operador?.reporte_periodico_intervalo_minutos, horaActual]);
+        if (slotsHoy.length === 0 || !operador?.hora_entrada_prog) return [];
+        return calcularEstatusSlots(slotsHoy, reportesHoy, toleranciaReporte, operador?.reporte_periodico_intervalo_minutos || 60, horaActual, operador.hora_entrada_prog);
+    }, [slotsHoy, reportesHoy, toleranciaReporte, operador?.reporte_periodico_intervalo_minutos, operador?.hora_entrada_prog, horaActual]);
 
     const slotPendiente = yaMarcoEntrada && !yaMarcoSalida ? estadosSlots.find((s) => s.estatus === 'pendiente') : undefined;
 
