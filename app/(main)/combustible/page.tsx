@@ -15,7 +15,6 @@ import { Tag } from 'primereact/tag';
 import { DataTableFilterMeta } from 'primereact/datatable';
 import {
     fetchCombustible,
-    createCombustible,
     updateCombustible,
     deleteCombustible,
     fetchOperadores,
@@ -24,6 +23,8 @@ import {
 } from '../../../Services/BD/combustibleService';
 import { fetchCamiones, Camion } from '../../../Services/BD/inventario/camion/camionService';
 import { fetchMaquinarias, Maquinaria } from '../../../Services/BD/inventario/maquinaria/maquinariaService';
+import CombustibleWizardDialog from './CombustibleWizardDialog';
+import CombustibleVistaSidebar from './CombustibleVistaSidebar';
 
 const tipoOptions = [
     { label: 'Camión', value: 'camion' },
@@ -50,6 +51,8 @@ const CombustiblePage = () => {
     const [operadores, setOperadores] = useState<{ id: number; nombre: string }[]>([]);
 
     const [combustibleDialog, setCombustibleDialog] = useState(false);
+    const [wizardDialog, setWizardDialog] = useState(false);
+    const [vistaCombustible, setVistaCombustible] = useState<Combustible | null>(null);
     const [deleteCombustibleDialog, setDeleteCombustibleDialog] = useState(false);
     const [deleteCombustiblesDialog, setDeleteCombustiblesDialog] = useState(false);
     const [combustible, setCombustible] = useState<Combustible>(emptyCombustible);
@@ -59,6 +62,9 @@ const CombustiblePage = () => {
     const [filters, setFilters] = useState<DataTableFilterMeta>({
         global: { value: null, matchMode: 'contains' as const }
     });
+    const [filtroFechas, setFiltroFechas] = useState<(Date | null)[] | null>(null);
+    const [filtroUnidad, setFiltroUnidad] = useState<string | null>(null);
+    const [filtroOperador, setFiltroOperador] = useState<number | null>(null);
     const toast = useRef<Toast>(null);
     const dt = useRef<DataTable<any>>(null);
 
@@ -106,12 +112,34 @@ const CombustiblePage = () => {
         if (!operadorTop || litros > operadorTop.litros) operadorTop = { operador, litros };
     });
 
+    // ------- Filtros -------
+    const unidadOptionsFiltro = [
+        ...camiones.map((c) => ({ label: `${c.nombre} (${c.placa})`, value: `camion-${c.id}` })),
+        ...maquinarias.map((m) => ({ label: `${m.eco} - ${m.equipo}`, value: `maquinaria-${m.id}` }))
+    ];
+
+    const combustiblesFiltrados = combustibles.filter((c) => {
+        if (filtroFechas && filtroFechas[0]) {
+            const fecha = new Date(c.fecha + 'T00:00:00');
+            const desde = new Date(filtroFechas[0]);
+            desde.setHours(0, 0, 0, 0);
+            const hasta = filtroFechas[1] ? new Date(filtroFechas[1]) : new Date(filtroFechas[0]);
+            hasta.setHours(23, 59, 59, 999);
+            if (fecha < desde || fecha > hasta) return false;
+        }
+        if (filtroUnidad) {
+            const [tipo, idStr] = filtroUnidad.split('-');
+            const id = Number(idStr);
+            if (c.tipo_equipo !== tipo) return false;
+            if (tipo === 'camion' && c.camion_id !== id) return false;
+            if (tipo === 'maquinaria' && c.maquinaria_id !== id) return false;
+        }
+        if (filtroOperador !== null && c.id_operador !== filtroOperador) return false;
+        return true;
+    });
+
     // ------- CRUD -------
-    const openNew = () => {
-        setCombustible(emptyCombustible);
-        setSubmitted(false);
-        setCombustibleDialog(true);
-    };
+    const openNew = () => setWizardDialog(true);
 
     const hideDialog = () => {
         setSubmitted(false);
@@ -140,13 +168,8 @@ const CombustiblePage = () => {
         }
 
         try {
-            if (combustible.id) {
-                await updateCombustible(combustible);
-                toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Combustible actualizado', life: 3000 });
-            } else {
-                await createCombustible(combustible);
-                toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Combustible creado', life: 3000 });
-            }
+            await updateCombustible(combustible);
+            toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Combustible actualizado', life: 3000 });
             setCombustibleDialog(false);
             setCombustible(emptyCombustible);
             cargar();
@@ -214,6 +237,7 @@ const CombustiblePage = () => {
 
     const actionBodyTemplate = (row: Combustible) => (
         <div className="flex gap-2">
+            <Button icon="pi pi-eye" rounded severity="secondary" onClick={() => setVistaCombustible(row)} tooltip="Vista" />
             <Button icon="pi pi-pencil" rounded severity="info" onClick={() => editCombustible(row)} tooltip="Editar" />
             <Button icon="pi pi-trash" rounded severity="danger" onClick={() => confirmDeleteCombustible(row)} tooltip="Eliminar" />
         </div>
@@ -299,9 +323,40 @@ const CombustiblePage = () => {
                     <Toast ref={toast} />
                     <Toolbar className="mb-4" left={leftToolbarTemplate} right={rightToolbarTemplate} />
 
+                    <div className="flex flex-wrap gap-2 mb-4">
+                        <Calendar
+                            value={filtroFechas as any}
+                            onChange={(e) => setFiltroFechas((e.value as Date[]) || null)}
+                            selectionMode="range"
+                            placeholder="Filtrar por fecha (desde - hasta)"
+                            dateFormat="yy-mm-dd"
+                            showIcon
+                            showButtonBar
+                            className="w-full sm:w-auto"
+                        />
+                        <Dropdown
+                            value={filtroUnidad}
+                            options={unidadOptionsFiltro}
+                            onChange={(e) => setFiltroUnidad(e.value)}
+                            placeholder="Filtrar por unidad"
+                            showClear
+                            filter
+                            className="w-full sm:w-auto"
+                        />
+                        <Dropdown
+                            value={filtroOperador}
+                            options={operadores.map((o) => ({ label: o.nombre, value: o.id }))}
+                            onChange={(e) => setFiltroOperador(e.value)}
+                            placeholder="Filtrar por operador"
+                            showClear
+                            filter
+                            className="w-full sm:w-auto"
+                        />
+                    </div>
+
                     <DataTable
                         ref={dt}
-                        value={combustibles}
+                        value={combustiblesFiltrados}
                         selection={selectedCombustibles}
                         onSelectionChange={(e) => setSelectedCombustibles(e.value || [])}
                         dataKey="id"
@@ -464,7 +519,34 @@ const CombustiblePage = () => {
                                 {(combustible.importe || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}
                             </div>
                         </div>
+
+                        <div className="field">
+                            <label>Evidencia fotográfica</label>
+                            <div className="grid">
+                                {[
+                                    { label: 'Antes de cargar', url: combustible.foto_indicador_antes_url },
+                                    { label: 'Bomba', url: combustible.foto_bomba_url },
+                                    { label: 'Después de cargar', url: combustible.foto_indicador_despues_url }
+                                ].map((foto) => (
+                                    <div key={foto.label} className="col-4">
+                                        <div className="text-500 text-sm mb-1">{foto.label}</div>
+                                        {foto.url ? <img src={foto.url} alt={foto.label} className="w-full border-round" /> : <div className="text-sm text-500">Sin foto</div>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     </Dialog>
+
+                    <CombustibleWizardDialog
+                        visible={wizardDialog}
+                        onHide={() => setWizardDialog(false)}
+                        onGuardado={cargar}
+                        camiones={camiones}
+                        maquinarias={maquinarias}
+                        operadores={operadores}
+                    />
+
+                    <CombustibleVistaSidebar combustible={vistaCombustible} onHide={() => setVistaCombustible(null)} />
 
                     <Dialog visible={deleteCombustibleDialog} style={{ width: '450px' }} header="Confirmar Eliminación" modal onHide={() => setDeleteCombustibleDialog(false)} footer={
                         <>
