@@ -29,6 +29,7 @@ const ChecadorEmpleado = () => {
     const [fotoPreview, setFotoPreview] = useState<string | null>(null);
     const [avisoZona, setAvisoZona] = useState<string | null>(null);
     const [horaActual, setHoraActual] = useState<Date>(new Date());
+    const [camaraLista, setCamaraLista] = useState(false);
 
     const toast = useRef<Toast>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -87,35 +88,74 @@ const ChecadorEmpleado = () => {
             return;
         }
 
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-            streamRef.current = stream;
-            setTipoActivo(tipo);
-            setFotoBlob(null);
-            setFotoPreview(null);
-            setPaso('camara');
-
-            setTimeout(() => {
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    videoRef.current.play();
-                }
-            }, 0);
-        } catch (error) {
-            console.error('Error abriendo cámara:', error);
-            toast.current?.show({
-                severity: 'error',
-                summary: 'Cámara requerida',
-                detail: 'No se pudo acceder a la cámara. Debes permitir el acceso para poder checar.',
-                life: 4000
-            });
-        }
+        setTipoActivo(tipo);
+        setFotoBlob(null);
+        setFotoPreview(null);
+        setCamaraLista(false);
+        setPaso('camara');
     };
+
+    // Pide la cámara y la conecta al <video> hasta que el Dialog ya está montado en el DOM
+    // (hacerlo en el mismo click del botón deja el video en blanco en varios navegadores móviles)
+    useEffect(() => {
+        if (paso !== 'camara') return;
+
+        let cancelado = false;
+
+        const iniciarStream = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+
+                if (cancelado) {
+                    stream.getTracks().forEach((t) => t.stop());
+                    return;
+                }
+
+                streamRef.current = stream;
+                const video = videoRef.current;
+                if (!video) return;
+
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play().catch((playError) => console.error('Error reproduciendo video de la cámara:', playError));
+                    setCamaraLista(true);
+                };
+            } catch (error) {
+                console.error('Error abriendo cámara:', error);
+                if (cancelado) return;
+                toast.current?.show({
+                    severity: 'error',
+                    summary: 'Cámara requerida',
+                    detail: 'No se pudo acceder a la cámara. Revisa el permiso de cámara del navegador y vuelve a intentar.',
+                    life: 5000
+                });
+                setPaso('idle');
+            }
+        };
+
+        iniciarStream();
+
+        return () => {
+            cancelado = true;
+            detenerCamara();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [paso]);
 
     const capturarFoto = () => {
         const video = videoRef.current;
         const canvas = canvasRef.current;
         if (!video || !canvas) return;
+
+        if (!video.videoWidth || !video.videoHeight) {
+            toast.current?.show({
+                severity: 'warn',
+                summary: 'Cámara no lista',
+                detail: 'Espera un momento a que se vea la imagen de la cámara antes de capturar.',
+                life: 3000
+            });
+            return;
+        }
 
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
@@ -151,6 +191,7 @@ const ChecadorEmpleado = () => {
         setFotoBlob(null);
         setFotoPreview(null);
         setAvisoZona(null);
+        setCamaraLista(false);
     };
 
     const confirmarChecada = async () => {
@@ -294,8 +335,23 @@ const ChecadorEmpleado = () => {
 
                 {paso === 'camara' && (
                     <div className="flex flex-column align-items-center gap-3">
-                        <video ref={videoRef} autoPlay playsInline muted className="w-full border-round" style={{ transform: 'scaleX(-1)' }} />
-                        <Button label="Capturar Foto" icon="pi pi-camera" onClick={capturarFoto} className="w-full" />
+                        <div className="w-full relative">
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                {...{ 'webkit-playsinline': 'true' }}
+                                className="w-full border-round"
+                                style={{ transform: 'scaleX(-1)', backgroundColor: '#000', minHeight: '240px' }}
+                            />
+                            {!camaraLista && (
+                                <div className="absolute top-0 left-0 w-full h-full flex align-items-center justify-content-center text-white">
+                                    <i className="pi pi-spin pi-spinner mr-2" /> Iniciando cámara...
+                                </div>
+                            )}
+                        </div>
+                        <Button label="Capturar Foto" icon="pi pi-camera" onClick={capturarFoto} className="w-full" disabled={!camaraLista} />
                     </div>
                 )}
 
