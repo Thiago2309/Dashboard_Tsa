@@ -12,6 +12,7 @@ import {
     RegistroChecador,
     ReportePeriodico,
     calcularEstatusSlots,
+    calcularFinTurno,
     calcularSlotsReporte,
     fetchRegistrosPorOperadorYFecha,
     fetchRegistrosSemana,
@@ -130,10 +131,10 @@ const AsistenciaSemanal = () => {
 
         const fechaStr = formatearFechaISO(fecha);
         const hoyStr = formatearFechaISO(new Date());
-        const momentoReferencia = fechaStr === hoyStr ? new Date() : new Date(fechaStr + 'T23:59:59');
+        const momentoReferencia = fechaStr === hoyStr ? new Date() : calcularFinTurno(fechaStr, operador.hora_entrada_prog, operador.hora_salida_prog);
 
         const reportesDelDia = reportesSemana.filter((r) => r.operador_id === operador.id && r.fecha === fechaStr);
-        return calcularEstatusSlots(slots, reportesDelDia, operador.reporte_periodico_tolerancia_minutos || 5, operador.reporte_periodico_intervalo_minutos || 60, momentoReferencia);
+        return calcularEstatusSlots(slots, reportesDelDia, operador.reporte_periodico_tolerancia_minutos || 5, operador.reporte_periodico_intervalo_minutos || 60, momentoReferencia, operador.hora_entrada_prog);
     };
 
     const tieneFaltaReportePeriodico = (operador: Operador, fecha: Date): boolean => {
