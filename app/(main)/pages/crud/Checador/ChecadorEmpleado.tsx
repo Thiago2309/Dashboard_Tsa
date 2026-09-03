@@ -6,25 +6,48 @@ import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
 import { Toast } from 'primereact/toast';
 import {
+    EstadoSlotReporte,
     OperadorActual,
     RegistroChecador,
+    ReportePeriodico,
+    calcularEstatusSlots,
+    calcularSlotsReporte,
     distanciaMetros,
     fetchRegistrosDeHoy,
+    fetchReportesDeHoy,
     fetchZonasActivas,
     obtenerOperadorActual,
     obtenerUbicacionActual,
     registrarChecada,
+    registrarReportePeriodico,
     subirFotoChecador
 } from '../../../../../Services/BD/Checador/checadorService';
 
 type Paso = 'idle' | 'camara' | 'confirmando' | 'enviando';
+type TipoActivo = 'entrada' | 'salida' | 'reporte';
+
+const formatearIntervalo = (minutos: number): string => {
+    if (minutos % 60 === 0) return `${minutos / 60}h`;
+    if (minutos < 60) return `${minutos} min`;
+    return `${Math.floor(minutos / 60)}h ${minutos % 60}min`;
+};
+
+const ESTILO_SLOT: Record<EstadoSlotReporte['estatus'], { clase: string; icono: string; label: string }> = {
+    futuro: { clase: 'bg-gray-100 text-600', icono: 'pi-clock', label: 'Más tarde' },
+    pendiente: { clase: 'bg-blue-100 text-blue-800', icono: 'pi-bell', label: '¡Repórtate!' },
+    a_tiempo: { clase: 'bg-green-100 text-green-800', icono: 'pi-check', label: 'A tiempo' },
+    tarde: { clase: 'bg-orange-100 text-orange-800', icono: 'pi-exclamation-circle', label: 'Tarde' },
+    no_reportado: { clase: 'bg-red-100 text-red-800', icono: 'pi-times', label: 'No reportado' }
+};
 
 const ChecadorEmpleado = () => {
     const [operador, setOperador] = useState<OperadorActual | null>(null);
     const [registrosHoy, setRegistrosHoy] = useState<RegistroChecador[]>([]);
+    const [reportesHoy, setReportesHoy] = useState<ReportePeriodico[]>([]);
     const [cargando, setCargando] = useState(true);
     const [paso, setPaso] = useState<Paso>('idle');
-    const [tipoActivo, setTipoActivo] = useState<'entrada' | 'salida' | null>(null);
+    const [tipoActivo, setTipoActivo] = useState<TipoActivo | null>(null);
+    const [slotEnCurso, setSlotEnCurso] = useState<string | null>(null);
     const [fotoBlob, setFotoBlob] = useState<Blob | null>(null);
     const [fotoPreview, setFotoPreview] = useState<string | null>(null);
     const [avisoZona, setAvisoZona] = useState<string | null>(null);
@@ -36,6 +59,7 @@ const ChecadorEmpleado = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const ubicacionRef = useRef<{ latitud: number; longitud: number; precision_metros: number } | null>(null);
+    const notificadoRef = useRef<string | null>(null);
 
     const cargarDatos = useCallback(async () => {
         setCargando(true);
@@ -43,8 +67,9 @@ const ChecadorEmpleado = () => {
             const op = await obtenerOperadorActual();
             setOperador(op);
             if (op) {
-                const registros = await fetchRegistrosDeHoy(op.id);
+                const [registros, reportes] = await Promise.all([fetchRegistrosDeHoy(op.id), fetchReportesDeHoy(op.id)]);
                 setRegistrosHoy(registros);
+                setReportesHoy(reportes);
             }
         } catch (error) {
             console.error('Error cargando datos del checador:', error);
@@ -67,12 +92,52 @@ const ChecadorEmpleado = () => {
     const registroEntrada = registrosHoy.find((r) => r.tipo === 'entrada');
     const registroSalida = registrosHoy.find((r) => r.tipo === 'salida');
 
+    // Pide permiso de notificaciones del navegador una sola vez, para poder avisar aunque la pestaña esté en segundo plano
+    useEffect(() => {
+        if (operador?.reporte_periodico_activo && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    }, [operador?.reporte_periodico_activo]);
+
+    const slotsHoy = React.useMemo(() => {
+        if (!operador?.reporte_periodico_activo || !operador.hora_entrada_prog || !operador.hora_salida_prog) return [];
+        return calcularSlotsReporte(operador.hora_entrada_prog, operador.hora_salida_prog, operador.reporte_periodico_intervalo_minutos || 60);
+    }, [operador]);
+
+    const toleranciaReporte = operador?.reporte_periodico_tolerancia_minutos || 5;
+
+    const estadosSlots = React.useMemo(() => {
+        if (slotsHoy.length === 0) return [];
+        return calcularEstatusSlots(slotsHoy, reportesHoy, toleranciaReporte, operador?.reporte_periodico_intervalo_minutos || 60, horaActual);
+    }, [slotsHoy, reportesHoy, toleranciaReporte, operador?.reporte_periodico_intervalo_minutos, horaActual]);
+
+    const slotPendiente = yaMarcoEntrada && !yaMarcoSalida ? estadosSlots.find((s) => s.estatus === 'pendiente') : undefined;
+
+    // Avisa (toast + notificación del sistema) la primera vez que aparece cada slot pendiente
+    useEffect(() => {
+        if (!slotPendiente || notificadoRef.current === slotPendiente.slot) return;
+        notificadoRef.current = slotPendiente.slot;
+
+        toast.current?.show({
+            severity: 'warn',
+            summary: 'Debes reportarte',
+            detail: `Te toca reportarte (turno de las ${slotPendiente.slot}). Tienes ${toleranciaReporte} min de tolerancia.`,
+            life: 8000
+        });
+
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            new Notification('Reloj Checador', {
+                body: `Debes reportarte ahora (turno de las ${slotPendiente.slot})`
+            });
+        }
+    }, [slotPendiente, toleranciaReporte]);
+
     const detenerCamara = () => {
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
     };
 
-    const abrirCamara = async (tipo: 'entrada' | 'salida') => {
+    const abrirCamara = async (tipo: TipoActivo, slot?: string) => {
         try {
             ubicacionRef.current = await obtenerUbicacionActual();
 
@@ -89,6 +154,7 @@ const ChecadorEmpleado = () => {
         }
 
         setTipoActivo(tipo);
+        setSlotEnCurso(slot || null);
         setFotoBlob(null);
         setFotoPreview(null);
         setCamaraLista(false);
@@ -180,7 +246,7 @@ const ChecadorEmpleado = () => {
         setFotoBlob(null);
         setFotoPreview(null);
         if (tipoActivo) {
-            await abrirCamara(tipoActivo);
+            await abrirCamara(tipoActivo, slotEnCurso || undefined);
         }
     };
 
@@ -188,6 +254,7 @@ const ChecadorEmpleado = () => {
         detenerCamara();
         setPaso('idle');
         setTipoActivo(null);
+        setSlotEnCurso(null);
         setFotoBlob(null);
         setFotoPreview(null);
         setAvisoZona(null);
@@ -201,19 +268,32 @@ const ChecadorEmpleado = () => {
         try {
             const fotoPath = await subirFotoChecador(operador.id, fotoBlob);
 
-            await registrarChecada({
-                operador_id: operador.id,
-                tipo: tipoActivo,
-                latitud: ubicacionRef.current.latitud,
-                longitud: ubicacionRef.current.longitud,
-                precision_metros: ubicacionRef.current.precision_metros,
-                foto_url: fotoPath
-            });
+            if (tipoActivo === 'reporte') {
+                if (!slotEnCurso) throw new Error('No se determinó el horario del reporte');
+                await registrarReportePeriodico({
+                    operador_id: operador.id,
+                    slot_hora: slotEnCurso,
+                    latitud: ubicacionRef.current.latitud,
+                    longitud: ubicacionRef.current.longitud,
+                    precision_metros: ubicacionRef.current.precision_metros,
+                    foto_url: fotoPath
+                });
+            } else {
+                await registrarChecada({
+                    operador_id: operador.id,
+                    tipo: tipoActivo,
+                    latitud: ubicacionRef.current.latitud,
+                    longitud: ubicacionRef.current.longitud,
+                    precision_metros: ubicacionRef.current.precision_metros,
+                    foto_url: fotoPath
+                });
+            }
 
             toast.current?.show({
                 severity: 'success',
-                summary: 'Checada registrada',
-                detail: tipoActivo === 'entrada' ? 'Entrada registrada correctamente' : 'Salida registrada correctamente',
+                summary: tipoActivo === 'reporte' ? 'Reporte registrado' : 'Checada registrada',
+                detail:
+                    tipoActivo === 'entrada' ? 'Entrada registrada correctamente' : tipoActivo === 'salida' ? 'Salida registrada correctamente' : 'Reporte registrado correctamente',
                 life: 3000
             });
 
@@ -221,7 +301,7 @@ const ChecadorEmpleado = () => {
             await cargarDatos();
         } catch (error: any) {
             console.error('Error registrando checada:', error);
-            const detalle = error?.code === '23505' ? 'Ya existe una checada de este tipo para hoy.' : 'No se pudo registrar la checada. Intenta de nuevo.';
+            const detalle = error?.code === '23505' ? 'Ya existe un registro para este momento.' : 'No se pudo registrar. Intenta de nuevo.';
             toast.current?.show({ severity: 'error', summary: 'Error', detail: detalle, life: 4000 });
             setPaso('confirmando');
         }
@@ -310,10 +390,36 @@ const ChecadorEmpleado = () => {
                     <Button label="Marcar Salida" icon="pi pi-sign-out" severity="warning" size="large" onClick={() => abrirCamara('salida')} />
                 )}
                 {yaMarcoEntrada && yaMarcoSalida && <div className="text-center text-500">Ya registraste tu entrada y salida de hoy.</div>}
+
+                {slotPendiente && (
+                    <div className="w-full bg-blue-50 border-1 border-blue-300 border-round p-3 flex flex-column sm:flex-row align-items-center justify-content-between gap-2">
+                        <div className="flex align-items-center gap-2 text-blue-800">
+                            <i className="pi pi-bell text-xl" />
+                            <span>
+                                Te toca reportarte (turno de las <strong>{slotPendiente.slot}</strong>). Tienes {toleranciaReporte} min de tolerancia.
+                            </span>
+                        </div>
+                        <Button label="Reportarme ahora" icon="pi pi-camera" onClick={() => abrirCamara('reporte', slotPendiente.slot)} />
+                    </div>
+                )}
+
+                {estadosSlots.length > 0 && (
+                    <div className="w-full">
+                        <div className="text-500 text-sm mb-2 text-center sm:text-left">Reportes del turno (cada {formatearIntervalo(operador.reporte_periodico_intervalo_minutos || 60)})</div>
+                        <div className="flex flex-wrap gap-2 justify-content-center sm:justify-content-start">
+                            {estadosSlots.map((s) => (
+                                <span key={s.slot} className={`inline-flex align-items-center gap-1 px-2 py-1 border-round text-sm ${ESTILO_SLOT[s.estatus].clase}`}>
+                                    <i className={`pi ${ESTILO_SLOT[s.estatus].icono}`} style={{ fontSize: '0.75rem' }} />
+                                    {s.slot} · {ESTILO_SLOT[s.estatus].label}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <Dialog
-                header={tipoActivo === 'entrada' ? 'Checar Entrada' : 'Checar Salida'}
+                header={tipoActivo === 'entrada' ? 'Checar Entrada' : tipoActivo === 'salida' ? 'Checar Salida' : `Reporte de las ${slotEnCurso}`}
                 visible={paso === 'camara' || paso === 'confirmando' || paso === 'enviando'}
                 onHide={cancelar}
                 closable={paso !== 'enviando'}

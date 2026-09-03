@@ -26,6 +26,9 @@ export interface Operador {
     es_externo?: boolean;
     hora_entrada_prog?: string;
     hora_salida_prog?: string;
+    reporte_periodico_activo?: boolean;
+    reporte_periodico_intervalo_minutos?: number;
+    reporte_periodico_tolerancia_minutos?: number;
 }
 
 export const fetchOperadores = async (): Promise<Operador[]> => {
@@ -121,7 +124,10 @@ export const createOperador = async (operador: Omit<Operador, 'id'>): Promise<Op
                 puesto_id: operador.puesto_id || null,
                 es_externo: operador.es_externo || false,
                 hora_entrada_prog: operador.hora_entrada_prog || '08:00',
-                hora_salida_prog: operador.hora_salida_prog || '18:00'
+                hora_salida_prog: operador.hora_salida_prog || '18:00',
+                reporte_periodico_activo: operador.reporte_periodico_activo || false,
+                reporte_periodico_intervalo_minutos: operador.reporte_periodico_intervalo_minutos || 60,
+                reporte_periodico_tolerancia_minutos: operador.reporte_periodico_tolerancia_minutos || 5
             }])
             .select()
             .single();
@@ -320,7 +326,10 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
             puesto_id: operador.puesto_id || null,
             es_externo: operador.es_externo || false,
             hora_entrada_prog: operador.hora_entrada_prog || '08:00',
-            hora_salida_prog: operador.hora_salida_prog || '18:00'
+            hora_salida_prog: operador.hora_salida_prog || '18:00',
+            reporte_periodico_activo: operador.reporte_periodico_activo || false,
+            reporte_periodico_intervalo_minutos: operador.reporte_periodico_intervalo_minutos || 60,
+            reporte_periodico_tolerancia_minutos: operador.reporte_periodico_tolerancia_minutos || 5
         })
         .eq('id', operador.id)
         .select()

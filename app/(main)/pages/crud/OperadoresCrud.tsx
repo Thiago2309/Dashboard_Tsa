@@ -8,6 +8,7 @@ import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
 import { Dropdown } from 'primereact/dropdown';
 import { Calendar } from 'primereact/calendar';
+import { InputNumber } from 'primereact/inputnumber';
 import { ToggleButton } from 'primereact/togglebutton';
 import { Checkbox } from 'primereact/checkbox';
 import { Password } from 'primereact/password';
@@ -60,7 +61,10 @@ const OperadoresCrud = () => {
       puesto_id: null,
       es_externo: false,
       hora_entrada_prog: '08:00',
-      hora_salida_prog: '18:00'
+      hora_salida_prog: '18:00',
+      reporte_periodico_activo: false,
+      reporte_periodico_intervalo_minutos: 60,
+      reporte_periodico_tolerancia_minutos: 5
     });
     const [selectedOperadores, setSelectedOperadores] = useState<Operador[]>([]);
     const [submitted, setSubmitted] = useState(false);
@@ -141,7 +145,10 @@ const OperadoresCrud = () => {
             puesto_id: null,
             es_externo: false,
             hora_entrada_prog: '08:00',
-            hora_salida_prog: '18:00'
+            hora_salida_prog: '18:00',
+            reporte_periodico_activo: false,
+            reporte_periodico_intervalo_minutos: 60,
+            reporte_periodico_tolerancia_minutos: 5
         });
         setSubmitted(false);
         setOperadorDialog(true);
@@ -1126,6 +1133,71 @@ const OperadoresCrud = () => {
                                     </small>
                                 </div>
                             </div>
+
+                            {/* Reporte periódico durante el turno */}
+                            <div className="col-12">
+                                <div className="field">
+                                    <div className="flex align-items-center">
+                                        <Checkbox
+                                            id="reporte_periodico_activo"
+                                            checked={operador.reporte_periodico_activo === true}
+                                            onChange={(e) => {
+                                                const checked = e.checked || false;
+                                                setOperador({
+                                                    ...operador,
+                                                    reporte_periodico_activo: checked
+                                                });
+                                            }}
+                                        />
+                                        <label htmlFor="reporte_periodico_activo" className="ml-2">
+                                            ¿Debe reportarse cada cierto tiempo durante su turno?
+                                        </label>
+                                    </div>
+                                    <small className="text-500">
+                                        Le mostrará una alerta en el Reloj Checador para volver a marcar hasta que termine su horario.
+                                    </small>
+                                </div>
+                            </div>
+
+                            {operador.reporte_periodico_activo && (
+                                <>
+                                    <div className="col-12 md:col-6">
+                                        <div className="field">
+                                            <label htmlFor="reporte_periodico_intervalo_minutos">Cada cuántos minutos</label>
+                                            <InputNumber
+                                                id="reporte_periodico_intervalo_minutos"
+                                                value={operador.reporte_periodico_intervalo_minutos ?? 60}
+                                                onValueChange={(e) =>
+                                                    setOperador({ ...operador, reporte_periodico_intervalo_minutos: e.value ?? 60 })
+                                                }
+                                                min={5}
+                                                max={480}
+                                                step={5}
+                                                showButtons
+                                                suffix=" min"
+                                                className="w-full"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="col-12 md:col-6">
+                                        <div className="field">
+                                            <label htmlFor="reporte_periodico_tolerancia_minutos">Tolerancia (minutos)</label>
+                                            <InputNumber
+                                                id="reporte_periodico_tolerancia_minutos"
+                                                value={operador.reporte_periodico_tolerancia_minutos ?? 5}
+                                                onValueChange={(e) =>
+                                                    setOperador({ ...operador, reporte_periodico_tolerancia_minutos: e.value ?? 5 })
+                                                }
+                                                min={1}
+                                                max={60}
+                                                showButtons
+                                                suffix=" min"
+                                                className="w-full"
+                                            />
+                                        </div>
+                                    </div>
+                                </>
+                            )}
 
                             {operador.id && (
                                 <div className="col-12">

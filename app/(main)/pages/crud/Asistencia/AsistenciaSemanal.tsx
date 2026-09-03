@@ -8,11 +8,25 @@ import { Dropdown } from 'primereact/dropdown';
 import { InputText } from 'primereact/inputtext';
 import { fetchOperadores, Operador } from '../../../../../Services/BD/operadoresService';
 import {
+    EstadoSlotReporte,
     RegistroChecador,
+    ReportePeriodico,
+    calcularEstatusSlots,
+    calcularSlotsReporte,
     fetchRegistrosPorOperadorYFecha,
     fetchRegistrosSemana,
+    fetchReportesPorOperadorYFecha,
+    fetchReportesSemana,
     obtenerUrlFirmadaFoto
 } from '../../../../../Services/BD/Checador/checadorService';
+
+const ESTILO_SLOT: Record<EstadoSlotReporte['estatus'], { clase: string; label: string }> = {
+    futuro: { clase: 'bg-gray-100 text-600', label: 'Pendiente' },
+    pendiente: { clase: 'bg-blue-100 text-blue-800', label: 'En curso' },
+    a_tiempo: { clase: 'bg-green-100 text-green-800', label: 'A tiempo' },
+    tarde: { clase: 'bg-orange-100 text-orange-800', label: 'Tarde' },
+    no_reportado: { clase: 'bg-red-100 text-red-800', label: 'No reportado' }
+};
 
 const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -32,6 +46,7 @@ type EstadoDia = 'A' | 'FI' | 'T' | '-';
 const AsistenciaSemanal = () => {
     const [operadores, setOperadores] = useState<Operador[]>([]);
     const [registros, setRegistros] = useState<RegistroChecador[]>([]);
+    const [reportesSemana, setReportesSemana] = useState<ReportePeriodico[]>([]);
     const [semanaInicio, setSemanaInicio] = useState<Date>(inicioDeSemana(new Date()));
     const [cargando, setCargando] = useState(true);
     const [filtroDepto, setFiltroDepto] = useState<string | null>(null);
@@ -41,6 +56,8 @@ const AsistenciaSemanal = () => {
     const [detalle, setDetalle] = useState<{ operador: Operador; fecha: string } | null>(null);
     const [registrosDetalle, setRegistrosDetalle] = useState<RegistroChecador[]>([]);
     const [fotosDetalle, setFotosDetalle] = useState<Record<number, string | null>>({});
+    const [reportesDetalle, setReportesDetalle] = useState<ReportePeriodico[]>([]);
+    const [fotosReporteDetalle, setFotosReporteDetalle] = useState<Record<number, string | null>>({});
 
     const diasSemana = useMemo(() => {
         return Array.from({ length: 7 }).map((_, i) => {
@@ -53,9 +70,14 @@ const AsistenciaSemanal = () => {
     const cargarDatos = useCallback(async () => {
         setCargando(true);
         try {
-            const [ops, regs] = await Promise.all([fetchOperadores(), fetchRegistrosSemana(formatearFechaISO(semanaInicio))]);
+            const [ops, regs, reps] = await Promise.all([
+                fetchOperadores(),
+                fetchRegistrosSemana(formatearFechaISO(semanaInicio)),
+                fetchReportesSemana(formatearFechaISO(semanaInicio))
+            ]);
             setOperadores(ops.filter((o) => o.estatus));
             setRegistros(regs);
+            setReportesSemana(reps);
         } catch (error) {
             console.error('Error cargando listado de asistencia:', error);
         } finally {
@@ -99,6 +121,26 @@ const AsistenciaSemanal = () => {
         return tarde ? 'T' : 'A';
     };
 
+    // Calcula el estatus de cada reporte periódico esperado de un operador en una fecha dada
+    const estadosSlotsDe = (operador: Operador, fecha: Date): EstadoSlotReporte[] => {
+        if (!operador.reporte_periodico_activo || !operador.hora_entrada_prog || !operador.hora_salida_prog) return [];
+
+        const slots = calcularSlotsReporte(operador.hora_entrada_prog, operador.hora_salida_prog, operador.reporte_periodico_intervalo_minutos || 60);
+        if (slots.length === 0) return [];
+
+        const fechaStr = formatearFechaISO(fecha);
+        const hoyStr = formatearFechaISO(new Date());
+        const momentoReferencia = fechaStr === hoyStr ? new Date() : new Date(fechaStr + 'T23:59:59');
+
+        const reportesDelDia = reportesSemana.filter((r) => r.operador_id === operador.id && r.fecha === fechaStr);
+        return calcularEstatusSlots(slots, reportesDelDia, operador.reporte_periodico_tolerancia_minutos || 5, operador.reporte_periodico_intervalo_minutos || 60, momentoReferencia);
+    };
+
+    const tieneFaltaReportePeriodico = (operador: Operador, fecha: Date): boolean => {
+        if (fecha.getDay() === 0) return false;
+        return estadosSlotsDe(operador, fecha).some((s) => s.estatus === 'no_reportado');
+    };
+
     const claseEstado = (estado: EstadoDia) => {
         switch (estado) {
             case 'A':
@@ -114,13 +156,18 @@ const AsistenciaSemanal = () => {
 
     const abrirDetalle = async (operador: Operador, fecha: Date) => {
         const estado = estadoDelDia(operador.id!, fecha);
-        if (estado === '-') return;
+        const tieneReportes = operador.reporte_periodico_activo;
+        if (estado === '-' && !tieneReportes) return;
 
         const fechaStr = formatearFechaISO(fecha);
         setDetalle({ operador, fecha: fechaStr });
 
-        const regs = await fetchRegistrosPorOperadorYFecha(operador.id!, fechaStr);
+        const [regs, reps] = await Promise.all([
+            fetchRegistrosPorOperadorYFecha(operador.id!, fechaStr),
+            tieneReportes ? fetchReportesPorOperadorYFecha(operador.id!, fechaStr) : Promise.resolve([])
+        ]);
         setRegistrosDetalle(regs);
+        setReportesDetalle(reps);
 
         const urls: Record<number, string | null> = {};
         await Promise.all(
@@ -131,6 +178,16 @@ const AsistenciaSemanal = () => {
             })
         );
         setFotosDetalle(urls);
+
+        const urlsReportes: Record<number, string | null> = {};
+        await Promise.all(
+            reps.map(async (r) => {
+                if (r.foto_url && r.id) {
+                    urlsReportes[r.id] = await obtenerUrlFirmadaFoto(r.foto_url);
+                }
+            })
+        );
+        setFotosReporteDetalle(urlsReportes);
     };
 
     const formatearHora = (iso: string) =>
@@ -223,14 +280,23 @@ const AsistenciaSemanal = () => {
                                     <td className="p-2 border-bottom-1 surface-border">{op.departamento_nombre || '-'}</td>
                                     {diasSemana.map((d, i) => {
                                         const estado = estadoDelDia(op.id!, d);
+                                        const faltaReporte = tieneFaltaReportePeriodico(op, d);
+                                        const clickeable = estado !== '-' || op.reporte_periodico_activo;
                                         return (
                                             <td key={i} className="p-2 border-bottom-1 surface-border text-center">
                                                 <span
-                                                    className={`inline-flex align-items-center justify-content-center border-round font-bold text-sm ${claseEstado(estado)}`}
-                                                    style={{ width: '32px', height: '32px', cursor: estado !== '-' ? 'pointer' : 'default' }}
+                                                    className={`relative inline-flex align-items-center justify-content-center border-round font-bold text-sm ${claseEstado(estado)}`}
+                                                    style={{ width: '32px', height: '32px', cursor: clickeable ? 'pointer' : 'default' }}
                                                     onClick={() => abrirDetalle(op, d)}
+                                                    title={faltaReporte ? 'No se reportó en alguno de sus horarios intermedios' : undefined}
                                                 >
                                                     {estado}
+                                                    {faltaReporte && (
+                                                        <span
+                                                            className="absolute bg-red-500 border-circle"
+                                                            style={{ width: '9px', height: '9px', top: '-2px', right: '-2px', border: '1px solid white' }}
+                                                        />
+                                                    )}
                                                 </span>
                                             </td>
                                         );
@@ -251,6 +317,10 @@ const AsistenciaSemanal = () => {
                 </span>
                 <span>
                     <span className="inline-block bg-red-100 text-red-800 border-round px-2 py-1 mr-1">FI</span> Falta injustificada
+                </span>
+                <span className="flex align-items-center gap-1">
+                    <span className="bg-red-500 border-circle inline-block" style={{ width: '9px', height: '9px' }} />
+                    No se reportó en algún horario intermedio de su turno
                 </span>
             </div>
 
@@ -295,6 +365,46 @@ const AsistenciaSemanal = () => {
                                     )}
                                 </div>
                             ))
+                        )}
+
+                        {detalle.operador.reporte_periodico_activo && (
+                            <>
+                                <h5 className="mt-4 mb-2">Reportes del turno</h5>
+                                {estadosSlotsDe(detalle.operador, new Date(detalle.fecha + 'T00:00:00')).map((s) => (
+                                    <div key={s.slot} className="border-1 surface-border border-round p-3 mb-2">
+                                        <div className="flex justify-content-between align-items-center mb-1">
+                                            <span className="font-bold">{s.slot}</span>
+                                            <span className={`text-sm px-2 py-1 border-round ${ESTILO_SLOT[s.estatus].clase}`}>{ESTILO_SLOT[s.estatus].label}</span>
+                                        </div>
+                                        {s.reporte ? (
+                                            <>
+                                                <div className="text-sm text-500 mb-1">Hora real: {formatearHora(s.reporte.hora_real)}</div>
+                                                <div className="text-sm text-500 mb-1">
+                                                    Ubicación: {s.reporte.latitud.toFixed(5)}, {s.reporte.longitud.toFixed(5)}{' '}
+                                                    {!s.reporte.dentro_de_zona && <span className="text-red-600 font-medium">(fuera de zona)</span>}
+                                                </div>
+                                                <a
+                                                    href={`https://www.google.com/maps?q=${s.reporte.latitud},${s.reporte.longitud}`}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="text-sm text-primary block mb-2"
+                                                >
+                                                    Ver en mapa
+                                                </a>
+                                                {s.reporte.id && fotosReporteDetalle[s.reporte.id] ? (
+                                                    <img src={fotosReporteDetalle[s.reporte.id]!} alt="Selfie del reporte" className="w-full border-round" />
+                                                ) : (
+                                                    <div className="text-sm text-500">
+                                                        {s.reporte.foto_url ? 'Sin foto' : 'Foto no disponible (se elimina automáticamente después de 7 días)'}
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="text-sm text-500">Sin reportar</div>
+                                        )}
+                                    </div>
+                                ))}
+                            </>
                         )}
                     </div>
                 )}

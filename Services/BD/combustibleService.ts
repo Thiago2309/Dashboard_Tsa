@@ -22,6 +22,13 @@ export interface Combustible {
     camion_placa?: string;
     maquinaria_eco?: string;
     maquinaria_equipo?: string;
+    foto_indicador_antes_url?: string | null;
+    foto_bomba_url?: string | null;
+    foto_indicador_despues_url?: string | null;
+    latitud?: number | null;
+    longitud?: number | null;
+    precision_metros?: number | null;
+    hora_captura?: string | null;
 }
 
 // Helper para normalizar la respuesta de Supabase (embeds anidados) al Combustible plano
@@ -43,7 +50,14 @@ const transformCombustibleData = (data: any): Combustible => ({
     camion_nombre: data.m3?.nombre || '',
     camion_placa: data.m3?.placa || '',
     maquinaria_eco: data.maquinaria?.eco || '',
-    maquinaria_equipo: data.maquinaria?.equipo || ''
+    maquinaria_equipo: data.maquinaria?.equipo || '',
+    foto_indicador_antes_url: data.foto_indicador_antes_url,
+    foto_bomba_url: data.foto_bomba_url,
+    foto_indicador_despues_url: data.foto_indicador_despues_url,
+    latitud: data.latitud,
+    longitud: data.longitud,
+    precision_metros: data.precision_metros,
+    hora_captura: data.hora_captura
 });
 
 // Quita del payload las columnas que solo existen resueltas en el cliente (embeds)
@@ -190,6 +204,26 @@ export const deleteCombustible = async (id: number): Promise<void> => {
     } catch (error) {
         console.error('Error eliminando registro en caja chica para combustible:', error);
     }
+};
+
+const BUCKET_FOTOS_COMBUSTIBLE = 'combustible-fotos';
+
+export type TipoFotoCombustible = 'antes' | 'bomba' | 'despues';
+
+export const subirFotoCombustible = async (idOperador: number, tipo: TipoFotoCombustible, foto: Blob): Promise<string> => {
+    const storagePath = `${idOperador}/${Date.now()}_${tipo}.jpg`;
+
+    const { error: uploadError } = await supabase.storage
+        .from(BUCKET_FOTOS_COMBUSTIBLE)
+        .upload(storagePath, foto, { contentType: 'image/jpeg' });
+
+    if (uploadError) {
+        console.error('Error subiendo foto de combustible:', uploadError);
+        throw uploadError;
+    }
+
+    const { data } = supabase.storage.from(BUCKET_FOTOS_COMBUSTIBLE).getPublicUrl(storagePath);
+    return data.publicUrl;
 };
 
 export const fetchOperadores = async (): Promise<{ id: number; nombre: string }[]> => {
