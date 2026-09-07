@@ -51,7 +51,7 @@ export const fetchOperadores = async (): Promise<Operador[]> => {
     if (userIds.length > 0) {
         const { data: users, error: usersError } = await supabase
             .from('user')
-            .select('id, email, pass')
+            .select('id, email')
             .in('id', userIds as any[]);
 
         if (usersError) {
@@ -81,7 +81,10 @@ export const fetchOperadores = async (): Promise<Operador[]> => {
     return operadores.map(op => ({
         ...op,
         email: op.user_id ? usersMap.get(op.user_id)?.email ?? op.email : op.email,
-        password: op.user_id ? usersMap.get(op.user_id)?.pass ?? op.pass ?? op.password : op.password,
+        // Ya no se lee 'pass' de la tabla 'user' (RLS la bloquea para 'authenticated',
+        // ver scripts/rls_setup.sql). Sigue viniendo de 'operador.pass' (select('*')
+        // de arriba) hasta que se restrinja esa columna también — ver seguimiento pendiente.
+        password: op.pass ?? op.password,
         departamento_nombre: op.departamento_id ? departamentosMap.get(op.departamento_id)?.nombre : undefined
     }));
 };
@@ -282,21 +285,35 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
                 if (updatePassError) console.error('Error actualizando pass en user:', updatePassError);
             }
 
-            // Si tenemos un usuario vinculado y acceso al sistema, actualizar su rol en userroles.
+            // Si tenemos un usuario vinculado y acceso al sistema, actualizar su rol en userroles
+            // — pero solo si el rol realmente cambió, para no generar delete+insert (y ruido en
+            // la auditoría) en cada edición del operador que no toca el rol.
             if (userId && operador.acceso_sistema) {
-                const { error: deleteRolesError } = await supabase
+                const { data: rolesActuales } = await supabase
                     .from('userroles')
-                    .delete()
+                    .select('roleid')
                     .eq('userid', userId);
 
-                if (deleteRolesError) {
-                    console.error('Error eliminando roles previos del usuario:', deleteRolesError);
-                }
+                const rolesActualesIds = (rolesActuales || []).map((r) => r.roleid);
+                const yaTieneRolCorrecto = operador.rol_id
+                    ? rolesActualesIds.length === 1 && rolesActualesIds[0] === operador.rol_id
+                    : rolesActualesIds.length === 0;
 
-                if (operador.rol_id) {
-                    const rolAsignado = await asignarRol(userId, operador.rol_id);
-                    if (!rolAsignado) {
-                        console.error('Error asignando el rol al usuario existente.');
+                if (!yaTieneRolCorrecto) {
+                    const { error: deleteRolesError } = await supabase
+                        .from('userroles')
+                        .delete()
+                        .eq('userid', userId);
+
+                    if (deleteRolesError) {
+                        console.error('Error eliminando roles previos del usuario:', deleteRolesError);
+                    }
+
+                    if (operador.rol_id) {
+                        const rolAsignado = await asignarRol(userId, operador.rol_id);
+                        if (!rolAsignado) {
+                            console.error('Error asignando el rol al usuario existente.');
+                        }
                     }
                 }
             }
