@@ -6,7 +6,7 @@ import { LayoutContext } from './context/layoutcontext';
 import { MenuProvider } from './context/menucontext';
 import Link from 'next/link';
 import { AppMenuItem } from '@/types';
-import { getUserRoleIdFromLocalStorage } from '@/Services/BD/userService';
+import { getUserRoleIdFromLocalStorage, getModulosPermitidosFromLocalStorage } from '@/Services/BD/userService';
 
 // Definición de roles para mejor legibilidad
 const ROLES = {
@@ -19,23 +19,33 @@ const ROLES = {
 const AppMenu = () => {
     const { layoutConfig } = useContext(LayoutContext);
     const userRoleId = getUserRoleIdFromLocalStorage();
-    console.log('userRoleId', userRoleId);
-    
-    // Definir permisos basados en roles
     const esAdmin = userRoleId === ROLES.ADMIN;
-    const isAlmacen = userRoleId === ROLES.ALMACEN;
-    const isEmpleado = userRoleId === ROLES.EMPLEADO;
-    const isLogistica = userRoleId === ROLES.LOGISTICA;
-    
-    // ADMIN ve TODO, los demás roles solo lo que les corresponde
-    const puedeVerTodo = esAdmin;
-    console.log('esAdmin', esAdmin);
 
-    // Determinar qué secciones mostrar según el rol (Admin ve todo)
-    const puedeVerGestion = puedeVerTodo || (!isEmpleado && !isLogistica);
-    const puedeVerMantenimiento = puedeVerTodo || (isAlmacen || (esAdmin && !isLogistica));
-    const puedeVerAdminViajes = puedeVerTodo || esAdmin;
-    const puedeVerLogistica = puedeVerTodo || isLogistica;
+    // Qué módulos puede ver este usuario se asigna por cuenta desde
+    // Administración > Control de Accesos (Services/BD/permisosService.ts),
+    // ya no por un set fijo de 4 roles. Admin ve todo sin excepción.
+    const modulosPermitidos = getModulosPermitidosFromLocalStorage();
+    const puedeVer = (modulo: string) => esAdmin || modulosPermitidos.includes(modulo);
+
+    const puedeVerGestion = puedeVer('gestion');
+    const puedeVerRRHH = puedeVer('rrhh');
+
+    // Mantenimiento se decide submódulo por submódulo (Control de Accesos
+    // asigna cada uno por separado); el encabezado "Mantenimiento" solo
+    // aparece si al menos uno está permitido.
+    const puedeVerEquipamiento = puedeVer('mantenimiento_equipamiento');
+    const puedeVerTaller = puedeVer('mantenimiento_taller');
+    const puedeVerAlmacenMod = puedeVer('mantenimiento_almacen');
+    const puedeVerCostoOperativo = puedeVer('mantenimiento_costo_operativo');
+    const puedeVerCompras = puedeVer('mantenimiento_compras');
+    const puedeVerCombustibleMod = puedeVer('mantenimiento_combustible');
+    const puedeVerMantenimiento =
+        puedeVerEquipamiento || puedeVerTaller || puedeVerAlmacenMod || puedeVerCostoOperativo || puedeVerCompras || puedeVerCombustibleMod;
+
+    const puedeVerControlObras = puedeVer('control_obras');
+    const puedeVerSoporte = puedeVer('soporte');
+    const puedeVerAdminViajes = puedeVer('admin_viajes');
+    const puedeVerLogistica = puedeVer('admin_logistica');
 
     const model: AppMenuItem[] = [
         // ========== SECCIÓN HOME ==========
@@ -49,7 +59,7 @@ const AppMenu = () => {
         },
 
         // ========== SECCIÓN GESTION ==========
-        // Visible para: Admin, Almacen (NO para Empleado ni Logistica)
+        // Visible según módulo 'gestion' asignado en Control de Accesos
         ...(puedeVerGestion ? [
             {
                 label: 'Gestion',
@@ -58,6 +68,11 @@ const AppMenu = () => {
                     { label: 'Notas', icon: 'pi pi-book', to: '/utilities/icons' },
                 ]
             },
+        ] : []),
+
+        // ========== SECCIÓN RRHH ==========
+        // Visible según módulo 'rrhh' asignado en Control de Accesos
+        ...(puedeVerRRHH ? [
             {
                 label: 'RRHH',
                 items: [
@@ -70,20 +85,20 @@ const AppMenu = () => {
         ] : []),
 
         // ========== SECCIÓN MANTENIMIENTO ==========
-        // Visible para: Admin, Almacen (NO para Logistica)
+        // Cada submódulo se asigna por separado desde Control de Accesos
         ...(puedeVerMantenimiento ? [
             {
                 label: 'Mantenimiento',
                 items: [
-                    {
+                    ...(puedeVerEquipamiento ? [{
                         label: 'Equipamiento',
                         icon: 'pi pi-fw pi-truck',
                         items: [
                             { label: 'Camiones', icon: 'pi pi-fw pi-truck', to: '/equipamiento/camiones' },
                             { label: 'Maquinaria', icon: 'pi pi-fw pi-cog', to: '/equipamiento/maquinaria' },
                         ]
-                    },
-                    {
+                    }] : []),
+                    ...(puedeVerTaller ? [{
                         label: 'Taller',
                         icon: 'pi pi-fw pi-wrench',
                         items: [
@@ -91,8 +106,8 @@ const AppMenu = () => {
                             { label: 'Estatus General', icon: 'pi pi-fw pi-th-large', to: '/taller/estatus' },
                             { label: 'Rendimiento', icon: 'pi pi-fw pi-chart-line', to: '/taller/rendimiento' },
                         ]
-                    },
-                    {
+                    }] : []),
+                    ...(puedeVerAlmacenMod ? [{
                         label: 'Almacen',
                         icon: 'pi pi-fw pi-box',
                         items: [
@@ -100,15 +115,15 @@ const AppMenu = () => {
                             { label: 'Estadisticos', icon: 'pi pi-fw pi-chart-bar', to: '/inventario/estadisticos' },
                             { label: 'Validacion de Inventario', icon: 'pi pi-fw pi-check-square', to: '/inventario/validacion' },
                         ]
-                    },
-                    {
+                    }] : []),
+                    ...(puedeVerCostoOperativo ? [{
                         label: 'Costo Operativo',
                         icon: 'pi pi-fw pi-dollar',
                         items: [
                             { label: 'Costo Operativo de Unidad', icon: 'pi pi-fw pi-dollar', to: '/inventario/costo-operativo' },
                         ]
-                    },
-                    {
+                    }] : []),
+                    ...(puedeVerCompras ? [{
                         label: 'Compras',
                         icon: 'pi pi-fw pi-shopping-cart',
                         items: [
@@ -116,19 +131,21 @@ const AppMenu = () => {
                             { label: 'Caja Chica', icon: 'pi pi-fw pi-wallet', to: '/compras/caja-chica' },
                             { label: 'Proveedores', icon: 'pi pi-fw pi-users', to: '/compras/proveedores' },
                         ]
-                    },
-                    {
+                    }] : []),
+                    ...(puedeVerCombustibleMod ? [{
                         label: 'Combustible',
                         icon: 'pi pi-fw pi-bolt',
                         items: [
                             { label: 'Combustible', icon: 'pi pi-fw pi-bolt', to: '/combustible' },
                         ]
-                    },
+                    }] : []),
                 ]
             },
         ] : []),
 
-            // ========== SECCIÓN CONTROL DE OBRAS ==========
+        // ========== SECCIÓN CONTROL DE OBRAS ==========
+        // Visible según módulo 'control_obras' asignado en Control de Accesos
+        ...(puedeVerControlObras ? [
             {
                 label: 'Control de Obras',
                 items: [
@@ -160,14 +177,18 @@ const AppMenu = () => {
                     },
                 ]
             },
+        ] : []),
 
-            // ========== SECCIÓN SOPORTE ==========
+        // ========== SECCIÓN SOPORTE ==========
+        // Visible según módulo 'soporte' asignado en Control de Accesos
+        ...(puedeVerSoporte ? [
             {
                 label: 'Soporte',
                 items: [
                     { label: 'Reportar Incidencia', icon: 'pi pi-exclamation-circle', to: '/uikit/Soporte/Incidencias' },
                 ]
             },
+        ] : []),
 
         // ========== SECCIÓN ADMINISTRACIÓN ==========
         // Visible para: Admin (viajes y administración), Logistica (solo su sección)
@@ -218,7 +239,21 @@ const AppMenu = () => {
                 // { label: 'Chart', icon: 'pi pi-fw pi-chart-bar', to: '/uikit/charts' },
                 // { label: 'Misc', icon: 'pi pi-fw pi-circle', to: '/uikit/misc' }
             ]
-        }
+        },
+
+        // ========== SECCIÓN AUDITORÍA Y CONTROL DE ACCESOS ==========
+        // Visible para: Admin únicamente. Fijo — no se delega por Control de
+        // Accesos, porque ambas pantallas ya se protegen a nivel de RLS/API
+        // con is_admin(), no con el sistema de módulos por usuario.
+        ...(esAdmin ? [
+            {
+                label: 'Administración del Sistema',
+                items: [
+                    { label: 'Bitácora de cambios', icon: 'pi pi-fw pi-history', to: '/pages/crud/Auditoria' },
+                    { label: 'Control de Accesos', icon: 'pi pi-fw pi-key', to: '/pages/crud/ControlAccesos' },
+                ]
+            },
+        ] : []),
 
         // ========== OTRAS SECCIONES COMENTADAS ==========
         // {

@@ -66,78 +66,41 @@ export const asignarRol = async (userId: number, roleId: number) => {
     return true;
 };
 
-// Función mejorada de registro
+// Función mejorada de registro.
+// La creación real de usuario (auth.admin.*) corre en el servidor vía /api/usuarios,
+// que usa la key service_role. Esta función solo llama a esa API — nunca debe
+// usar supabase.auth.admin.* directamente desde el navegador (esa key no debe
+// llegar al cliente).
 export const register = async (email: string, password: string, userData: Omit<User, 'id' | 'auth_id' | 'email'>, roleId?: number) => {
     try {
-        // 1. Verificar si el email ya está registrado en auth
-        const { data: existingUsers } = await supabase.auth.admin.listUsers();
-        const userExists = existingUsers?.users?.find(u => u.email === email);
+        // /api/usuarios exige que quien llama esté logueado y sea Admin (roleid 1).
+        // Mandamos el token de la sesión actual para que el servidor lo valide.
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
 
-        let authUser = null;
-        let authId = '';
-
-        if (userExists) {
-            console.log('Usuario ya existe en auth, intentando vincular...');
-            authId = userExists.id;
-            authUser = userExists;
-        } else {
-            // 2. Crear usuario en auth
-            const { data: authData, error: authError } = await supabase.auth.signUp({ 
-                email, 
-                password 
-            });
-            
-            if (authError || !authData.user) {
-                console.error('Error en registro:', authError?.message);
-                return null;
-            }
-            
-            authId = authData.user.id;
-            authUser = authData.user;
+        if (!accessToken) {
+            console.error('No hay sesión activa para crear usuarios');
+            return null;
         }
 
-        // 3. Verificar si el usuario ya existe en la tabla 'user'
-        const usuarioExistente = await verificarUsuarioEnTabla(email);
-        
-        let userId = usuarioExistente?.id;
+        const response = await fetch('/api/usuarios', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({ email, password, userData, roleId })
+        });
 
-        if (!usuarioExistente) {
-            // 4. Insertar en la tabla user
-            const { data: userDataResponse, error: userError } = await supabase
-                .from('user')
-                .insert([{ 
-                    auth_id: authId,
-                    email,
-                    pass: password, // Guardar la contraseña
-                    nombre: userData.nombre || '',
-                    apellido: userData.apellido || '',
-                    ciudad: userData.ciudad || 'Ciudad de México',
-                    sueldo: userData.sueldo || 0
-                }])
-                .select()
-                .single();
+        const result = await response.json();
 
-            if (userError) {
-                console.error('Error insertando usuario en tabla user:', userError.message);
-                return null;
-            }
-
-            userId = userDataResponse.id;
-            console.log('Usuario creado en tabla user con ID:', userId);
-        } else {
-            console.log('ℹUsuario ya existe en tabla user con ID:', userId);
+        if (!response.ok) {
+            console.error('Error en registro:', result?.error);
+            return null;
         }
 
-        // 5. Asignar rol si se proporcionó
-        if (roleId && userId) {
-            const rolAsignado = await asignarRol(userId, roleId);
-            if (!rolAsignado) {
-                console.warn('⚠️ No se pudo asignar el rol, pero el usuario fue creado');
-            }
-        }
+        return { userId: result.userId, authId: result.authId };
 
-        return { userId, authId, authUser };
-        
     } catch (error) {
         console.error('Error en register:', error);
         return null;
@@ -149,7 +112,7 @@ export const login = async (email: string, password: string) => {
         // 1. Buscar el usuario en la tabla 'user' por email (para obtener su auth_id y relación)
         const { data: userData, error: userError } = await supabase
             .from('user')
-            .select('id, nombre, apellido, auth_id')
+            .select('id, nombre, apellido, auth_id, activo')
             .eq('email', email)
             .maybeSingle();
 
@@ -160,6 +123,12 @@ export const login = async (email: string, password: string) => {
 
         if (!userData) {
             throw new Error('Usuario no encontrado');
+        }
+
+        // 1.5. Cuenta desactivada desde Control de Accesos (reversible, distinto
+        // de operador.estatus que es un tema de nómina).
+        if (userData.activo === false) {
+            throw new Error('⚠️ Esta cuenta está desactivada. Contacte al administrador.');
         }
 
         // 2. Buscar el operador usando el nombre del usuario (asumiendo que coinciden)
@@ -227,11 +196,27 @@ export const login = async (email: string, password: string) => {
         }
 
         const roleid = userRole?.roleid || null;
-        localStorage.setItem('userData', JSON.stringify({ 
-            userId, 
+
+        // 8. Obtener los módulos del menú que puede ver (Control de Accesos).
+        // Admin no depende de esto (ve todo por bypass en AppMenu.tsx), pero se
+        // guarda igual por si en algún momento deja de ser Admin.
+        const { data: permisos, error: permisosError } = await supabase
+            .from('permisos_modulo')
+            .select('modulo')
+            .eq('userid', userId);
+
+        if (permisosError) {
+            console.error('Error obteniendo módulos permitidos:', permisosError.message);
+        }
+
+        const modulos = (permisos || []).map((p) => p.modulo);
+
+        localStorage.setItem('userData', JSON.stringify({
+            userId,
             roleid,
             nombre: userData.nombre,
-            apellido: userData.apellido
+            apellido: userData.apellido,
+            modulos
         }));
 
         // Guardar estatus del operador para verificaciones rápidas
@@ -276,4 +261,14 @@ export const getUserNombreFromLocalStorage = (): string | null => {
     const { nombre, apellido } = JSON.parse(userData);
     const nombreCompleto = [nombre, apellido].filter(Boolean).join(' ').trim();
     return nombreCompleto || null;
+};
+
+// Módulos del menú que este usuario puede ver, asignados desde Control de
+// Accesos. No incluye 'home' (siempre visible) ni 'auditoria'/'control de
+// accesos' (fijos solo para Admin) — ver Services/BD/permisosService.ts.
+export const getModulosPermitidosFromLocalStorage = (): string[] => {
+    const userData = localStorage.getItem('userData');
+    if (!userData) return [];
+    const { modulos } = JSON.parse(userData);
+    return Array.isArray(modulos) ? modulos : [];
 };
