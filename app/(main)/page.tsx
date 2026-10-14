@@ -6,10 +6,8 @@ import { Column } from 'primereact/column';
 import { DataTable } from 'primereact/datatable';
 import { Menu } from 'primereact/menu';
 import React, { useContext, useEffect, useRef, useState } from 'react';
-import { ProductService } from '../../demo/service/ProductService';
 import { LayoutContext } from '../../layout/context/layoutcontext';
 import Link from 'next/link';
-import { Demo } from '@/types';
 import { ChartData, ChartOptions } from 'chart.js';
 import { Viaje, fetchViajes } from '../../Services/BD/viajeService';
 import { Gasto, fetchGastos } from '../../Services/BD/gastoService';
@@ -80,7 +78,6 @@ const calcularValorInventario = (productos: Inventario[]): number => {
 };
 
 const Dashboard = () => {
-    const [products, setProducts] = useState<Demo.Product[]>([]);
     const [viajes, setViajes] = useState<Viaje[]>([]);
     const [gastos, setGastos] = useState<Gasto[]>([]);
     const [cajaChica, setCajaChica] = useState<CajaChica[]>([]);
@@ -211,10 +208,6 @@ const Dashboard = () => {
     };
 
     useEffect(() => {
-        ProductService.getProductsSmall().then((data) => setProducts(data));
-    }, []);
-
-    useEffect(() => {
         if (layoutConfig.colorScheme === 'light') {
             applyLightTheme();
         } else {
@@ -309,7 +302,8 @@ const Dashboard = () => {
             </div>
 
             {/* Card 3: Total de Gastos */}
-            <div className="col-12 lg:col-6 xl:col-3">
+
+            {/*<div className="col-12 lg:col-6 xl:col-3">
                 <Link href="/uikit/formlayout?module=Gastos" className="no-underline">
                     <div className="card mb-0 cursor-pointer hover:shadow-2 transition-all transition-duration-300">
                         <div className="flex justify-content-between mb-3">
@@ -333,7 +327,8 @@ const Dashboard = () => {
                         <span className="text-500 text-blue-500">Click para ver detalles</span>
                     </div>
                 </Link>
-            </div>
+            </div>*/}
+            
 
             {/* Card 4: Resumen general del dinero de la empresa */}
             {/* <div className="col-12 lg:col-6 xl:col-3">
