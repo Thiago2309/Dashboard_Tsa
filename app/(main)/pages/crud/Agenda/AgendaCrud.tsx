@@ -37,7 +37,7 @@ const AgendaCrud = () => {
                         <AgendaCalendario userId={userId} esAdmin={esAdmin} toast={toast} />
                     </TabPanel>
                     <TabPanel header="Tareas (Kanban)" leftIcon="pi pi-table mr-2">
-                        <AgendaKanban userId={userId} toast={toast} />
+                        <AgendaKanban userId={userId} esAdmin={esAdmin} toast={toast} />
                     </TabPanel>
                 </TabView>
             </div>

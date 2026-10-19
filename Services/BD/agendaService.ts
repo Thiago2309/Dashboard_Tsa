@@ -26,12 +26,16 @@ export interface AgendaEvento {
 export interface AgendaTarea {
     id: number | null;
     userid: number;
+    creado_por: number;
     titulo: string;
     descripcion?: string | null;
     estado: EstadoTarea;
     prioridad: PrioridadTarea;
     fecha_limite?: string | null; // YYYY-MM-DD
     orden: number;
+    // campos resueltos, no vienen de la tabla base
+    usuario_nombre?: string;
+    creado_por_nombre?: string;
 }
 
 export interface UsuarioSimple {
@@ -59,12 +63,15 @@ const transformEvento = (data: any): AgendaEvento => ({
 const transformTarea = (data: any): AgendaTarea => ({
     id: data.id,
     userid: data.userid,
+    creado_por: data.creado_por,
     titulo: data.titulo,
     descripcion: data.descripcion,
     estado: data.estado,
     prioridad: data.prioridad,
     fecha_limite: data.fecha_limite,
-    orden: data.orden
+    orden: data.orden,
+    usuario_nombre: data.usuario_nombre ?? undefined,
+    creado_por_nombre: data.creado_por_nombre ?? undefined
 });
 
 // ---------------------------------------------------------------------------
@@ -165,7 +172,7 @@ export const deleteEvento = async (id: number): Promise<void> => {
 
 export const fetchTareasDeUsuario = async (userid: number): Promise<AgendaTarea[]> => {
     const { data, error } = await supabase
-        .from('agenda_tareas')
+        .from('fetch_agenda_tareas')
         .select('*')
         .eq('userid', userid)
         .order('orden', { ascending: true });
@@ -178,11 +185,34 @@ export const fetchTareasDeUsuario = async (userid: number): Promise<AgendaTarea[
     return (data || []).map(transformTarea);
 };
 
-export const createTarea = async (tarea: Omit<AgendaTarea, 'id'>): Promise<AgendaTarea> => {
+export const fetchTodasLasTareas = async (): Promise<AgendaTarea[]> => {
+    const { data, error } = await supabase
+        .from('fetch_agenda_tareas')
+        .select('*')
+        .order('orden', { ascending: true });
+
+    if (error) {
+        console.error('Error obteniendo todas las tareas de agenda:', error);
+        throw error;
+    }
+
+    return (data || []).map(transformTarea);
+};
+
+// Las escrituras van contra la tabla base; después se relee la fila desde la
+// vista para traer usuario_nombre / creado_por_nombre ya resueltos.
+const fetchTareaPorId = async (id: number): Promise<AgendaTarea> => {
+    const { data, error } = await supabase.from('fetch_agenda_tareas').select('*').eq('id', id).single();
+    if (error) throw error;
+    return transformTarea(data);
+};
+
+export const createTarea = async (tarea: Omit<AgendaTarea, 'id' | 'usuario_nombre' | 'creado_por_nombre'>): Promise<AgendaTarea> => {
     const { data, error } = await supabase
         .from('agenda_tareas')
         .insert([{
             userid: tarea.userid,
+            creado_por: tarea.creado_por,
             titulo: tarea.titulo,
             descripcion: tarea.descripcion ?? null,
             estado: tarea.estado,
@@ -198,11 +228,15 @@ export const createTarea = async (tarea: Omit<AgendaTarea, 'id'>): Promise<Agend
         throw error;
     }
 
-    return transformTarea(data);
+    return fetchTareaPorId(data.id);
 };
 
-export const updateTarea = async (id: number, tarea: Partial<Omit<AgendaTarea, 'id' | 'userid'>>): Promise<AgendaTarea> => {
+export const updateTarea = async (
+    id: number,
+    tarea: Partial<Omit<AgendaTarea, 'id' | 'creado_por' | 'usuario_nombre' | 'creado_por_nombre'>>
+): Promise<AgendaTarea> => {
     const payload: Record<string, any> = {};
+    if (tarea.userid !== undefined) payload.userid = tarea.userid;
     if (tarea.titulo !== undefined) payload.titulo = tarea.titulo;
     if (tarea.descripcion !== undefined) payload.descripcion = tarea.descripcion;
     if (tarea.estado !== undefined) payload.estado = tarea.estado;
@@ -217,7 +251,7 @@ export const updateTarea = async (id: number, tarea: Partial<Omit<AgendaTarea, '
         throw error;
     }
 
-    return transformTarea(data);
+    return fetchTareaPorId(data.id);
 };
 
 export const reordenarTareas = async (cambios: { id: number; estado: EstadoTarea; orden: number }[]): Promise<void> => {
@@ -235,7 +269,7 @@ export const deleteTarea = async (id: number): Promise<void> => {
 };
 
 // ---------------------------------------------------------------------------
-// Personal (para que Admin pueda elegir a quién agendarle una reunión)
+// Personal (para que Admin pueda elegir a quién agendarle una reunión o tarea)
 // ---------------------------------------------------------------------------
 
 export const fetchUsuariosParaAgenda = async (): Promise<UsuarioSimple[]> => {

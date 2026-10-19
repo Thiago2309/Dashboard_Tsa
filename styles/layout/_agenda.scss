@@ -950,6 +950,25 @@
     margin-bottom: 0.5rem;
 }
 
+.agenda-kanban-card-asignacion {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-color-secondary);
+
+    span {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .pi {
+        font-size: 0.7rem;
+    }
+}
+
 .agenda-kanban-card-footer {
     display: flex;
     align-items: center;

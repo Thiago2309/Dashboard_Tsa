@@ -14,15 +14,19 @@ import {
     AgendaTarea,
     EstadoTarea,
     PrioridadTarea,
+    UsuarioSimple,
     createTarea,
     deleteTarea,
     fetchTareasDeUsuario,
+    fetchTodasLasTareas,
+    fetchUsuariosParaAgenda,
     reordenarTareas,
     updateTarea
 } from '../../../../../Services/BD/agendaService';
 
 interface AgendaKanbanProps {
     userId: number;
+    esAdmin: boolean;
     toast: React.RefObject<Toast>;
 }
 
@@ -46,8 +50,11 @@ const PRIORIDADES: { label: string; value: PrioridadTarea; color: string }[] = [
     { label: 'Alta', value: 'alta', color: '#ef4444' }
 ];
 
-const emptyTarea = (userId: number, estado: EstadoTarea): Omit<AgendaTarea, 'id'> => ({
+type FormTarea = Omit<AgendaTarea, 'id' | 'usuario_nombre' | 'creado_por_nombre'>;
+
+const emptyTarea = (userId: number, creadoPor: number, estado: EstadoTarea): FormTarea => ({
     userid: userId,
+    creado_por: creadoPor,
     titulo: '',
     descripcion: '',
     estado,
@@ -56,20 +63,30 @@ const emptyTarea = (userId: number, estado: EstadoTarea): Omit<AgendaTarea, 'id'
     orden: 0
 });
 
-const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
+const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, esAdmin, toast }) => {
     const [tareas, setTareas] = useState<AgendaTarea[]>([]);
+    const [usuarios, setUsuarios] = useState<UsuarioSimple[]>([]);
+    const [verUsuarioId, setVerUsuarioId] = useState<number | 'todos'>(userId);
     const [loading, setLoading] = useState(false);
 
     const [dialogVisible, setDialogVisible] = useState(false);
     const [editando, setEditando] = useState<AgendaTarea | null>(null);
-    const [form, setForm] = useState<Omit<AgendaTarea, 'id'>>(emptyTarea(userId, 'pendiente'));
+    const [form, setForm] = useState<FormTarea>(emptyTarea(userId, userId, 'pendiente'));
     const [submitted, setSubmitted] = useState(false);
     const [guardando, setGuardando] = useState(false);
+
+    const vistaTodoElPersonal = esAdmin && verUsuarioId === 'todos';
+    // Dueño del tablero que se está viendo (null = Admin viendo a todo el personal).
+    const duenoTablero: number | null = !esAdmin ? userId : verUsuarioId === 'todos' ? null : verUsuarioId;
+
+    // Una tarea que te asignó otra persona solo la puedes mover de columna;
+    // el contenido lo edita quien la creó o Admin (la BD también lo impone).
+    const puedeEditarContenido = esAdmin || !editando || editando.creado_por === userId;
 
     const cargar = async () => {
         setLoading(true);
         try {
-            const data = await fetchTareasDeUsuario(userId);
+            const data = duenoTablero === null ? await fetchTodasLasTareas() : await fetchTareasDeUsuario(duenoTablero);
             setTareas(data);
         } catch (err) {
             toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudieron cargar las tareas', life: 3000 });
@@ -81,7 +98,17 @@ const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
     useEffect(() => {
         cargar();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userId]);
+    }, [userId, verUsuarioId]);
+
+    useEffect(() => {
+        if (esAdmin) {
+            fetchUsuariosParaAgenda()
+                .then(setUsuarios)
+                .catch(() => undefined);
+        }
+    }, [esAdmin]);
+
+    const opcionesPersonal = useMemo(() => usuarios.map((u) => ({ label: `${u.nombre} ${u.apellido}`.trim(), value: u.id })), [usuarios]);
 
     const porColumna = useMemo(() => {
         const mapa: Record<EstadoTarea, AgendaTarea[]> = { pendiente: [], en_proceso: [], finalizado: [], cancelado: [] };
@@ -94,7 +121,7 @@ const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
 
     const abrirNueva = (estado: EstadoTarea) => {
         setEditando(null);
-        setForm(emptyTarea(userId, estado));
+        setForm(emptyTarea(duenoTablero ?? userId, userId, estado));
         setSubmitted(false);
         setDialogVisible(true);
     };
@@ -114,15 +141,24 @@ const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
 
         setGuardando(true);
         try {
+            // Si Admin la asigna a alguien distinto del tablero que está viendo,
+            // la tarea se guarda pero ya no corresponde mostrarla aquí.
+            const visibleAqui = (t: AgendaTarea) => duenoTablero === null || t.userid === duenoTablero;
             if (editando?.id) {
                 const actualizada = await updateTarea(editando.id, form);
-                setTareas((prev) => prev.map((t) => (t.id === actualizada.id ? actualizada : t)));
+                setTareas((prev) => (visibleAqui(actualizada) ? prev.map((t) => (t.id === actualizada.id ? actualizada : t)) : prev.filter((t) => t.id !== actualizada.id)));
                 toast.current?.show({ severity: 'success', summary: 'Actualizado', detail: 'Tarea actualizada', life: 3000 });
             } else {
                 const ordenNuevo = porColumna[form.estado].length;
-                const creada = await createTarea({ ...form, orden: ordenNuevo });
-                setTareas((prev) => [...prev, creada]);
-                toast.current?.show({ severity: 'success', summary: 'Creada', detail: 'Tarea agregada', life: 3000 });
+                const creada = await createTarea({ ...form, creado_por: userId, orden: ordenNuevo });
+                if (visibleAqui(creada)) setTareas((prev) => [...prev, creada]);
+                const asignada = creada.userid !== userId;
+                toast.current?.show({
+                    severity: 'success',
+                    summary: asignada ? 'Asignada' : 'Creada',
+                    detail: asignada ? `Tarea asignada a ${creada.usuario_nombre ?? 'el empleado'}` : 'Tarea agregada',
+                    life: 3000
+                });
             }
             setDialogVisible(false);
         } catch (err) {
@@ -186,6 +222,21 @@ const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
 
     return (
         <div className="agenda-kanban">
+            {esAdmin && (
+                <div className="agenda-cal-top">
+                    <div className="agenda-cal-top-izq">
+                        <span className="agenda-cal-etiqueta">Tablero</span>
+                        <Dropdown
+                            value={verUsuarioId}
+                            options={[{ label: 'Mis tareas', value: userId }, { label: 'Todo el personal', value: 'todos' as const }, ...opcionesPersonal.filter((o) => o.value !== userId)]}
+                            onChange={(e) => setVerUsuarioId(e.value)}
+                            className="agenda-selector-usuario"
+                            filter
+                        />
+                        {loading && <i className="pi pi-spin pi-spinner agenda-cal-spinner" />}
+                    </div>
+                </div>
+            )}
             <DragDropContext onDragEnd={onDragEnd}>
                 <div className="agenda-kanban-grid">
                     {COLUMNAS.map((col) => (
@@ -218,6 +269,20 @@ const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
                                                     >
                                                         <div className="agenda-kanban-card-titulo">{tarea.titulo}</div>
                                                         {tarea.descripcion && <div className="agenda-kanban-card-desc">{tarea.descripcion}</div>}
+                                                        {(vistaTodoElPersonal || tarea.creado_por !== tarea.userid) && (
+                                                            <div className="agenda-kanban-card-asignacion">
+                                                                {vistaTodoElPersonal && tarea.usuario_nombre && (
+                                                                    <span>
+                                                                        <i className="pi pi-user" /> {tarea.usuario_nombre}
+                                                                    </span>
+                                                                )}
+                                                                {tarea.creado_por !== tarea.userid && tarea.creado_por_nombre && (
+                                                                    <span>
+                                                                        <i className="pi pi-send" /> Asignada por {tarea.creado_por_nombre}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                         <div className="agenda-kanban-card-footer">
                                                             <Tag value={prioridadInfo(tarea.prioridad).label} style={{ background: prioridadInfo(tarea.prioridad).color }} />
                                                             {tarea.fecha_limite && (
@@ -251,7 +316,7 @@ const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
                 onHide={cerrarDialog}
                 footer={
                     <>
-                        {editando && <Button label="Eliminar" icon="pi pi-trash" severity="danger" text onClick={() => eliminar(editando)} />}
+                        {editando && puedeEditarContenido && <Button label="Eliminar" icon="pi pi-trash" severity="danger" text onClick={() => eliminar(editando)} />}
                         <Button label="Cancelar" icon="pi pi-times" text onClick={cerrarDialog} />
                         <Button label="Guardar" icon="pi pi-check" loading={guardando} onClick={guardar} />
                     </>
@@ -264,14 +329,27 @@ const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
                         value={form.titulo}
                         onChange={(e) => setForm({ ...form, titulo: e.target.value })}
                         className={submitted && !form.titulo?.trim() ? 'p-invalid' : ''}
+                        disabled={!puedeEditarContenido}
                         autoFocus
                     />
                     {submitted && !form.titulo?.trim() && <small className="p-error">El título es obligatorio.</small>}
                 </div>
                 <div className="field">
                     <label htmlFor="tarea-desc">Descripción</label>
-                    <InputTextarea id="tarea-desc" value={form.descripcion ?? ''} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} rows={3} />
+                    <InputTextarea id="tarea-desc" value={form.descripcion ?? ''} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} rows={3} disabled={!puedeEditarContenido} />
                 </div>
+                {esAdmin && (
+                    <div className="field">
+                        <label htmlFor="tarea-asignado">Asignar a</label>
+                        <Dropdown
+                            id="tarea-asignado"
+                            value={form.userid}
+                            options={[{ label: 'Yo mismo', value: userId }, ...opcionesPersonal.filter((o) => o.value !== userId)]}
+                            onChange={(e) => setForm({ ...form, userid: e.value })}
+                            filter
+                        />
+                    </div>
+                )}
                 <div className="formgrid grid">
                     <div className="field col-6">
                         <label htmlFor="tarea-estado">Estado</label>
@@ -289,6 +367,7 @@ const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
                             value={form.prioridad}
                             options={PRIORIDADES}
                             onChange={(e) => setForm({ ...form, prioridad: e.value })}
+                            disabled={!puedeEditarContenido}
                         />
                     </div>
                 </div>
@@ -303,8 +382,15 @@ const AgendaKanban: React.FC<AgendaKanbanProps> = ({ userId, toast }) => {
                         }}
                         dateFormat="dd/mm/yy"
                         showIcon
+                        disabled={!puedeEditarContenido}
                     />
                 </div>
+                {editando && editando.creado_por !== editando.userid && (
+                    <div className="agenda-evento-meta">
+                        {editando.usuario_nombre && <Tag severity="info" value={`Para: ${editando.usuario_nombre}`} />}
+                        {editando.creado_por_nombre && <Tag value={`Asignada por: ${editando.creado_por_nombre}`} />}
+                    </div>
+                )}
             </Dialog>
         </div>
     );
