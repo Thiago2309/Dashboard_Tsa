@@ -7,6 +7,7 @@ export interface Incidencia {
     id?: number;
     folio?: string;
     titulo: string;
+    modulo?: string | null;   // módulo del sistema donde se pide el cambio / se encontró el error
     nota?: string;
     estatus: EstatusIncidencia;
     id_usuario_reporta: number | null;
@@ -38,12 +39,13 @@ export const fetchIncidencias = async (): Promise<Incidencia[]> => {
 };
 
 // Crear una nueva incidencia (el folio INC-#### se genera automáticamente en la base de datos)
-export const createIncidencia = async (incidencia: { titulo: string; nota?: string; id_usuario_reporta: number | null }): Promise<Incidencia> => {
+export const createIncidencia = async (incidencia: { titulo: string; modulo: string; nota?: string; id_usuario_reporta: number | null }): Promise<Incidencia> => {
     const { data, error } = await supabase
         .from('incidencias')
         .insert([
             {
                 titulo: incidencia.titulo,
+                modulo: incidencia.modulo,
                 nota: incidencia.nota || null,
                 id_usuario_reporta: incidencia.id_usuario_reporta,
                 estatus: 'pendiente'

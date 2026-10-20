@@ -10,6 +10,8 @@ import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
 import { Dropdown } from 'primereact/dropdown';
 import { Calendar } from 'primereact/calendar';
+import { TabView, TabPanel } from 'primereact/tabview';
+import { Tag } from 'primereact/tag';
 import React, { useEffect, useRef, useState } from 'react';
 import { 
     fetchOperadoresConVacaciones,
@@ -17,9 +19,16 @@ import {
     updatePeriodoVacaciones,
     deletePeriodoVacaciones,
     fetchOperadores,
+    fetchSolicitudesVacaciones,
+    deleteSolicitudVacaciones,
+    SolicitudVacaciones,
+    parseFechaLocal,
+    formatFechaLocal,
     OperadorVacaciones,
     PeriodoVacaciones
 } from '../../../../../Services/BD/Vacaciones/vacacionesService';
+import SolicitudVacacionesDialog from './SolicitudVacacionesDialog';
+import SolicitudDetalleDialog from './SolicitudDetalleDialog';
 
 const VacacionesCrud = () => {
     const emptyPeriodo: PeriodoVacaciones = {
@@ -43,6 +52,14 @@ const VacacionesCrud = () => {
     // Opciones para dropdown
     const [operadoresList, setOperadoresList] = useState<{ id: number; nombre: string; }[]>([]);
 
+    // Solicitudes de vacaciones
+    const [tabActiva, setTabActiva] = useState(0);
+    const [solicitudes, setSolicitudes] = useState<SolicitudVacaciones[]>([]);
+    const [solicitudDialog, setSolicitudDialog] = useState(false);
+    const [idOperadorSolicitud, setIdOperadorSolicitud] = useState<number | null>(null);
+    const [solicitudDetalle, setSolicitudDetalle] = useState<SolicitudVacaciones | null>(null);
+    const [solicitudEliminar, setSolicitudEliminar] = useState<SolicitudVacaciones | null>(null);
+
     // Cargar datos iniciales
     useEffect(() => {
         cargarDatos();
@@ -51,12 +68,14 @@ const VacacionesCrud = () => {
     const cargarDatos = async () => {
         setLoading(true);
         try {
-            const [data, operadoresData] = await Promise.all([
+            const [data, operadoresData, solicitudesData] = await Promise.all([
                 fetchOperadoresConVacaciones(),
-                fetchOperadores()
+                fetchOperadores(),
+                fetchSolicitudesVacaciones()
             ]);
             setOperadores(data);
             setOperadoresList(operadoresData);
+            setSolicitudes(solicitudesData);
         } catch (error) {
             console.error('Error cargando datos:', error);
             toast.current?.show({
@@ -161,47 +180,127 @@ const VacacionesCrud = () => {
         }
     };
 
+    const abrirNuevaSolicitud = (idOperador: number | null) => {
+        setIdOperadorSolicitud(idOperador);
+        setSolicitudDialog(true);
+    };
+
+    const diasPendientesOtras = (sol: SolicitudVacaciones) =>
+        solicitudes
+            .filter(s => s.id_operador === sol.id_operador && s.estatus === 'pendiente' && s.id !== sol.id)
+            .reduce((sum, s) => sum + s.dias_solicitados, 0);
+
+    const eliminarSolicitudConfirmado = async () => {
+        if (!solicitudEliminar) return;
+        try {
+            setLoading(true);
+            await deleteSolicitudVacaciones(solicitudEliminar);
+            toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Solicitud eliminada', life: 3000 });
+            setSolicitudEliminar(null);
+            cargarDatos();
+        } catch (error) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Error al eliminar la solicitud', life: 3000 });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const estatusSolicitudTemplate = (rowData: SolicitudVacaciones) => {
+        const config = {
+            pendiente: { label: 'Pendiente', severity: 'warning' as const },
+            autorizada: { label: 'Autorizada', severity: 'success' as const },
+            rechazada: { label: 'Rechazada', severity: 'danger' as const }
+        }[rowData.estatus];
+        return <Tag value={config.label} severity={config.severity} />;
+    };
+
+    // Días que le quedan: foto guardada al autorizar, o saldo actual si sigue pendiente
+    const restantesSolicitudTemplate = (rowData: SolicitudVacaciones) => {
+        if (rowData.estatus === 'autorizada') return <span className="font-bold text-green-600">{rowData.dias_restantes}</span>;
+        if (rowData.estatus === 'rechazada') return '-';
+        const op = operadores.find(o => o.id === rowData.id_operador);
+        if (!op) return '-';
+        const quedarian = op.dias_disponibles - diasPendientesOtras(rowData) - rowData.dias_solicitados;
+        return <span className={`font-bold ${quedarian < 0 ? 'text-red-600' : 'text-500'}`}>{quedarian}</span>;
+    };
+
+    const tomadosSolicitudTemplate = (rowData: SolicitudVacaciones) => {
+        if (rowData.estatus === 'autorizada') return rowData.dias_tomados_antes;
+        return operadores.find(o => o.id === rowData.id_operador)?.dias_disfrutados_periodo ?? '-';
+    };
+
+    const firmasSolicitudTemplate = (rowData: SolicitudVacaciones) => (
+        <span className="flex gap-2">
+            <i className={`pi ${rowData.firma_empleado ? 'pi-check-circle text-green-600' : 'pi-circle text-400'}`} title="Firma del empleado" />
+            <i className={`pi ${rowData.firma_jefe ? 'pi-check-circle text-green-600' : 'pi-circle text-400'}`} title="Firma del jefe" />
+        </span>
+    );
+
+    const accionesSolicitudTemplate = (rowData: SolicitudVacaciones) => (
+        <div className="flex gap-1">
+            <Button
+                icon={rowData.estatus === 'pendiente' ? 'pi pi-pencil' : 'pi pi-eye'}
+                rounded
+                severity={rowData.estatus === 'pendiente' ? 'success' : 'secondary'}
+                size="small"
+                tooltip={rowData.estatus === 'pendiente' ? 'Firmar / Autorizar' : 'Ver / Imprimir'}
+                onClick={() => setSolicitudDetalle(rowData)}
+            />
+            <Button icon="pi pi-trash" rounded severity="danger" size="small" tooltip="Eliminar" onClick={() => setSolicitudEliminar(rowData)} />
+        </div>
+    );
+
     // Templates para la tabla principal
     const nombreBodyTemplate = (rowData: OperadorVacaciones) => {
         return `${rowData.nombre}`;
     };
 
-    const diasOtorgadosBodyTemplate = (rowData: OperadorVacaciones) => {
-        return (
-            <span className="font-bold text-blue-600">
-                {rowData.total_dias_otorgados}
-            </span>
-        );
-    };
-
-    const diasDisfrutadosBodyTemplate = (rowData: OperadorVacaciones) => {
-        return (
-            <span className="font-bold text-orange-600">
-                {rowData.total_dias_disfrutados}
-            </span>
-        );
-    };
-
-    const diasPendientesBodyTemplate = (rowData: OperadorVacaciones) => {
-        return (
-            <span className="font-bold text-green-600">
-                {rowData.total_dias_pendientes}
-            </span>
-        );
-    };
+    const formatFecha = (fecha: Date | null) =>
+        fecha ? `${fecha.getDate()}/${fecha.getMonth() + 1}/${fecha.getFullYear()}` : '-';
 
     const antiguedadBodyTemplate = (rowData: OperadorVacaciones) => {
         if (!rowData.fecha_contratacion) return '-';
-        const fechaContratacion = new Date(rowData.fecha_contratacion);
-        const hoy = new Date();
-        const años = hoy.getFullYear() - fechaContratacion.getFullYear();
-        const meses = hoy.getMonth() - fechaContratacion.getMonth();
-        return `${años} años ${meses} meses`;
+        const { anios_cumplidos: a, meses_cumplidos: m } = rowData;
+        return `${a} ${a === 1 ? 'año' : 'años'} ${m} ${m === 1 ? 'mes' : 'meses'}`;
+    };
+
+    const diasLeyBodyTemplate = (rowData: OperadorVacaciones) => {
+        if (!rowData.fecha_contratacion) return '-';
+        if (rowData.anios_cumplidos < 1) {
+            return <span className="text-500">Aún no cumple 1 año</span>;
+        }
+        return <span className="font-bold text-blue-600">{rowData.dias_ley}</span>;
+    };
+
+    const disfrutadosPeriodoBodyTemplate = (rowData: OperadorVacaciones) => {
+        return <span className="font-bold text-orange-600">{rowData.dias_disfrutados_periodo}</span>;
+    };
+
+    const disponiblesBodyTemplate = (rowData: OperadorVacaciones) => {
+        return <span className="font-bold text-green-600">{rowData.dias_disponibles}</span>;
+    };
+
+    const proximoAniversarioBodyTemplate = (rowData: OperadorVacaciones) => {
+        if (!rowData.fecha_proximo_aniversario) return '-';
+        return (
+            <span>
+                {formatFecha(rowData.fecha_proximo_aniversario)}
+                <small className="block text-500">{rowData.dias_proximo_periodo} días</small>
+            </span>
+        );
     };
 
     const actionBodyTemplate = (rowData: OperadorVacaciones) => {
         return (
             <div className="flex gap-1">
+                <Button
+                    icon="pi pi-file-edit"
+                    rounded
+                    severity="success"
+                    size="small"
+                    tooltip="Solicitar Vacaciones"
+                    onClick={() => abrirNuevaSolicitud(rowData.id)}
+                />
                 <Button
                     icon="pi pi-plus"
                     rounded
@@ -212,8 +311,8 @@ const VacacionesCrud = () => {
                         setPeriodo({
                             ...emptyPeriodo,
                             id_operador: rowData.id,
-                            dias_otorgados: 12,
-                            dias_pendientes: 12
+                            dias_otorgados: rowData.dias_disponibles || 12,
+                            dias_pendientes: rowData.dias_disponibles || 12
                         });
                         setSubmitted(false);
                         setPeriodoDialog(true);
@@ -245,14 +344,8 @@ const VacacionesCrud = () => {
             <div className="p-3">
                 <h5>Periodos de Vacaciones - {data.nombre}</h5>
                 <DataTable value={data.periodos} className="p-datatable-sm">
-                    <Column field="fecha_inicio" header="Fecha Inicio" body={(rowData) => {
-                        const date = new Date(rowData.fecha_inicio);
-                        return `${date.getDate()}/${date.getMonth()+1}/${date.getFullYear()}`;
-                    }} />
-                    <Column field="fecha_fin" header="Fecha Fin" body={(rowData) => {
-                        const date = new Date(rowData.fecha_fin);
-                        return `${date.getDate()}/${date.getMonth()+1}/${date.getFullYear()}`;
-                    }} />
+                    <Column field="fecha_inicio" header="Fecha Inicio" body={(rowData) => formatFecha(parseFechaLocal(rowData.fecha_inicio))} />
+                    <Column field="fecha_fin" header="Fecha Fin" body={(rowData) => formatFecha(parseFechaLocal(rowData.fecha_fin))} />
                     <Column field="dias_otorgados" header="Días Otorgados" />
                     <Column field="dias_disfrutados" header="Días Disfrutados" />
                     <Column field="dias_pendientes" header="Días Pendientes" />
@@ -292,6 +385,13 @@ const VacacionesCrud = () => {
     const leftToolbarTemplate = () => {
         return (
             <div className="my-2">
+                <Button
+                    label="Nueva Solicitud"
+                    icon="pi pi-file-edit"
+                    severity="success"
+                    className="mr-2"
+                    onClick={() => abrirNuevaSolicitud(null)}
+                />
                 <Button 
                     label="Nuevo Periodo" 
                     icon="pi pi-plus" 
@@ -317,6 +417,8 @@ const VacacionesCrud = () => {
                     <Toast ref={toast} />
                     <Toolbar className="mb-4" left={leftToolbarTemplate} />
 
+                    <TabView activeIndex={tabActiva} onTabChange={e => setTabActiva(e.index)}>
+                    <TabPanel header="Saldos por Empleado" leftIcon="pi pi-users mr-2">
                     <DataTable
                         ref={dt}
                         value={operadores}
@@ -334,12 +436,98 @@ const VacacionesCrud = () => {
                     >
                         <Column expander headerStyle={{ width: '3rem' }} />
                         <Column field="nombre" header="Empleado" sortable body={nombreBodyTemplate} />
-                        <Column field="antiguedad" header="Antigüedad" sortable body={antiguedadBodyTemplate} />
-                        <Column field="total_dias_otorgados" header="Días Otorgados" sortable body={diasOtorgadosBodyTemplate} />
-                        <Column field="total_dias_disfrutados" header="Días Disfrutados" sortable body={diasDisfrutadosBodyTemplate} />
-                        <Column field="total_dias_pendientes" header="Días Pendientes" sortable body={diasPendientesBodyTemplate} />
-                        <Column header="Acciones" body={actionBodyTemplate} headerStyle={{ minWidth: '10rem' }} />
+                        <Column field="anios_cumplidos" header="Antigüedad" sortable body={antiguedadBodyTemplate} />
+                        <Column field="dias_ley" header="Días por Ley" sortable body={diasLeyBodyTemplate} />
+                        <Column field="dias_disfrutados_periodo" header="Disfrutados (periodo)" sortable body={disfrutadosPeriodoBodyTemplate} />
+                        <Column field="dias_disponibles" header="Disponibles" sortable body={disponiblesBodyTemplate} />
+                        <Column field="fecha_proximo_aniversario" header="Próximo Aniversario" sortable body={proximoAniversarioBodyTemplate} />
+                        <Column header="Acciones" body={actionBodyTemplate} headerStyle={{ minWidth: '12rem' }} />
                     </DataTable>
+                    </TabPanel>
+
+                    <TabPanel
+                        header={`Solicitudes${solicitudes.some(s => s.estatus === 'pendiente') ? ` (${solicitudes.filter(s => s.estatus === 'pendiente').length} pendientes)` : ''}`}
+                        leftIcon="pi pi-file-edit mr-2"
+                    >
+                        <DataTable
+                            value={solicitudes}
+                            dataKey="id"
+                            paginator
+                            rows={10}
+                            rowsPerPageOptions={[5, 10, 25]}
+                            className="datatable-responsive"
+                            currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} Solicitudes"
+                            paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+                            emptyMessage="No hay solicitudes de vacaciones."
+                            responsiveLayout="scroll"
+                            loading={loading}
+                        >
+                            <Column field="id" header="Folio" sortable />
+                            <Column field="operador_nombre" header="Empleado" sortable filter filterPlaceholder="Buscar empleado" />
+                            <Column
+                                field="fecha_inicio"
+                                header="Periodo"
+                                sortable
+                                body={(r: SolicitudVacaciones) => `${formatFecha(parseFechaLocal(r.fecha_inicio))} - ${formatFecha(parseFechaLocal(r.fecha_fin))}`}
+                            />
+                            <Column field="dias_solicitados" header="Días que toma" sortable body={(r: SolicitudVacaciones) => <span className="font-bold text-orange-600">{r.dias_solicitados}</span>} />
+                            <Column header="Tomados antes" body={tomadosSolicitudTemplate} />
+                            <Column header="Le quedan" body={restantesSolicitudTemplate} />
+                            <Column field="estatus" header="Estatus" sortable body={estatusSolicitudTemplate} />
+                            <Column header="Firmas" body={firmasSolicitudTemplate} />
+                            <Column field="autorizado_por" header="Autoriza" sortable body={(r: SolicitudVacaciones) => r.autorizado_por || <span className="text-400">Sin autorizar</span>} />
+                            <Column header="Acciones" body={accionesSolicitudTemplate} headerStyle={{ minWidth: '8rem' }} />
+                        </DataTable>
+                    </TabPanel>
+                    </TabView>
+
+                    <SolicitudVacacionesDialog
+                        visible={solicitudDialog}
+                        onHide={() => setSolicitudDialog(false)}
+                        onGuardada={() => {
+                            setSolicitudDialog(false);
+                            setTabActiva(1);
+                            cargarDatos();
+                        }}
+                        operadores={operadores}
+                        solicitudes={solicitudes}
+                        idOperadorInicial={idOperadorSolicitud}
+                        toast={toast}
+                    />
+
+                    <SolicitudDetalleDialog
+                        solicitud={solicitudDetalle}
+                        operador={operadores.find(o => o.id === solicitudDetalle?.id_operador) || null}
+                        diasPendientesOtras={solicitudDetalle ? diasPendientesOtras(solicitudDetalle) : 0}
+                        onHide={() => setSolicitudDetalle(null)}
+                        onActualizada={() => {
+                            setSolicitudDetalle(null);
+                            cargarDatos();
+                        }}
+                        toast={toast}
+                    />
+
+                    <Dialog
+                        visible={!!solicitudEliminar}
+                        style={{ width: '450px' }}
+                        header="Confirmar Eliminación"
+                        modal
+                        footer={
+                            <>
+                                <Button label="No" icon="pi pi-times" text onClick={() => setSolicitudEliminar(null)} />
+                                <Button label="Sí" icon="pi pi-check" text onClick={eliminarSolicitudConfirmado} loading={loading} />
+                            </>
+                        }
+                        onHide={() => setSolicitudEliminar(null)}
+                    >
+                        <div className="flex align-items-center justify-content-center">
+                            <i className="pi pi-exclamation-triangle mr-3" style={{ fontSize: '2rem', color: 'var(--orange-500)' }} />
+                            <span>
+                                ¿Eliminar la solicitud #{solicitudEliminar?.id} de {solicitudEliminar?.operador_nombre}?
+                                {solicitudEliminar?.estatus === 'autorizada' && ' Los días autorizados se regresarán a su saldo.'}
+                            </span>
+                        </div>
+                    </Dialog>
 
                     {/* Dialog para crear/editar periodo */}
                     <Dialog
@@ -382,11 +570,11 @@ const VacacionesCrud = () => {
                                     <label htmlFor="fecha_inicio">Fecha Inicio *</label>
                                     <Calendar
                                         id="fecha_inicio"
-                                        value={periodo.fecha_inicio ? new Date(periodo.fecha_inicio) : null}
+                                        value={parseFechaLocal(periodo.fecha_inicio)}
                                         onChange={(e) => {
                                             const date = e.value;
                                             if (date) {
-                                                const fechaISO = date.toISOString().split('T')[0];
+                                                const fechaISO = formatFechaLocal(date);
                                                 setPeriodo({ ...periodo, fecha_inicio: fechaISO });
                                             } else {
                                                 setPeriodo({ ...periodo, fecha_inicio: '' });
@@ -405,11 +593,11 @@ const VacacionesCrud = () => {
                                     <label htmlFor="fecha_fin">Fecha Fin *</label>
                                     <Calendar
                                         id="fecha_fin"
-                                        value={periodo.fecha_fin ? new Date(periodo.fecha_fin) : null}
+                                        value={parseFechaLocal(periodo.fecha_fin)}
                                         onChange={(e) => {
                                             const date = e.value;
                                             if (date) {
-                                                const fechaISO = date.toISOString().split('T')[0];
+                                                const fechaISO = formatFechaLocal(date);
                                                 setPeriodo({ ...periodo, fecha_fin: fechaISO });
                                             } else {
                                                 setPeriodo({ ...periodo, fecha_fin: '' });
