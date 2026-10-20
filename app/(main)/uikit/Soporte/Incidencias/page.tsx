@@ -20,7 +20,7 @@ import {
 } from '../../../../../Services/BD/incidenciasService';
 
 const IncidenciasPage = () => {
-    const emptyIncidencia = { titulo: '', nota: '' };
+    const emptyIncidencia = { titulo: '', modulo: '', nota: '' };
 
     const [incidencias, setIncidencias] = useState<Incidencia[]>([]);
     const [incidenciaDialog, setIncidenciaDialog] = useState(false);
@@ -61,7 +61,7 @@ const IncidenciasPage = () => {
     const guardarIncidencia = async () => {
         setSubmitted(true);
 
-        if (!nuevaIncidencia.titulo.trim()) {
+        if (!nuevaIncidencia.titulo.trim() || !nuevaIncidencia.modulo.trim()) {
             return;
         }
 
@@ -70,6 +70,7 @@ const IncidenciasPage = () => {
             const idUsuario = getUsuarioIdFromLocalStorage();
             await createIncidencia({
                 titulo: nuevaIncidencia.titulo,
+                modulo: nuevaIncidencia.modulo.trim(),
                 nota: nuevaIncidencia.nota,
                 id_usuario_reporta: idUsuario
             });
@@ -181,6 +182,7 @@ const IncidenciasPage = () => {
                         loading={loading}
                     >
                         <Column field="folio" header="Folio" sortable body={folioBodyTemplate} />
+                        <Column field="modulo" header="Módulo" sortable body={(rowData: Incidencia) => rowData.modulo || <span className="text-400">-</span>} />
                         <Column field="titulo" header="Título" sortable />
                         <Column field="nota" header="Nota" />
                         <Column field="created_at" header="Fecha" sortable body={fechaBodyTemplate} />
@@ -205,13 +207,26 @@ const IncidenciasPage = () => {
                         onHide={hideDialog}
                     >
                         <div className="field">
+                            <label htmlFor="modulo">Módulo *</label>
+                            <InputText
+                                id="modulo"
+                                value={nuevaIncidencia.modulo}
+                                onChange={(e) => setNuevaIncidencia({ ...nuevaIncidencia, modulo: e.target.value })}
+                                placeholder="¿En qué módulo es? Ej. Combustible, Nómina, Vacaciones..."
+                                required
+                                autoFocus
+                                className={submitted && !nuevaIncidencia.modulo.trim() ? 'p-invalid' : ''}
+                            />
+                            {submitted && !nuevaIncidencia.modulo.trim() && <small className="p-error">El módulo es requerido</small>}
+                        </div>
+
+                        <div className="field">
                             <label htmlFor="titulo">Título *</label>
                             <InputText
                                 id="titulo"
                                 value={nuevaIncidencia.titulo}
                                 onChange={(e) => setNuevaIncidencia({ ...nuevaIncidencia, titulo: e.target.value })}
                                 required
-                                autoFocus
                                 className={submitted && !nuevaIncidencia.titulo.trim() ? 'p-invalid' : ''}
                             />
                             {submitted && !nuevaIncidencia.titulo.trim() && <small className="p-error">El título es requerido</small>}
