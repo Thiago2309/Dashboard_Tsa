@@ -751,6 +751,7 @@ const CxpCrud = () => {
                                                                 return `${day}-${month}-${year}`;
                                                             }}
                                                         />
+                                                        <Column field="obra" header="Obra" body={(row) => row.obra || '-'} />
                                                         <Column field="folio" header="Folio" body={(row) => row.folio || '-'} />
                                                         <Column field="maquina_nombre" header="Máquina" body={(row) => row.maquina_nombre || '-'} />
                                                         <Column field="operador_nombre" header="Operador" body={(row) => row.operador_nombre || '-'} />

@@ -419,6 +419,19 @@ const Crud = () => {
                     return;
                 }
 
+                // Volver a validar el folio al guardar (el aviso del onBlur no bloqueaba el guardado,
+                // así que una nota podía capturarse dos veces). Al editar se excluye el propio viaje.
+                if (viaje.folio && viaje.folio.trim() && await checkFolioExists(viaje.folio, viaje.id ?? null)) {
+                    setFolioError(true);
+                    toast.current?.show({
+                        severity: 'error',
+                        summary: 'Error: Folio duplicado',
+                        detail: `El folio "${viaje.folio.trim()}" ya fue capturado. Revisa que la nota no se esté capturando dos veces.`,
+                        life: 6000
+                    });
+                    return;
+                }
+
                 // Obtener el precio_unidad y metros_cubicos
                 const precioOrigenDestino = preciosOrigenDestino.find(p => p.id === viaje.id_precio_origen_destino);
                 const m3 = m3Options.find(m => m.id === viaje.id_m3);
@@ -451,7 +464,7 @@ const Crud = () => {
                         id_cliente: viaje.id_cliente,
                         fecha: viaje.fecha,
                         folio_bco: viaje.folio_bco,
-                        folio: viaje.folio,
+                        folio: (viaje.folio || '').trim(),
                         id_precio_origen_destino: viaje.id_precio_origen_destino,
                         id_material: viaje.id_material,
                         id_m3: viaje.id_m3,
@@ -1284,8 +1297,11 @@ const Crud = () => {
                                 id="id_operador"
                                 value={viaje.id_operador}
                                 options={operadores.map(op => ({ label: op.nombre, value: normalizeId(op.id) }))}
-                                onChange={(e) => setViaje({ ...viaje, id_operador: e.value })}
+                                onChange={(e) => setViaje({ ...viaje, id_operador: e.value ?? null })}
                                 placeholder="Selecciona un operador"
+                                showClear
+                                filter
+                                filterBy="label"
                                 className={submitted && !viaje.id_operador ? 'p-invalid' : ''}
                             />
                             {submitted && !viaje.id_operador && <small className="p-invalid">Operador es requerido.</small>}
@@ -1299,8 +1315,11 @@ const Crud = () => {
                                 id="id_invitado"
                                 value={viaje.id_invitado}
                                 options={invitados.map(i => ({ label: i.empresa, value: normalizeId(i.id) }))}
-                                onChange={(e) => setViaje({ ...viaje, id_invitado: e.value })}
+                                onChange={(e) => setViaje({ ...viaje, id_invitado: e.value ?? null })}
                                 placeholder="Selecciona un invitado (opcional)"
+                                showClear
+                                filter
+                                filterBy="label"
                             />
                         </div>
 

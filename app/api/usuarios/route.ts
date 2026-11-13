@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../Services/superbaseAdmin.service';
-import { verificarCallerEsAdmin } from '../../../Services/adminAuthHelper';
+import { buscarAuthUserPorEmail, verificarCallerEsAdmin } from '../../../Services/adminAuthHelper';
+import { emailValido, escaparLike, normalizarEmail } from '../../../Services/emailUtil';
 
 // Crea un usuario nuevo (auth + tabla 'user' + rol). Corre en el servidor con la
 // key service_role, para que esa key nunca tenga que exponerse al navegador.
@@ -16,25 +17,34 @@ export async function POST(request: Request) {
         if (!verificacion.ok) return verificacion.response;
 
         const body = await request.json();
-        const { email, password, userData, roleId } = body as {
+        const { email: emailRecibido, password, userData, roleId } = body as {
             email: string;
             password: string;
             userData: { nombre?: string; apellido?: string; ciudad?: string; sueldo?: number };
             roleId?: number;
         };
 
+        // Correo siempre en minúsculas y sin espacios (así lo guarda Supabase Auth)
+        const email = normalizarEmail(emailRecibido);
+
         if (!email || !password) {
             return NextResponse.json({ error: 'email y password son obligatorios' }, { status: 400 });
         }
+        if (!emailValido(email)) {
+            return NextResponse.json({ error: 'El correo no es válido' }, { status: 400 });
+        }
 
-        // 1. Verificar si el email ya existe en auth
-        const { data: existingUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-        if (listError) {
+        // 1. Verificar si el email ya existe en auth (recorriendo todas las páginas:
+        // listUsers() sin paginar solo regresaba los primeros 50 usuarios)
+        let authExistente;
+        try {
+            authExistente = await buscarAuthUserPorEmail(email);
+        } catch (listError) {
             console.error('Error listando usuarios:', listError);
             return NextResponse.json({ error: 'Error verificando usuarios existentes' }, { status: 500 });
         }
 
-        let authId = existingUsers?.users?.find((u) => u.email === email)?.id ?? '';
+        let authId = authExistente?.id ?? '';
 
         if (!authId) {
             const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -49,13 +59,36 @@ export async function POST(request: Request) {
             }
 
             authId = authData.user.id;
+        } else {
+            // La cuenta ya existía en Auth. Si ningún registro de 'user' la usa, es una cuenta
+            // huérfana (ej. se eliminó el empleado y solo se borró de la tabla): se le pone la
+            // contraseña nueva, si no el login fallaría con la contraseña vieja (invalid_credentials).
+            const { data: ligado } = await supabaseAdmin
+                .from('user')
+                .select('id')
+                .eq('auth_id', authId)
+                .limit(1)
+                .maybeSingle();
+
+            if (!ligado) {
+                const { error: resetError } = await supabaseAdmin.auth.admin.updateUserById(authId, {
+                    password,
+                    email_confirm: true,
+                    ban_duration: 'none'
+                });
+                if (resetError) {
+                    console.error('Error reactivando cuenta huérfana en Auth:', resetError);
+                    return NextResponse.json({ error: resetError.message }, { status: 400 });
+                }
+            }
         }
 
         // 2. Verificar si el usuario ya existe en la tabla 'user'
         const { data: usuarioExistente, error: userLookupError } = await supabaseAdmin
             .from('user')
             .select('id')
-            .eq('email', email)
+            .ilike('email', escaparLike(email))
+            .limit(1)
             .maybeSingle();
 
         if (userLookupError) {

@@ -1,6 +1,7 @@
 // Services/BD/operadoresService.ts
 import { supabase } from '../superbase.service';
-import { register, asignarRol } from './userService';
+import { register, asignarRol, actualizarCredencialesUsuario } from './userService';
+import { escaparLike, normalizarEmail } from '../emailUtil';
 
 export interface Operador {
     id?: number;
@@ -142,6 +143,7 @@ export const createOperador = async (operador: Omit<Operador, 'id'>): Promise<Op
 
         // 2. Si el operador tiene acceso al sistema, crear usuario
         if (operador.acceso_sistema && operador.email && operador.pass) {
+            const emailNormalizado = normalizarEmail(operador.email);
             try {
                 const userData = {
                     nombre: operador.nombre.split(' ')[0] || '',
@@ -150,16 +152,17 @@ export const createOperador = async (operador: Omit<Operador, 'id'>): Promise<Op
                     sueldo: operador.salario_base || 0
                 };
 
-                const result = await register(operador.email, operador.pass, userData, operador.rol_id || undefined);
+                const result = await register(emailNormalizado, operador.pass, userData, operador.rol_id || undefined);
                 
                 if (result) {
-                    console.log(`✅ Usuario creado/vinculado con email: ${operador.email}`);
+                    console.log(`✅ Usuario creado/vinculado con email: ${emailNormalizado}`);
                     
                     // 3. Obtener el user_id del usuario recién creado
                     const { data: userDataResult, error: userError } = await supabase
                         .from('user')
                         .select('id')
-                        .eq('email', operador.email)
+                        .ilike('email', escaparLike(emailNormalizado))
+                        .limit(1)
                         .maybeSingle();
 
                     if (userError) {
@@ -211,13 +214,15 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
 
     // 2. Si se proporcionó email y el operador debe tener acceso, actualizar/crear el user correspondiente
     if (operador.acceso_sistema && operador.email) {
+        const emailNormalizado = normalizarEmail(operador.email);
         try {
             // Si no hay user_id, intentar buscar por email existente
             if (!userId) {
                 const { data: foundUser } = await supabase
                     .from('user')
                     .select('id')
-                    .eq('email', operador.email)
+                    .ilike('email', escaparLike(emailNormalizado))
+                    .limit(1)
                     .maybeSingle();
 
                 if (foundUser) {
@@ -229,6 +234,11 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
                         .eq('id', operador.id);
 
                     if (linkError) console.error('Error vinculando user_id:', linkError);
+
+                    // Ya existía la cuenta: si se escribió contraseña, cambiarla también en Auth
+                    if (operador.pass) {
+                        await actualizarCredencialesUsuario(foundUser.id, { email: emailNormalizado, password: operador.pass });
+                    }
                 } else if (operador.pass) {
                     // Si no existe el usuario, podemos crear uno usando register
                     const userData = {
@@ -238,12 +248,14 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
                         sueldo: operador.salario_base || 0
                     };
 
-                    const result = await register(operador.email, operador.pass, userData, operador.rol_id || undefined);
+                    const result = await register(emailNormalizado, operador.pass, userData, operador.rol_id || undefined);
+                    if (!result) throw new Error('No se pudo crear la cuenta de acceso del empleado');
                     if (result) {
                         const { data: newUser, error: newUserError } = await supabase
                             .from('user')
                             .select('id')
-                            .eq('email', operador.email)
+                            .ilike('email', escaparLike(emailNormalizado))
+                            .limit(1)
                             .maybeSingle();
 
                         if (newUserError) console.error('Error obteniendo nuevo user:', newUserError);
@@ -258,31 +270,25 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
                     }
                 }
             } else {
-                // Si ya existe userId y el email cambió, actualizar en 'user'
+                // Ya tiene usuario: si cambió el correo o se escribió contraseña nueva, se manda
+                // al servidor, que actualiza PRIMERO Supabase Auth y después la tabla 'user'.
+                // (Antes se escribía solo en la tabla y el login fallaba con invalid_credentials.)
+                // Si Auth regresa error, se lanza para que el formulario lo muestre y no guarde.
                 const { data: currentUser } = await supabase
                     .from('user')
                     .select('email')
                     .eq('id', userId)
                     .maybeSingle();
 
-                if (currentUser && currentUser.email !== operador.email) {
-                    const { error: updateUserError } = await supabase
-                        .from('user')
-                        .update({ email: operador.email })
-                        .eq('id', userId);
+                const cambioEmail = normalizarEmail(currentUser?.email) !== emailNormalizado;
+                const cambioPassword = !!operador.pass;
 
-                    if (updateUserError) console.error('Error actualizando email en user:', updateUserError);
+                if (cambioEmail || cambioPassword) {
+                    await actualizarCredencialesUsuario(userId, {
+                        email: emailNormalizado,
+                        password: cambioPassword ? operador.pass : undefined
+                    });
                 }
-            }
-
-            // Si se proporcionó contraseña, actualizarla en la tabla 'user' (siempre que tengamos userId)
-            if (operador.pass && userId) {
-                const { error: updatePassError } = await supabase
-                    .from('user')
-                    .update({ pass: operador.pass })
-                    .eq('id', userId);
-
-                if (updatePassError) console.error('Error actualizando pass en user:', updatePassError);
             }
 
             // Si tenemos un usuario vinculado y acceso al sistema, actualizar su rol en userroles
@@ -318,7 +324,10 @@ export const updateOperador = async (operador: Operador): Promise<Operador> => {
                 }
             }
         } catch (error) {
+            // Se relanza: si falla el acceso (Auth), el empleado no se guarda y el formulario
+            // muestra el mensaje, en vez de decir que se guardó con el login roto.
             console.error('Error actualizando/creando usuario:', error);
+            throw error;
         }
     }
 

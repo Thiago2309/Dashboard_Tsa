@@ -346,22 +346,29 @@ export const updateViajesEstatusBulk = async (ids: number[], estatus: EstatusVia
     }
 };
 
-export const checkFolioExists = async (folio: string): Promise<boolean> => {
+// Antes se usaba .maybeSingle(): en cuanto un folio ya estaba repetido 2 o más veces en la BD,
+// Supabase regresaba error ("multiple rows") y la función respondía false, por lo que la
+// alerta de duplicado dejaba de salir justo en los folios que más se repetían.
+// Ahora se pide como máximo 1 fila (limit) y se compara sin espacios a los lados.
+// `excluirId` permite usarla al editar un viaje sin que choque consigo mismo.
+export const checkFolioExists = async (folio: string, excluirId?: number | null): Promise<boolean> => {
+    const folioLimpio = (folio || '').trim();
+    if (!folioLimpio) return false;
     try {
-        const { data, error } = await supabase
+        let query = supabase
             .from('viajes')
             .select('id')
-            .eq('folio', folio)
-            .maybeSingle(); // Usamos maybeSingle para evitar errores cuando no hay resultados
+            .eq('folio', folioLimpio);
+        if (excluirId) query = query.neq('id', excluirId);
+
+        const { data, error } = await query.limit(1);
 
         if (error) {
             console.error('Error al verificar folio:', error);
             return false;
         }
 
-        // Si data es null, no existe el folio
-        // Si data tiene un objeto, significa que existe
-        return data !== null;
+        return (data || []).length > 0;
     } catch (error) {
         console.error('Error al verificar folio:', error);
         return false;

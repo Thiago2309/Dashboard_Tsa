@@ -4,6 +4,7 @@ import { supabase } from '@/Services/superbase.service';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { RentaMaquinaria } from './inventario/maquinaria/rentaMaquinariaService';
+import { fetchAllRows } from './supabasePagination';
 
 export interface EstimacionCliente {
   id_cliente: number;
@@ -12,7 +13,11 @@ export interface EstimacionCliente {
   obra?: string;
   total_viajes: number;
   total_m3: number;
-  total_cobrar: number;
+  total_cobrar: number; // camión + maquinaria (según las etiquetas del cliente)
+  total_rentas?: number;
+  total_hrs?: number;
+  total_cobrar_camion?: number;
+  total_cobrar_maquinaria?: number;
   etiquetas: string[]; // 'camion' y/o 'maquinaria'
 }
 
@@ -77,7 +82,13 @@ export interface FiltrosEstimacion {
   origen: string | null;
   destino: string | null;
   estatus: string | null;
+  // Solo maquinaria: obra capturada en la renta (un cliente puede tener varias obras)
+  obra?: string | null;
 }
+
+// Normaliza el texto de obra para comparar/agrupar (sin espacios extra ni mayúsculas/minúsculas)
+export const normalizarObra = (obra: string | null | undefined): string =>
+  (obra || '').trim().replace(/\s+/g, ' ').toUpperCase();
 
 // export const fetchClientesConViajes = async (): Promise<EstimacionCliente[]> => {
 //   const { data: clientes, error } = await supabase
@@ -131,46 +142,70 @@ export interface FiltrosEstimacion {
 
 export const fetchClientesConViajesUltraRapido = async (): Promise<EstimacionCliente[]> => {
   try {
-    // 1. Una sola consulta con JOIN para obtener todos los datos necesarios
-    const { data, error } = await supabase
-      .from('clientes')
-      .select(`
-        id,
-        empresa,
-        contacto,
-        obra,
-        etiquetas,
-        viajes!left(
-          id,
-          caphrsviajes,
-          m3:m3!left(metros_cubicos)
-        )
-      `)
-      .order('empresa');
+    // Antes se usaba un JOIN embebido (clientes -> viajes -> m3) que regresaba los totales en 0:
+    // el M3 se leía como arreglo (m3[0]) cuando es un solo registro, y la renta de maquinaria
+    // nunca se sumaba. Ahora se consultan las tablas por separado (paginadas, para no truncar
+    // en 1000 filas) y se agrupa por cliente aquí.
+    const [clientesRes, viajes, rentas, m3Res] = await Promise.all([
+      supabase.from('clientes').select('id, empresa, contacto, obra, etiquetas').order('empresa'),
+      fetchAllRows<{ id_cliente: number | null; caphrsviajes: number | null; id_m3: number | null }>(
+        (sb, from, to) => sb.from('viajes').select('id_cliente, caphrsviajes, id_m3').range(from, to)
+      ),
+      fetchAllRows<{ id_cliente: number | null; total: number | null; hrs: number | null }>(
+        (sb, from, to) => sb.from('renta_maquinaria').select('id_cliente, total, hrs').range(from, to)
+      ),
+      supabase.from('m3').select('id, metros_cubicos')
+    ]);
 
-    if (error) throw error;
-    if (!data) return [];
+    if (clientesRes.error) throw clientesRes.error;
+    if (m3Res.error) throw m3Res.error;
 
-    // 2. Procesar los datos localmente (muy rápido)
-    return data.map(cliente => {
-      const viajes = cliente.viajes || [];
-      const total_viajes = viajes.length;
+    const m3Map = new Map<number, number>((m3Res.data || []).map(m => [m.id, m.metros_cubicos || 0]));
 
-      const total_m3 = viajes.reduce((sum, viaje) => {
-        return sum + (viaje.m3?.[0]?.metros_cubicos || 0);
-      }, 0);
+    const camionPorCliente = new Map<number, { viajes: number; m3: number; total: number }>();
+    viajes.forEach(v => {
+      if (!v.id_cliente) return;
+      const acc = camionPorCliente.get(v.id_cliente) || { viajes: 0, m3: 0, total: 0 };
+      acc.viajes += 1;
+      acc.m3 += v.id_m3 ? m3Map.get(v.id_m3) || 0 : 0;
+      acc.total += v.caphrsviajes || 0;
+      camionPorCliente.set(v.id_cliente, acc);
+    });
 
-      const total_cobrar = viajes.reduce((sum, viaje) => sum + (viaje.caphrsviajes || 0), 0);
+    const maquinariaPorCliente = new Map<number, { rentas: number; hrs: number; total: number }>();
+    rentas.forEach(r => {
+      if (!r.id_cliente) return;
+      const acc = maquinariaPorCliente.get(r.id_cliente) || { rentas: 0, hrs: 0, total: 0 };
+      acc.rentas += 1;
+      acc.hrs += r.hrs || 0;
+      acc.total += r.total || 0;
+      maquinariaPorCliente.set(r.id_cliente, acc);
+    });
+
+    return (clientesRes.data || []).map(cliente => {
+      const etiquetas: string[] = (cliente as any).etiquetas || [];
+      // Mismo criterio que la pantalla: sin etiquetas se trata como cliente de Camión
+      const tipos = etiquetas.length > 0 ? etiquetas : ['camion'];
+      const camion = tipos.includes('camion') ? camionPorCliente.get(cliente.id) : undefined;
+      const maquinaria = tipos.includes('maquinaria') ? maquinariaPorCliente.get(cliente.id) : undefined;
+
+      const total_cobrar_camion = camion?.total || 0;
+      const total_cobrar_maquinaria = maquinaria?.total || 0;
 
       return {
         id_cliente: cliente.id,
         cliente_nombre: cliente.empresa,
         contacto: cliente.contacto,
         obra: cliente.obra,
-        total_viajes,
-        total_m3,
-        total_cobrar,
-        etiquetas: (cliente as any).etiquetas || []
+        total_viajes: camion?.viajes || 0,
+        total_m3: camion?.m3 || 0,
+        total_rentas: maquinaria?.rentas || 0,
+        total_hrs: maquinaria?.hrs || 0,
+        total_cobrar_camion,
+        total_cobrar_maquinaria,
+        // Si el cliente es de Camión y Maquinaria se suman ambos; si es de uno solo, solo ese
+        total_cobrar: total_cobrar_camion + total_cobrar_maquinaria,
+        etiquetas
       };
     });
   } catch (error) {
@@ -1615,7 +1650,7 @@ export const exportarEstimacionMaquinariaExcel = async (
 
     // 3. TABLA DE DETALLE
     const tableStartRow = infoStartRow + 3;
-    const headers = ['Fecha', 'Estimación', 'Folio', 'Máquina', 'Operador', 'Hrs', 'Precio', 'Total', 'Observaciones'];
+    const headers = ['Fecha', 'Obra', 'Estimación', 'Folio', 'Máquina', 'Operador', 'Hrs', 'Precio', 'Total', 'Observaciones'];
     const headersRow = worksheet.getRow(tableStartRow);
     headers.forEach((header, index) => {
       const cell = headersRow.getCell(index + 1);
@@ -1628,17 +1663,18 @@ export const exportarEstimacionMaquinariaExcel = async (
     rentas.forEach((renta, index) => {
       const row = worksheet.getRow(tableStartRow + index + 1);
       row.getCell(1).value = renta.fecha ? new Date(renta.fecha).toLocaleDateString('es-MX') : '';
-      row.getCell(2).value = renta.estimacion || '';
-      row.getCell(3).value = renta.folio || '';
-      row.getCell(4).value = renta.maquina_nombre || '';
-      row.getCell(5).value = renta.operador_nombre || '';
-      row.getCell(6).value = renta.hrs ?? 0;
-      row.getCell(6).numFmt = '#,##0.00';
-      row.getCell(7).value = renta.precio ?? 0;
-      row.getCell(7).numFmt = '"$"#,##0.00';
-      row.getCell(8).value = renta.total ?? 0;
+      row.getCell(2).value = renta.obra || '';
+      row.getCell(3).value = renta.estimacion || '';
+      row.getCell(4).value = renta.folio || '';
+      row.getCell(5).value = renta.maquina_nombre || '';
+      row.getCell(6).value = renta.operador_nombre || '';
+      row.getCell(7).value = renta.hrs ?? 0;
+      row.getCell(7).numFmt = '#,##0.00';
+      row.getCell(8).value = renta.precio ?? 0;
       row.getCell(8).numFmt = '"$"#,##0.00';
-      row.getCell(9).value = renta.observaciones || '';
+      row.getCell(9).value = renta.total ?? 0;
+      row.getCell(9).numFmt = '"$"#,##0.00';
+      row.getCell(10).value = renta.observaciones || '';
     });
 
     const totalHrs = rentas.reduce((sum, r) => sum + (r.hrs || 0), 0);
@@ -1650,41 +1686,41 @@ export const exportarEstimacionMaquinariaExcel = async (
     const totalRow = worksheet.getRow(totalRowIndex);
     totalRow.getCell(1).value = 'TOTALES';
     totalRow.getCell(1).font = { bold: true };
-    totalRow.getCell(6).value = totalHrs;
-    totalRow.getCell(6).numFmt = '#,##0.00';
-    totalRow.getCell(6).font = { bold: true };
-    totalRow.getCell(8).value = totalCobrar;
-    totalRow.getCell(8).numFmt = '"$"#,##0.00';
-    totalRow.getCell(8).font = { bold: true };
+    totalRow.getCell(7).value = totalHrs;
+    totalRow.getCell(7).numFmt = '#,##0.00';
+    totalRow.getCell(7).font = { bold: true };
+    totalRow.getCell(9).value = totalCobrar;
+    totalRow.getCell(9).numFmt = '"$"#,##0.00';
+    totalRow.getCell(9).font = { bold: true };
 
     const subRow = worksheet.getRow(totalRowIndex + 2);
-    subRow.getCell(7).value = 'SUB TOTAL';
-    subRow.getCell(7).font = { bold: true };
-    subRow.getCell(7).alignment = { horizontal: 'right' };
-    subRow.getCell(8).value = totalCobrar;
-    subRow.getCell(8).numFmt = '"$"#,##0.00';
+    subRow.getCell(8).value = 'SUB TOTAL';
     subRow.getCell(8).font = { bold: true };
+    subRow.getCell(8).alignment = { horizontal: 'right' };
+    subRow.getCell(9).value = totalCobrar;
+    subRow.getCell(9).numFmt = '"$"#,##0.00';
+    subRow.getCell(9).font = { bold: true };
 
     const ivaRow = worksheet.getRow(totalRowIndex + 3);
-    ivaRow.getCell(7).value = 'IVA 16%';
-    ivaRow.getCell(7).font = { bold: true };
-    ivaRow.getCell(7).alignment = { horizontal: 'right' };
-    ivaRow.getCell(8).value = iva;
-    ivaRow.getCell(8).numFmt = '"$"#,##0.00';
+    ivaRow.getCell(8).value = 'IVA 16%';
     ivaRow.getCell(8).font = { bold: true };
+    ivaRow.getCell(8).alignment = { horizontal: 'right' };
+    ivaRow.getCell(9).value = iva;
+    ivaRow.getCell(9).numFmt = '"$"#,##0.00';
+    ivaRow.getCell(9).font = { bold: true };
 
     const totalFinalRow = worksheet.getRow(totalRowIndex + 4);
-    totalFinalRow.getCell(7).value = 'TOTAL';
-    totalFinalRow.getCell(7).font = { bold: true, size: 12 };
-    totalFinalRow.getCell(7).alignment = { horizontal: 'right' };
-    totalFinalRow.getCell(8).value = totalConIva;
-    totalFinalRow.getCell(8).numFmt = '"$"#,##0.00';
+    totalFinalRow.getCell(8).value = 'TOTAL';
     totalFinalRow.getCell(8).font = { bold: true, size: 12 };
+    totalFinalRow.getCell(8).alignment = { horizontal: 'right' };
+    totalFinalRow.getCell(9).value = totalConIva;
+    totalFinalRow.getCell(9).numFmt = '"$"#,##0.00';
+    totalFinalRow.getCell(9).font = { bold: true, size: 12 };
 
     // Bordes de la tabla (encabezados + datos + fila de totales)
     for (let row = tableStartRow; row <= totalRowIndex; row++) {
       const worksheetRow = worksheet.getRow(row);
-      for (let col = 1; col <= 9; col++) {
+      for (let col = 1; col <= 10; col++) {
         worksheetRow.getCell(col).border = {
           top: { style: 'thin', color: { argb: '000000' } },
           left: { style: 'thin', color: { argb: '000000' } },
@@ -1696,6 +1732,7 @@ export const exportarEstimacionMaquinariaExcel = async (
 
     worksheet.columns = [
       { width: 12 }, // Fecha
+      { width: 22 }, // Obra
       { width: 14 }, // Estimación
       { width: 14 }, // Folio
       { width: 22 }, // Máquina
