@@ -1,5 +1,6 @@
 // Services/BD/userService.ts
 import { supabase } from '../superbase.service';
+import { escaparLike, normalizarEmail } from '../emailUtil';
 
 const withTimeout = <T,>(promise: PromiseLike<T>, ms: number, mensaje: string): Promise<T> =>
     Promise.race([
@@ -23,7 +24,8 @@ export const verificarUsuarioEnTabla = async (email: string) => {
     const { data, error } = await supabase
         .from('user')
         .select('id, auth_id')
-        .eq('email', email)
+        .ilike('email', escaparLike(normalizarEmail(email)))
+        .limit(1)
         .maybeSingle();
 
     if (error) {
@@ -89,7 +91,7 @@ export const register = async (email: string, password: string, userData: Omit<U
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${accessToken}`
             },
-            body: JSON.stringify({ email, password, userData, roleId })
+            body: JSON.stringify({ email: normalizarEmail(email), password, userData, roleId })
         });
 
         const result = await response.json();
@@ -107,13 +109,46 @@ export const register = async (email: string, password: string, userData: Omit<U
     }
 };
 
-export const login = async (email: string, password: string) => {
+// Cambia correo y/o contraseña de una cuenta: el servidor actualiza PRIMERO Supabase Auth
+// y después la tabla 'user' (ver app/api/usuarios/credenciales/route.ts). Lanza un Error con
+// el mensaje del servidor si algo falla, para mostrarlo en pantalla.
+// - password vacío/undefined = no se cambia la contraseña.
+// - sincronizarDesdeTabla = repara una cuenta desincronizada usando el correo y la
+//   contraseña que ya están en la tabla 'user'.
+export const actualizarCredencialesUsuario = async (
+    userId: number,
+    datos: { email?: string; password?: string; sincronizarDesdeTabla?: boolean }
+): Promise<{ email: string }> => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error('No hay sesión activa');
+
+    const response = await fetch('/api/usuarios/credenciales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({
+            userId,
+            email: datos.email ? normalizarEmail(datos.email) : undefined,
+            password: datos.password ? datos.password : undefined,
+            sincronizarDesdeTabla: datos.sincronizarDesdeTabla || false
+        })
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result?.error || 'No se pudo actualizar el acceso del usuario');
+    return { email: result.email };
+};
+
+export const login = async (emailEscrito: string, password: string) => {
+    // Mismo formato con el que se guarda (Auth guarda en minúsculas)
+    const email = normalizarEmail(emailEscrito);
     try {
         // 1. Buscar el usuario en la tabla 'user' por email (para obtener su auth_id y relación)
         const { data: userData, error: userError } = await supabase
             .from('user')
             .select('id, nombre, apellido, auth_id, activo')
-            .eq('email', email)
+            .ilike('email', escaparLike(email))
+            .limit(1)
             .maybeSingle();
 
         if (userError) {

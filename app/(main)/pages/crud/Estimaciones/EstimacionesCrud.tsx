@@ -32,7 +32,8 @@ import {
   EstimacionCliente,
   ViajeEstimacion,
   FiltrosEstimacion,
-  ConfiguracionExportacion
+  ConfiguracionExportacion,
+  normalizarObra
 } from '../../../../../Services/BD/estimacionesService';
 import { updateViajesEstatusBulk, fetchViajesPorIdentificadores, ViajeIdentificado, EstatusViaje } from '../../../../../Services/BD/viajeService';
 import { fetchRentaMaquinariaPorCliente, RentaMaquinaria } from '../../../../../Services/BD/inventario/maquinaria/rentaMaquinariaService';
@@ -151,6 +152,8 @@ const EstimacionesCrud = () => {
     destinos: []
   });
   const [showFiltros, setShowFiltros] = useState(false);
+  // Obras (texto capturado en cada renta de maquinaria) del cliente seleccionado, para el filtro
+  const [obrasMaquinaria, setObrasMaquinaria] = useState<string[]>([]);
   const [exportDialog, setExportDialog] = useState(false);
 
   // --- Personalización de la exportación a Excel ---
@@ -294,8 +297,19 @@ const EstimacionesCrud = () => {
         if ((r.fecha || '').split('T')[0] > finStr) return false;
       }
       if (f.operador && !(r.operador_nombre || '').toLowerCase().includes(f.operador.toLowerCase())) return false;
+      if (f.obra && normalizarObra(r.obra) !== normalizarObra(f.obra)) return false;
       return true;
     });
+  };
+
+  // Lista de obras distintas de las rentas (agrupa las que solo difieren en espacios/mayúsculas)
+  const obrasDeRentas = (rentas: RentaMaquinaria[]): string[] => {
+    const mapa = new Map<string, string>();
+    rentas.forEach(r => {
+      const clave = normalizarObra(r.obra);
+      if (clave && !mapa.has(clave)) mapa.set(clave, (r.obra || '').trim());
+    });
+    return Array.from(mapa.values()).sort((a, b) => a.localeCompare(b, 'es'));
   };
 
   const cargarRentasCliente = async (cliente: EstimacionCliente) => {
@@ -303,6 +317,9 @@ const EstimacionesCrud = () => {
     try {
       const rentas = await fetchRentaMaquinariaPorCliente(cliente.id_cliente);
       setRentasFiltradas(rentas);
+      setObrasMaquinaria(obrasDeRentas(rentas));
+      // Se muestran todas las rentas del cliente: la obra filtrada (si había) ya no aplica
+      setFiltros(prev => ({ ...prev, obra: null }));
     } catch (error) {
       mostrarError(`Error al cargar rentas de maquinaria de ${cliente.cliente_nombre}`);
     } finally {
@@ -327,6 +344,7 @@ const EstimacionesCrud = () => {
         mostrarExito(`Filtros aplicados: ${viajes.length} viajes encontrados`);
       } else {
         const todas = await fetchRentaMaquinariaPorCliente(clienteSeleccionado.id_cliente);
+        setObrasMaquinaria(obrasDeRentas(todas));
         const filtradas = filtrarRentasLocal(todas, filtros);
         setRentasFiltradas(filtradas);
         mostrarExito(`Filtros aplicados: ${filtradas.length} renta(s) de maquinaria encontradas`);
@@ -348,7 +366,8 @@ const EstimacionesCrud = () => {
       material: null,
       origen: null,
       destino: null,
-      estatus: null
+      estatus: null,
+      obra: null
     });
     if (clienteSeleccionado) {
       if (tipoVista === 'camion') {
@@ -597,6 +616,14 @@ const EstimacionesCrud = () => {
 
   // Función para exportar a Excel (rama según tipoVista: Camión usa el flujo existente
   // con hojas/columnas personalizables; Maquinaria usa una hoja estándar más simple).
+  const obraEncabezadoMaquinaria = (): string | undefined => {
+    if (filtros.obra) return filtros.obra;
+    const obras = obrasDeRentas(rentasFiltradas);
+    if (obras.length === 1) return obras[0];
+    if (obras.length > 1) return 'Varias';
+    return clienteSeleccionado?.obra;
+  };
+
   const exportarAExcel = async () => {
     if (!clienteSeleccionado) {
       mostrarError('No hay datos para exportar');
@@ -610,7 +637,9 @@ const EstimacionesCrud = () => {
       }
       setLoading(prev => ({...prev, viajes: true}));
       try {
-        await exportarEstimacionMaquinariaExcel(rentasFiltradas, clienteSeleccionado);
+        // En el encabezado del Excel va la obra filtrada; si no hay filtro pero todas las
+        // rentas son de una misma obra, se usa esa; si no, la obra general del cliente.
+        await exportarEstimacionMaquinariaExcel(rentasFiltradas, { ...clienteSeleccionado, obra: obraEncabezadoMaquinaria() });
         mostrarExito('Estimación de maquinaria exportada a Excel correctamente');
         setExportDialog(false);
       } catch (error) {
@@ -763,17 +792,42 @@ const EstimacionesCrud = () => {
               />
               <Column
                 field="total_viajes"
-                header="Total Viajes"
+                header="Viajes / Rentas"
+                body={(row: EstimacionCliente) => {
+                  const tipos = tiposDisponiblesCliente(row);
+                  return (
+                    <div className="flex flex-column">
+                      {tipos.includes('camion') && <span>{row.total_viajes} viaje(s)</span>}
+                      {tipos.includes('maquinaria') && (
+                        <span>{row.total_rentas || 0} renta(s) · {(row.total_hrs || 0).toFixed(2)} hrs</span>
+                      )}
+                    </div>
+                  );
+                }}
               />
-              <Column 
-                field="total_m3" 
-                header="Total M3" 
-                body={(row) => row.total_m3.toFixed(2)}
+              <Column
+                field="total_m3"
+                header="Total M3"
+                body={(row: EstimacionCliente) => tiposDisponiblesCliente(row).includes('camion') ? row.total_m3.toFixed(2) : '-'}
               />
-              <Column 
-                field="total_cobrar" 
-                header="Total a Cobrar" 
-                body={(row) => formatCurrency(row.total_cobrar)}
+              <Column
+                field="total_cobrar"
+                header="Total a Cobrar"
+                sortable
+                body={(row: EstimacionCliente) => {
+                  const tipos = tiposDisponiblesCliente(row);
+                  const ambos = tipos.includes('camion') && tipos.includes('maquinaria');
+                  return (
+                    <div className="flex flex-column">
+                      <span className="font-semibold">{formatCurrency(row.total_cobrar)}</span>
+                      {ambos && (
+                        <small className="text-500">
+                          Camión {formatCurrency(row.total_cobrar_camion || 0)} · Maquinaria {formatCurrency(row.total_cobrar_maquinaria || 0)}
+                        </small>
+                      )}
+                    </div>
+                  );
+                }}
               />
               <Column 
                 field="obra" 
@@ -844,7 +898,7 @@ const EstimacionesCrud = () => {
                   {/* Información del cliente */}
                   <div className="grid mb-4">
                     <div className="col-12 md:col-4">
-                      <strong>Obra:</strong> {clienteSeleccionado.obra || 'No especificada'}
+                      <strong>Obra:</strong> {(tipoVista === 'maquinaria' && filtros.obra) || clienteSeleccionado.obra || 'No especificada'}
                     </div>
                     <div className="col-12 md:col-4">
                       <strong>Responsable:</strong> {clienteSeleccionado.contacto || 'No especificado'}
@@ -933,6 +987,7 @@ const EstimacionesCrud = () => {
                       dataKey="id"
                     >
                       <Column field="fecha" header="Fecha" body={(row: RentaMaquinaria) => (row.fecha ? row.fecha.split('T')[0].split('-').reverse().join('-') : '-')} style={{ width: '110px' }} />
+                      <Column field="obra" header="Obra" body={(row: RentaMaquinaria) => row.obra || '-'} sortable style={{ minWidth: '140px' }} />
                       <Column field="estimacion" header="Estimación" body={(row: RentaMaquinaria) => row.estimacion || '-'} style={{ width: '120px' }} />
                       <Column field="folio" header="Folio" body={(row: RentaMaquinaria) => row.folio || '-'} style={{ width: '110px' }} />
                       <Column field="maquina_nombre" header="Máquina" body={(row: RentaMaquinaria) => row.maquina_nombre || '-'} />
@@ -1009,6 +1064,21 @@ const EstimacionesCrud = () => {
               />
             </div>
             
+            {tipoVista === 'maquinaria' && (
+              <div className="field">
+                <label>Obra</label>
+                <Dropdown
+                  value={filtros.obra ?? null}
+                  onChange={(e) => setFiltros({...filtros, obra: e.value ?? null})}
+                  options={obrasMaquinaria}
+                  placeholder={obrasMaquinaria.length ? 'Seleccionar obra' : 'Este cliente no tiene obras capturadas en sus rentas'}
+                  disabled={obrasMaquinaria.length === 0}
+                  showClear
+                  filter
+                />
+              </div>
+            )}
+
             {tipoVista === 'camion' && (
               <>
                 <div className="field">
@@ -1115,7 +1185,7 @@ const EstimacionesCrud = () => {
             <ul className="mt-2 mb-0">
               <li><strong>Cliente:</strong> {clienteSeleccionado?.cliente_nombre}</li>
               <li><strong>Tipo:</strong> {tipoVista === 'camion' ? 'Camión' : 'Maquinaria'}</li>
-              <li><strong>Obra:</strong> {clienteSeleccionado?.obra || 'No especificada'}</li>
+              <li><strong>Obra:</strong> {(tipoVista === 'maquinaria' ? obraEncabezadoMaquinaria() : clienteSeleccionado?.obra) || 'No especificada'}</li>
               {tipoVista === 'camion' ? (
                 <>
                   <li><strong>Viajes:</strong> {totalViajes}</li>
@@ -1141,7 +1211,7 @@ const EstimacionesCrud = () => {
 
           {tipoVista === 'maquinaria' && (
             <p className="text-color-secondary">
-              La renta de maquinaria se exporta en una sola hoja estándar (Fecha, Estimación, Folio, Máquina, Operador, Hrs, Precio, Total y Observaciones), con subtotal, IVA y total.
+              La renta de maquinaria se exporta en una sola hoja estándar (Fecha, Obra, Estimación, Folio, Máquina, Operador, Hrs, Precio, Total y Observaciones), con subtotal, IVA y total.
             </p>
           )}
 

@@ -21,7 +21,7 @@ import {
     MODULOS_DISPONIBLES,
     UsuarioConAccesos
 } from '../../../../../Services/BD/permisosService';
-import { getUserRoleIdFromLocalStorage, register } from '../../../../../Services/BD/userService';
+import { actualizarCredencialesUsuario, getUserRoleIdFromLocalStorage, register } from '../../../../../Services/BD/userService';
 
 const ROLEID_ADMIN = 1;
 const ROL_LABELS: Record<number, string> = { 1: 'Admin', 2: 'Empleado', 4: 'Almacén', 5: 'Logística' };
@@ -122,6 +122,22 @@ const ControlAccesosPage = () => {
             setPasswordDialog(null);
         } catch (error: any) {
             toast.current?.show({ severity: 'error', summary: 'Error', detail: error.message || 'No se pudo cambiar la contraseña', life: 3000 });
+        } finally {
+            setGuardando(false);
+        }
+    };
+
+    // Repara una cuenta cuyo correo/contraseña se editaron solo en la tabla 'user' (bug anterior):
+    // empuja a Supabase Auth el correo y la contraseña guardados en la tabla.
+    const sincronizarAcceso = async (usuario: UsuarioConAccesos) => {
+        if (!confirm(`¿Reparar el acceso de ${usuario.nombre} ${usuario.apellido || ''}?\n\nSe usará el correo y la contraseña que tiene guardados en el sistema para que pueda volver a iniciar sesión.`)) return;
+        setGuardando(true);
+        try {
+            const { email } = await actualizarCredencialesUsuario(usuario.id, { sincronizarDesdeTabla: true });
+            toast.current?.show({ severity: 'success', summary: 'Acceso reparado', detail: `Ya puede entrar con ${email} y su contraseña guardada`, life: 5000 });
+            cargar();
+        } catch (error: any) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: error.message || 'No se pudo reparar el acceso', life: 6000 });
         } finally {
             setGuardando(false);
         }
@@ -231,6 +247,15 @@ const ControlAccesosPage = () => {
     const actionBodyTemplate = (rowData: UsuarioConAccesos) => (
         <div className="flex gap-1">
             <Button icon="pi pi-key" rounded text tooltip="Cambiar contraseña" onClick={() => abrirPassword(rowData)} />
+            <Button
+                icon="pi pi-sync"
+                rounded
+                text
+                severity="warning"
+                tooltip="Reparar acceso (si no puede iniciar sesión)"
+                onClick={() => sincronizarAcceso(rowData)}
+                disabled={guardando}
+            />
             <Button icon="pi pi-sliders-h" rounded text tooltip="Módulos" onClick={() => abrirModulos(rowData)} disabled={rowData.roleid === ROLEID_ADMIN} />
         </div>
     );

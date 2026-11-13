@@ -23,7 +23,7 @@ import { Dropdown } from 'primereact/dropdown';
 import { Calendar } from 'primereact/calendar';
 import { Checkbox } from 'primereact/checkbox';
 import { supabase } from '../../../../../Services/superbase.service';
-import { createViaje } from '../../../../../Services/BD/viajeService';
+import { createViaje, checkFolioExists } from '../../../../../Services/BD/viajeService';
 import { anotarM3ManualEnObservaciones, extraerM3ManualDeObservaciones, quitarAnotacionM3Manual } from '../../../../../Services/BD/m3ManualUtil';
 
 const LogisticaTabla = () => {
@@ -312,6 +312,17 @@ const LogisticaTabla = () => {
                 cantidad_viajes: rowData.cantidad_viajes || null,
                 observaciones: rowData.observaciones || null
             };
+
+            // Evitar que una nota se capture dos veces: si el folio ya existe en viajes no se aprueba.
+            if (rowData.folio && String(rowData.folio).trim() && await checkFolioExists(String(rowData.folio))) {
+                toast.current?.show({
+                    severity: 'error',
+                    summary: 'Error: Folio duplicado',
+                    detail: `El folio "${String(rowData.folio).trim()}" ya fue capturado como viaje. Revisa que la nota no esté duplicada antes de aprobar.`,
+                    life: 6000
+                });
+                return;
+            }
 
             const result = await createViaje(nuevoViaje);
 

@@ -17,6 +17,7 @@ import { InputNumber } from 'primereact/inputnumber';
 import { createMaterial, Material } from '../../../../Services/BD/materialService';
 import LogisticaTabla from '../../../../app/(main)/pages/crud/Logistica/LogisticaTabla';
 import { anotarM3ManualEnObservaciones } from '../../../../Services/BD/m3ManualUtil';
+import { anotarOperadorManualEnObservaciones } from '../../../../Services/BD/operadorManualUtil';
 
 
 const userRoleId = getUserRoleIdFromLocalStorage();
@@ -111,6 +112,9 @@ const FormularioNotaViaje = () => {
     // M3 manual: para camiones externos que no están en el catálogo m3. Es excluyente con
     // el dropdown de M3 (Metros Cúbicos): si se llena uno, se limpia el otro.
     const [m3Manual, setM3Manual] = useState<number | null>(null);
+    // Operador manual: para camiones de invitados cuyo operador no está en el catálogo.
+    // Excluyente con el dropdown de Operador; el nombre se anota en Observaciones.
+    const [operadorManual, setOperadorManual] = useState('');
 
     // Cargar datos iniciales (clientes, precios, materiales, m3)
     useEffect(() => {
@@ -141,8 +145,21 @@ const FormularioNotaViaje = () => {
         viaje.id_precio_origen_destino !== null &&
         viaje.id_material !== null &&
         (viaje.id_m3 !== null || (m3Manual !== null && m3Manual > 0)) &&
-        viaje.id_operador !== null
+        (viaje.id_operador !== null || operadorManual.trim() !== '')
         ) {
+        // Volver a validar el folio al guardar: el aviso del onBlur se puede ignorar o no
+        // dispararse (ej. si se da clic en Guardar sin salir del campo).
+        if (viaje.folio && viaje.folio.trim() && await checkFolioExists(viaje.folio, viaje.id ?? null)) {
+            setFolioError(true);
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error: Folio duplicado',
+                detail: `El folio "${viaje.folio.trim()}" ya fue capturado. Revisa que la nota no se esté capturando dos veces.`,
+                life: 6000
+            });
+            return;
+        }
+
         // Validar que si está en renta, tenga horas
         if (viaje.en_renta && (!viaje.horas_renta || viaje.horas_renta <= 0)) {
             toast.current?.show({ 
@@ -199,10 +216,15 @@ const FormularioNotaViaje = () => {
             // Actualizar el estado del viaje con el cálculo
             const viajeActualizado = {
                 ...viaje,
+                folio: (viaje.folio || '').trim(),
                 id_m3: m3Seleccionado ? viaje.id_m3 : null,
+                id_operador: viaje.id_operador ?? null,
                 caphrsviajes,
                 total_materia,
-                observaciones: anotarM3ManualEnObservaciones(m3Manual, observaciones)
+                observaciones: anotarM3ManualEnObservaciones(
+                    m3Manual,
+                    anotarOperadorManualEnObservaciones(viaje.id_operador ? null : operadorManual, observaciones)
+                )
             };
 
             // Guardar o actualizar el viaje
@@ -237,6 +259,8 @@ const FormularioNotaViaje = () => {
             setSubmitted(false);
             setObservaciones('');
             setM3Manual(null);
+            setOperadorManual('');
+            setFolioError(false);
             } else {
             toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se encontró el precio o los metros cúbicos', life: 3000 });
             }
@@ -311,9 +335,9 @@ const FormularioNotaViaje = () => {
                             }
                         }}
                         // required
-                        // className={submitted && !viaje.folio ? 'p-invalid' : (folioError ? 'p-invalid' : '')}
+                        className={folioError ? 'p-invalid' : ''}
                         />
-                    {/* {submitted && !viaje.folio && <small className="p-invalid">Folio es requerido.</small>} */}
+                    {folioError && <small className="p-error">Este folio ya fue capturado. No se podrá guardar hasta cambiarlo.</small>}
                     </div>
                     <div className="field">
                     <label htmlFor="folio_bco">Folio Banco</label>
@@ -374,8 +398,9 @@ const FormularioNotaViaje = () => {
                             id="id_invitado"
                             value={viaje.id_invitado}
                             options={invitados.map(i => ({ label: i.empresa, value: i.id }))}
-                            onChange={(e) => setViaje({ ...viaje, id_invitado: e.value })}
+                            onChange={(e) => setViaje({ ...viaje, id_invitado: e.value ?? null })}
                             placeholder="Selecciona un invitado (opcional)"
+                            showClear
                             filter
                             filterBy="label"
                         />
@@ -482,19 +507,37 @@ const FormularioNotaViaje = () => {
                     <small className="text-500">Solo para camiones externos que no están en el catálogo. Déjalo vacío si ya seleccionaste Metros Cúbicos arriba.</small>
                     </div>
                     <div className="field">
-                    <label htmlFor="id_operador">Operador</label><span style={{ color: 'red' }}> *</span>
+                    <label htmlFor="id_operador">Operador</label>{!operadorManual.trim() && <span style={{ color: 'red' }}> *</span>}
                     <Dropdown
                         id="id_operador"
                         value={viaje.id_operador}
                         options={operadores.map(o => ({ label: o.nombre, value: o.id }))}
-                        onChange={(e) => setViaje({ ...viaje, id_operador: e.value })}
+                        onChange={(e) => {
+                            setViaje({ ...viaje, id_operador: e.value ?? null });
+                            if (e.value) setOperadorManual('');
+                        }}
                         placeholder="Selecciona un operador"
-                        required
+                        showClear
                         filter
                         filterBy="label"
-                        className={submitted && !viaje.id_operador ? 'p-invalid' : ''}
+                        disabled={!!operadorManual.trim()}
+                        className={submitted && !viaje.id_operador && !operadorManual.trim() ? 'p-invalid' : ''}
                     />
-                    {submitted && !viaje.id_operador && <small className="p-invalid">Operador es requerido.</small>}
+                    {submitted && !viaje.id_operador && !operadorManual.trim() && <small className="p-invalid">Selecciona un operador o escribe su nombre abajo.</small>}
+                    </div>
+                    <div className="field">
+                    <label htmlFor="operador_manual">Operador (Manual)</label>
+                    <InputText
+                        id="operador_manual"
+                        value={operadorManual}
+                        onChange={(e) => {
+                            setOperadorManual(e.target.value);
+                            if (e.target.value.trim() && viaje.id_operador) setViaje({ ...viaje, id_operador: null });
+                        }}
+                        placeholder="Para camiones de invitados: escribe aquí el nombre del operador"
+                        disabled={!!viaje.id_operador}
+                    />
+                    <small className="text-500">Solo si el operador no está en la lista (ej. camión de un invitado). Para quitar un operador seleccionado por error usa la ✕ del combo.</small>
                     </div>
 
                     <div className="field">

@@ -2,6 +2,22 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from './superbaseAdmin.service';
 
+// Server-only: busca una cuenta de Supabase Auth por correo. listUsers() regresa solo 50
+// usuarios por página si no se pagina, así que se recorren todas las páginas.
+export const buscarAuthUserPorEmail = async (email: string): Promise<{ id: string; email?: string } | null> => {
+    const buscado = email.trim().toLowerCase();
+    const porPagina = 1000;
+    for (let page = 1; page <= 50; page++) {
+        const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: porPagina });
+        if (error) throw error;
+        const usuarios = data?.users || [];
+        const encontrado = usuarios.find((u) => (u.email || '').toLowerCase() === buscado);
+        if (encontrado) return { id: encontrado.id, email: encontrado.email };
+        if (usuarios.length < porPagina) break;
+    }
+    return null;
+};
+
 // Solo Admin (roleid 1, ver ROLES en layout/AppMenu.tsx) puede usar las rutas
 // de administración de usuarios (crear, cambiar contraseña, eliminar acceso).
 const ROLEID_ADMIN = 1;

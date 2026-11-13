@@ -763,6 +763,12 @@ const OperadoresCrud = () => {
                                         onChange={(e) => setOperador({ ...operador, nombre: e.target.value })}
                                         required
                                         autoFocus
+                                        // Nombres propios: sin autocorrector/autocompletado del teclado o navegador
+                                        // (cambiaba p. ej. "EDIBERTO" por "Eduardo" y las mayúsculas a minúsculas).
+                                        autoComplete="off"
+                                        autoCorrect="off"
+                                        autoCapitalize="characters"
+                                        spellCheck={false}
                                         className={submitted && !operador.nombre ? 'p-invalid' : ''}
                                     />
                                     {submitted && !operador.nombre && (
