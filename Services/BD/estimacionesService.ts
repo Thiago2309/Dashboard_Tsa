@@ -1029,6 +1029,18 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
 // =============================================
 // COLUMNAS PERSONALIZABLES DE LA HOJA "VIAJES DETALLADOS"
 // =============================================
+// Formatea una fecha 'YYYY-MM-DD' (o ISO) como dd/mm/yyyy sin conversión de zona horaria.
+// new Date('YYYY-MM-DD') se interpreta en UTC y en México (UTC-6) se recorre un día atrás.
+const formatearFechaLocal = (fecha?: string | null): string => {
+  if (!fecha) return '';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(fecha);
+  if (match) {
+    const [, anio, mes, dia] = match;
+    return new Date(Number(anio), Number(mes) - 1, Number(dia)).toLocaleDateString('es-MX');
+  }
+  return new Date(fecha).toLocaleDateString('es-MX');
+};
+
 interface DefinicionColumnaExportacion {
   header: string;
   width: number;
@@ -1037,7 +1049,7 @@ interface DefinicionColumnaExportacion {
 
 const DEFINICIONES_COLUMNAS: Record<string, DefinicionColumnaExportacion> = {
   numero_viaje: { header: 'No. Viaje', width: 10, getValue: (v, i) => v.numero_viaje || i + 1 },
-  fecha: { header: 'Fecha', width: 12, getValue: (v) => v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : '' },
+  fecha: { header: 'Fecha', width: 12, getValue: (v) => formatearFechaLocal(v.fecha) },
   folio: { header: 'Folio', width: 12, getValue: (v) => v.folio || '' },
   folio_bco: { header: 'Folio BCO', width: 12, getValue: (v) => v.folio_bco || '' },
   origen: { header: 'Origen', width: 20, getValue: (v) => v.origen || '' },
@@ -1662,7 +1674,7 @@ export const exportarEstimacionMaquinariaExcel = async (
 
     rentas.forEach((renta, index) => {
       const row = worksheet.getRow(tableStartRow + index + 1);
-      row.getCell(1).value = renta.fecha ? new Date(renta.fecha).toLocaleDateString('es-MX') : '';
+      row.getCell(1).value = formatearFechaLocal(renta.fecha);
       row.getCell(2).value = renta.obra || '';
       row.getCell(3).value = renta.estimacion || '';
       row.getCell(4).value = renta.folio || '';
