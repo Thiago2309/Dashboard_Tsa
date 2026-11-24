@@ -5,7 +5,10 @@ import { convertirImporteALetras } from './numeroALetrasApu';
 export interface PresupuestoConceptoApu {
     id?: number;
     id_frente?: number;
-    id_concepto: number;
+    // null cuando el renglón es manual (no viene del catálogo de Conceptos/Tarjetas).
+    id_concepto: number | null;
+    // Renglón capturado a mano: clave, descripción, unidad y P. Unitario los escribe el usuario.
+    es_manual?: boolean;
     concepto_clave?: string;
     concepto_descripcion?: string;
     concepto_unidad?: string;
@@ -93,13 +96,17 @@ const transformFrenteApuData = (data: any): PresupuestoFrenteApu => ({
     conceptos: []
 });
 
-const transformPresupuestoConceptoApuData = (data: any): PresupuestoConceptoApu => ({
+// Recibe el renglón de la tabla base (apu_presupuesto_conceptos) y, para los conceptos del catálogo,
+// el renglón de la vista fetch_apu_presupuesto_conceptos con la clave/descripción/unidad del concepto.
+// Los renglones manuales toman esos datos de sus propias columnas *_manual.
+const transformPresupuestoConceptoApuData = (data: any, vista?: any): PresupuestoConceptoApu => ({
     id: data.id,
     id_frente: data.id_frente,
-    id_concepto: data.id_concepto,
-    concepto_clave: data.concepto_clave ?? '',
-    concepto_descripcion: data.concepto_descripcion ?? '',
-    concepto_unidad: data.concepto_unidad ?? '',
+    id_concepto: data.id_concepto ?? null,
+    es_manual: data.es_manual ?? false,
+    concepto_clave: (data.es_manual ? data.clave_manual : vista?.concepto_clave) ?? '',
+    concepto_descripcion: (data.es_manual ? data.descripcion_manual : vista?.concepto_descripcion) ?? '',
+    concepto_unidad: (data.es_manual ? data.unidad_manual : vista?.concepto_unidad) ?? '',
     orden: data.orden ?? 0,
     cantidad: data.cantidad ?? 0,
     precio_unitario: data.precio_unitario ?? 0,
@@ -131,14 +138,22 @@ export const fetchPresupuestoApuPorId = async (id: number): Promise<PresupuestoA
         throw errorFrentes;
     }
 
-    const { data: conceptosRaw, error: errorConceptos } = await supabase.from('fetch_apu_presupuesto_conceptos').select('*').eq('id_presupuesto', id).order('orden');
-    if (errorConceptos) {
-        console.error('Error fetching conceptos de Presupuesto APU:', errorConceptos);
-        throw errorConceptos;
+    const frentes = (frentesRaw || []).map(transformFrenteApuData);
+    const idsFrentes = frentes.map((f) => f.id as number);
+
+    // La tabla base es la fuente de verdad (incluye los renglones manuales, que no tienen concepto de
+    // catálogo); la vista solo aporta clave/descripción/unidad de los conceptos del catálogo.
+    const [{ data: conceptosRaw, error: errorConceptos }, { data: conceptosVista, error: errorVista }] = await Promise.all([
+        idsFrentes.length > 0 ? supabase.from('apu_presupuesto_conceptos').select('*').in('id_frente', idsFrentes).order('orden') : Promise.resolve({ data: [], error: null }),
+        supabase.from('fetch_apu_presupuesto_conceptos').select('*').eq('id_presupuesto', id)
+    ]);
+    if (errorConceptos || errorVista) {
+        console.error('Error fetching conceptos de Presupuesto APU:', errorConceptos || errorVista);
+        throw errorConceptos || errorVista;
     }
 
-    const frentes = (frentesRaw || []).map(transformFrenteApuData);
-    (conceptosRaw || []).map(transformPresupuestoConceptoApuData).forEach((concepto) => {
+    const vistaPorId = new Map((conceptosVista || []).map((v: any) => [v.id, v]));
+    (conceptosRaw || []).map((c: any) => transformPresupuestoConceptoApuData(c, vistaPorId.get(c.id))).forEach((concepto) => {
         const frente = frentes.find((f) => f.id === concepto.id_frente);
         if (frente) frente.conceptos.push(concepto);
     });
@@ -282,9 +297,14 @@ const guardarFrentesPresupuestoApu = async (id_presupuesto: number, frentes: Pre
 
         for (let j = 0; j < frente.conceptos.length; j++) {
             const concepto = frente.conceptos[j];
+            const esManual = !!concepto.es_manual;
             const datos = {
                 id_frente: idFrente,
-                id_concepto: concepto.id_concepto,
+                id_concepto: esManual ? null : concepto.id_concepto,
+                es_manual: esManual,
+                clave_manual: esManual ? concepto.concepto_clave || '' : null,
+                descripcion_manual: esManual ? concepto.concepto_descripcion || '' : null,
+                unidad_manual: esManual ? concepto.concepto_unidad || '' : null,
                 orden: j,
                 cantidad: concepto.cantidad,
                 precio_unitario: concepto.precio_unitario,
@@ -306,7 +326,10 @@ const guardarFrentesPresupuestoApu = async (id_presupuesto: number, frentes: Pre
                     throw error;
                 }
                 idsConceptosConservados.push(data.id);
-                await clonarTarjetaHaciaPresupuesto(id_presupuesto, data.id, concepto.id_concepto);
+                // Los renglones manuales no tienen Tarjeta de Precio Unitario que clonar.
+                if (!esManual && concepto.id_concepto) {
+                    await clonarTarjetaHaciaPresupuesto(id_presupuesto, data.id, concepto.id_concepto);
+                }
             }
         }
 
@@ -427,7 +450,20 @@ export const propagarPrecioAConceptoYRecalcular = async (id_presupuesto: number,
         throw errorPresupuesto;
     }
 
-    const { data: todosLosConceptos, error: errorConceptos } = await supabase.from('fetch_apu_presupuesto_conceptos').select('cantidad, precio_unitario, aplica_iva').eq('id_presupuesto', id_presupuesto);
+    // Se lee de la tabla base (vía los frentes) para incluir también los renglones manuales.
+    const { data: frentesDelPresupuesto, error: errorFrentes } = await supabase.from('apu_presupuesto_frentes').select('id').eq('id_presupuesto', id_presupuesto);
+    if (errorFrentes) {
+        console.error('Error leyendo Frentes de Presupuesto APU para recalcular:', errorFrentes);
+        throw errorFrentes;
+    }
+
+    const { data: todosLosConceptos, error: errorConceptos } = await supabase
+        .from('apu_presupuesto_conceptos')
+        .select('cantidad, precio_unitario, aplica_iva')
+        .in(
+            'id_frente',
+            (frentesDelPresupuesto || []).map((f) => f.id)
+        );
     if (errorConceptos) {
         console.error('Error leyendo conceptos de Presupuesto APU para recalcular:', errorConceptos);
         throw errorConceptos;

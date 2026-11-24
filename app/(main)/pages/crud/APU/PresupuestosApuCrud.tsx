@@ -126,7 +126,7 @@ const PresupuestosApuCrud = () => {
     const save = async () => {
         setSubmitted(true);
 
-        if (presupuesto.nombre.trim() && presupuesto.empresa_nombre.trim() && frentes.length > 0 && totalConceptos > 0) {
+        if (presupuesto.nombre.trim() && presupuesto.empresa_nombre.trim() && frentes.length > 0 && totalConceptos > 0 && !hayManualesIncompletos) {
             setGuardando(true);
             try {
                 if (presupuesto.id) {
@@ -175,17 +175,17 @@ const PresupuestosApuCrud = () => {
         actualizarFrente(index, { conceptos: [...frentes[index].conceptos, linea] });
     };
 
-    const quitarConceptoDeFrente = (index: number, id_concepto: number) => {
-        actualizarFrente(index, { conceptos: frentes[index].conceptos.filter((c) => c.id_concepto !== id_concepto) });
+    // Los renglones se identifican por su posición en el Frente: los conceptos manuales no tienen id_concepto.
+    const quitarConceptoDeFrente = (index: number, indexConcepto: number) => {
+        actualizarFrente(index, { conceptos: frentes[index].conceptos.filter((_, j) => j !== indexConcepto) });
     };
 
-    const cambiarCantidadEnFrente = (index: number, id_concepto: number, cantidad: number) => {
-        actualizarFrente(index, { conceptos: frentes[index].conceptos.map((c) => (c.id_concepto === id_concepto ? { ...c, cantidad } : c)) });
+    const actualizarConceptoEnFrente = (index: number, indexConcepto: number, cambios: Partial<PresupuestoConceptoApu>) => {
+        actualizarFrente(index, { conceptos: frentes[index].conceptos.map((c, j) => (j === indexConcepto ? { ...c, ...cambios } : c)) });
     };
 
-    const cambiarAplicaIvaEnFrente = (index: number, id_concepto: number, aplica: boolean) => {
-        actualizarFrente(index, { conceptos: frentes[index].conceptos.map((c) => (c.id_concepto === id_concepto ? { ...c, aplica_iva: aplica } : c)) });
-    };
+    // Un renglón manual necesita al menos descripción y unidad (es lo que sale en la carátula).
+    const hayManualesIncompletos = frentes.some((f) => f.conceptos.some((c) => c.es_manual && (!c.concepto_descripcion?.trim() || !c.concepto_unidad?.trim())));
 
     const statusBodyTemplate = (row: PresupuestoApu) => <Tag value={row.status ? 'Activo' : 'Inactivo'} severity={row.status ? 'success' : 'danger'} />;
 
@@ -320,9 +320,8 @@ const PresupuestosApuCrud = () => {
                                         onRenombrar={(nombre) => actualizarFrente(index, { nombre })}
                                         onEliminarFrente={() => eliminarFrente(index)}
                                         onAgregarConcepto={(linea) => agregarConceptoAFrente(index, linea)}
-                                        onQuitarConcepto={(id_concepto) => quitarConceptoDeFrente(index, id_concepto)}
-                                        onCambiarCantidad={(id_concepto, cantidad) => cambiarCantidadEnFrente(index, id_concepto, cantidad)}
-                                        onCambiarAplicaIva={(id_concepto, aplica) => cambiarAplicaIvaEnFrente(index, id_concepto, aplica)}
+                                        onQuitarConcepto={(indexConcepto) => quitarConceptoDeFrente(index, indexConcepto)}
+                                        onActualizarConcepto={(indexConcepto, cambios) => actualizarConceptoEnFrente(index, indexConcepto, cambios)}
                                     />
                                 ))}
 
@@ -330,6 +329,7 @@ const PresupuestosApuCrud = () => {
 
                                 {submitted && frentes.length === 0 && <small className="p-invalid block mb-3">Agrega al menos un Frente.</small>}
                                 {submitted && frentes.length > 0 && totalConceptos === 0 && <small className="p-invalid block mb-3">Agrega al menos un concepto.</small>}
+                                {submitted && hayManualesIncompletos && <small className="p-invalid block mb-3">Los conceptos manuales necesitan descripción y unidad.</small>}
 
                                 <div className="surface-100 border-round p-3">
                                     <div className="grid">

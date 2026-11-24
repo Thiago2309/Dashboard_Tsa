@@ -26,9 +26,21 @@ export interface Viaje {
     numero_viaje?: number | null;
     cantidad_viajes?: number | null;
     total_materia?: number | null;
+    // Precio (flete y material) con el que se calculó el viaje. Se congela al crearlo para que un
+    // cambio de precio en Origen-Destino no altere los viajes anteriores (ver INC-0025).
+    precio_unidad_viaje?: number | null;
+    precio_materia_viaje?: number | null;
     observaciones?: string | null;
     estatus?: EstatusViaje | null;
 }
+
+// Importe de flete de un viaje: precio × m3 × (horas de renta | cantidad de viajes | 1).
+// Es la misma regla que se usa al capturar, en logística y en la carga masiva.
+export const calcularImporteFlete = (precio_unidad: number, metros_cubicos: number, viaje: { en_renta?: boolean | null; horas_renta?: number | null; cantidad_viajes?: number | null }): number => {
+    if (viaje.en_renta && viaje.horas_renta) return precio_unidad * metros_cubicos * viaje.horas_renta;
+    if (viaje.cantidad_viajes && viaje.cantidad_viajes > 0) return precio_unidad * metros_cubicos * viaje.cantidad_viajes;
+    return precio_unidad * metros_cubicos;
+};
 
 // Flujo de facturación del viaje: se define después de creado, así que puede
 // quedar vacío (null) hasta que alguien lo avance manualmente.
@@ -60,6 +72,8 @@ const transformViajeData = (data: any): Viaje => ({
     numero_viaje: data.numero_viaje || null,
     cantidad_viajes: data.cantidad_viajes || null,
     total_materia: data.total_materia || null,
+    precio_unidad_viaje: data.precio_unidad_viaje ?? null,
+    precio_materia_viaje: data.precio_materia_viaje ?? null,
     observaciones: data.observaciones || null,
     estatus: data.estatus || null
 });
@@ -139,6 +153,8 @@ export const updateViaje = async (viaje: Viaje): Promise<Viaje> => {
             numero_viaje: viaje.numero_viaje,
             cantidad_viajes: viaje.cantidad_viajes,
             total_materia: viaje.total_materia,
+            precio_unidad_viaje: viaje.precio_unidad_viaje,
+            precio_materia_viaje: viaje.precio_materia_viaje,
             observaciones: viaje.observaciones,
             estatus: viaje.estatus
         })

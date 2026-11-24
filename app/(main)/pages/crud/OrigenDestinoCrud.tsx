@@ -7,7 +7,19 @@ import { InputText } from 'primereact/inputtext';
 import { Toast } from 'primereact/toast';
 import { Toolbar } from 'primereact/toolbar';
 import React, { useEffect, useRef, useState } from 'react';
-import { fetchOrigenDestino, createOrigenDestino, updateOrigenDestino, deleteOrigenDestino, OrigenDestino, toggleStatusOrigenDestino } from '../../../../Services/BD/origenDestinoService';
+import {
+    fetchOrigenDestino,
+    createOrigenDestino,
+    updateOrigenDestino,
+    deleteOrigenDestino,
+    OrigenDestino,
+    toggleStatusOrigenDestino,
+    actualizarPrecioOrigenDestinoDesdeFecha,
+    contarViajesAfectadosPorCambioPrecio,
+    ResultadoCambioPrecio
+} from '../../../../Services/BD/origenDestinoService';
+import { Calendar } from 'primereact/calendar';
+import { fetchHistorialDeRuta, FECHA_BASE_HISTORIAL, PrecioHistorial } from '../../../../Services/BD/precioHistorialService';
 import { InputNumber } from 'primereact/inputnumber';
 import { Tag } from 'primereact/tag';
 import { Checkbox } from 'primereact/checkbox';
@@ -36,9 +48,69 @@ const OrigenDestinoCrud = () => {
         global: { value: null, matchMode: 'contains' as const }
     });
 
+    // INC-0025 · Cambio de precio a partir de una fecha
+    const [precioDialog, setPrecioDialog] = useState(false);
+    const [rutaPrecio, setRutaPrecio] = useState<OrigenDestino | null>(null);
+    const [nuevoFlete, setNuevoFlete] = useState<number>(0);
+    const [nuevoMaterial, setNuevoMaterial] = useState<number>(0);
+    const [fechaDesde, setFechaDesde] = useState<Date>(new Date());
+    const [vistaPrevia, setVistaPrevia] = useState<ResultadoCambioPrecio | null>(null);
+    const [aplicandoPrecio, setAplicandoPrecio] = useState(false);
+    const [historialRuta, setHistorialRuta] = useState<PrecioHistorial[]>([]);
+
     useEffect(() => {
         fetchOrigenDestino().then(setOrigenDestinoList);
     }, []);
+
+    const fechaAIso = (fecha: Date) => `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
+
+    // Vista previa de cuántos viajes se recalcularían cada vez que cambia la ruta o la fecha.
+    useEffect(() => {
+        if (!precioDialog || !rutaPrecio?.id) return;
+        setVistaPrevia(null);
+        contarViajesAfectadosPorCambioPrecio(rutaPrecio.id, fechaAIso(fechaDesde))
+            .then(setVistaPrevia)
+            .catch(() => setVistaPrevia(null));
+    }, [precioDialog, rutaPrecio, fechaDesde]);
+
+    const formatoFecha = (iso: string) => (iso === FECHA_BASE_HISTORIAL ? 'Precio inicial' : iso.split('-').reverse().join('/'));
+
+    const abrirCambioPrecio = (ruta: OrigenDestino) => {
+        setRutaPrecio(ruta);
+        setHistorialRuta([]);
+        fetchHistorialDeRuta(ruta.id!)
+            .then(setHistorialRuta)
+            .catch(() => setHistorialRuta([]));
+        setNuevoFlete(ruta.precio_unidad);
+        setNuevoMaterial(ruta.precio_materia ?? 0);
+        setFechaDesde(new Date());
+        setPrecioDialog(true);
+    };
+
+    const aplicarCambioPrecio = async () => {
+        if (!rutaPrecio?.id || nuevoFlete <= 0 || nuevoMaterial < 0) return;
+
+        setAplicandoPrecio(true);
+        try {
+            const resultado = await actualizarPrecioOrigenDestinoDesdeFecha(rutaPrecio.id, nuevoFlete, nuevoMaterial, fechaAIso(fechaDesde));
+            // El catálogo muestra el precio vigente HOY (si el cambio es a futuro, sigue el actual hasta esa fecha).
+            const vigenteHoy = resultado.precioCatalogo;
+            if (vigenteHoy) {
+                setOrigenDestinoList((prev) => prev.map((o) => (o.id === rutaPrecio.id ? { ...o, precio_unidad: vigenteHoy.precio_unidad, precio_materia: vigenteHoy.precio_materia } : o)));
+            }
+            toast.current?.show({
+                severity: 'success',
+                summary: 'Precio actualizado',
+                detail: `Se recalcularon ${resultado.viajesActualizados} viaje(s).${resultado.viajesProtegidos ? ` ${resultado.viajesProtegidos} facturado(s)/pagado(s) se dejaron igual.` : ''}`,
+                life: 5000
+            });
+            setPrecioDialog(false);
+        } catch (error) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Error al actualizar el precio. Revisa e intenta de nuevo.', life: 4000 });
+        } finally {
+            setAplicandoPrecio(false);
+        }
+    };
 
     const openNew = () => {
         setOrigenDestino(emptyOrigenDestino);
@@ -268,8 +340,17 @@ const OrigenDestinoCrud = () => {
                     className="mr-2" 
                     onClick={() => editOrigenDestino(rowData)} 
                 />
-                <Button 
-                    icon={rowData.status ? "pi pi-eye-slash" : "pi pi-eye"} 
+                <Button
+                    icon="pi pi-dollar"
+                    rounded
+                    severity="success"
+                    className="mr-2"
+                    onClick={() => abrirCambioPrecio(rowData)}
+                    tooltip="Actualizar precio desde una fecha"
+                    tooltipOptions={{ position: 'top' }}
+                />
+                <Button
+                    icon={rowData.status ? "pi pi-eye-slash" : "pi pi-eye"}  
                     rounded 
                     severity="warning" 
                     className="mr-2"
@@ -359,7 +440,7 @@ const OrigenDestinoCrud = () => {
                         <Column field="precio_unidad" header="Precio Flete" sortable body={precio_unidadBodyTemplate}></Column>
                         <Column field="precio_materia" header="Precio Material" sortable body={precio_materiaBodyTemplate}></Column>
                         <Column field="status" header="Estado" sortable body={statusBodyTemplate}></Column>
-                        <Column body={actionBodyTemplate} headerStyle={{ minWidth: '12rem' }}></Column>
+                        <Column body={actionBodyTemplate} headerStyle={{ minWidth: '15rem' }}></Column>
                     </DataTable>
 
                     <Dialog 
@@ -420,6 +501,11 @@ const OrigenDestinoCrud = () => {
                             {submitted && origenDestino.precio_materia < 0 && <small className="p-invalid">Precio material no puede ser negativo.</small>}
                         </div>
                         {origenDestino.id && (
+                            <small className="block mb-3 text-500">
+                                Cambiar el precio aquí aplica desde hoy y solo a los viajes que se capturen nuevos (queda en el historial). Para recalcular los viajes desde una fecha usa el botón <i className="pi pi-dollar" /> Actualizar precio.
+                            </small>
+                        )}
+                        {origenDestino.id && (
                             <div className="field-checkbox">
                                 <Checkbox
                                     inputId="status"
@@ -431,8 +517,87 @@ const OrigenDestinoCrud = () => {
                         )}
                     </Dialog>
 
-                    <Dialog 
-                        visible={deleteOrigenDestinoDialog} 
+                    <Dialog
+                        visible={precioDialog}
+                        style={{ width: '480px' }}
+                        header="Actualizar precio desde una fecha"
+                        modal
+                        className="p-fluid"
+                        onHide={() => setPrecioDialog(false)}
+                        footer={
+                            <>
+                                <Button label="Cancelar" icon="pi pi-times" text onClick={() => setPrecioDialog(false)} />
+                                <Button label="Actualizar precio" icon="pi pi-check" onClick={aplicarCambioPrecio} loading={aplicandoPrecio} disabled={nuevoFlete <= 0 || nuevoMaterial < 0} />
+                            </>
+                        }
+                    >
+                        {rutaPrecio && (
+                            <>
+                                <p className="mb-3">
+                                    <b>
+                                        {rutaPrecio.nombreorigen} - {rutaPrecio.nombredestino}
+                                    </b>
+                                    <br />
+                                    <small className="text-500">
+                                        Precio actual: flete $ {rutaPrecio.precio_unidad} · material $ {rutaPrecio.precio_materia ?? 0}
+                                    </small>
+                                </p>
+                                <div className="field">
+                                    <label htmlFor="nuevo_flete">Nuevo Precio Flete</label>
+                                    <InputNumber id="nuevo_flete" value={nuevoFlete} onValueChange={(e) => setNuevoFlete(e.value || 0)} mode="decimal" minFractionDigits={2} maxFractionDigits={2} min={0} className={nuevoFlete <= 0 ? 'p-invalid' : ''} />
+                                </div>
+                                <div className="field">
+                                    <label htmlFor="nuevo_material">Nuevo Precio Material</label>
+                                    <InputNumber id="nuevo_material" value={nuevoMaterial} onValueChange={(e) => setNuevoMaterial(e.value || 0)} mode="decimal" minFractionDigits={2} maxFractionDigits={2} min={0} />
+                                </div>
+                                <div className="field">
+                                    <label htmlFor="fecha_desde">Aplicar a viajes desde</label>
+                                    <Calendar id="fecha_desde" value={fechaDesde} onChange={(e) => e.value && setFechaDesde(e.value as Date)} dateFormat="dd/mm/yy" showIcon />
+                                </div>
+                                <div className="surface-100 border-round p-3 text-sm">
+                                    {vistaPrevia ? (
+                                        <>
+                                            Se recalcularán <b>{vistaPrevia.viajesActualizados}</b> viaje(s) de esta ruta con fecha igual o posterior
+                                            {vistaPrevia.fechaHasta ? (
+                                                <>
+                                                    {' '}
+                                                    y anterior al <b>{formatoFecha(vistaPrevia.fechaHasta)}</b> (ahí empieza otro precio ya registrado, que no se toca)
+                                                </>
+                                            ) : null}
+                                            .
+                                            {vistaPrevia.viajesProtegidos > 0 && (
+                                                <>
+                                                    {' '}
+                                                    <b>{vistaPrevia.viajesProtegidos}</b> facturado(s)/pagado(s) se dejan igual.
+                                                </>
+                                            )}
+                                            <br />
+                                            Los viajes anteriores a la fecha no se modifican. Ningún viaje se borra ni se mueve.
+                                        </>
+                                    ) : (
+                                        <span>
+                                            <i className="pi pi-spinner pi-spin mr-2" />
+                                            Contando viajes...
+                                        </span>
+                                    )}
+                                </div>
+
+                                {historialRuta.length > 0 && (
+                                    <div className="mt-3">
+                                        <label className="block text-sm font-bold mb-2">Historial de precios de la ruta</label>
+                                        <DataTable value={historialRuta} size="small" scrollable scrollHeight="180px">
+                                            <Column header="Vigente desde" body={(h: PrecioHistorial) => formatoFecha(h.vigente_desde)}></Column>
+                                            <Column header="Flete" body={(h: PrecioHistorial) => `$ ${h.precio_unidad}`}></Column>
+                                            <Column header="Material" body={(h: PrecioHistorial) => `$ ${h.precio_materia}`}></Column>
+                                        </DataTable>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </Dialog>
+
+                    <Dialog
+                        visible={deleteOrigenDestinoDialog}  
                         style={{ width: '450px' }} 
                         header="Confirmar" 
                         modal 

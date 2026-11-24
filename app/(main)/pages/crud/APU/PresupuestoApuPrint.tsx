@@ -42,10 +42,10 @@ export const PresupuestoApuPrint = forwardRef<HTMLDivElement, PresupuestoApuPrin
     const subtotal = presupuesto.subtotal || 0;
     const hayExentos = frentes.some((f) => f.conceptos.some((c) => !c.aplica_iva));
 
-    const renderFila = (c: PresupuestoConceptoApu, pctDeFrente: (importe: number) => number) => {
+    const renderFila = (c: PresupuestoConceptoApu, pctDeFrente: (importe: number) => number, j: number) => {
         const importe = (c.cantidad || 0) * (c.precio_unitario || 0);
         return (
-            <tr key={c.id ?? c.id_concepto}>
+            <tr key={c.id ?? `nuevo-${j}`}>
                 <td style={tdBase}>{c.concepto_clave}</td>
                 <td style={tdBase}>
                     {c.concepto_descripcion}
@@ -71,7 +71,7 @@ export const PresupuestoApuPrint = forwardRef<HTMLDivElement, PresupuestoApuPrin
                         {frente.nombre}
                     </td>
                 </tr>
-                {frente.conceptos.map((c) => renderFila(c, pctDeFrente))}
+                {frente.conceptos.map((c, j) => renderFila(c, pctDeFrente, j))}
                 <tr>
                     <td colSpan={5} style={{ ...subtotalRowStyle, textAlign: 'right' }}>
                         Total {frente.nombre}

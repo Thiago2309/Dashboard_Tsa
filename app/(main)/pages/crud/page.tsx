@@ -11,6 +11,9 @@ import { Calendar } from 'primereact/calendar';
 import { FileUpload, FileUploadHandlerEvent } from 'primereact/fileupload';
 import { Tag } from 'primereact/tag';
 import React, { useEffect, useRef, useState } from 'react';
+import { cargarMapaHistorialPrecios, fechaViajeAIso, obtenerPrecioVigente, precioVigenteDesdeMapa } from '../../../../Services/BD/precioHistorialService';
+import { anotarM3ManualEnObservaciones, extraerM3ManualDeObservaciones, quitarAnotacionM3Manual } from '../../../../Services/BD/m3ManualUtil';
+import { anotarOperadorManualEnObservaciones, extraerOperadorManualDeObservaciones, quitarAnotacionOperadorManual } from '../../../../Services/BD/operadorManualUtil';
 import * as XLSX from 'xlsx';
 import {
     fetchViajes,
@@ -181,7 +184,13 @@ const Crud = () => {
 
     // State for dropdown options
     const [clientes2, setClientes2] = useState<{ id: number; empresa: string }[]>([]);
-    const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; origen: string; destino: string; precio_unidad: number }[]>([]);
+    const [preciosOrigenDestino, setPreciosOrigenDestino] = useState<{ id: number; label: string; origen: string; destino: string; precio_unidad: number; precio_materia?: number }[]>([]);
+    // Ruta con la que se abrió el viaje a editar: si no cambia, se conserva el precio guardado en el viaje.
+    const rutaOriginalRef = useRef<number | null>(null);
+    // Viajes de invitados (camión externo): el M3 y el operador se capturan a mano en Notas y se guardan
+    // anotados en Observaciones. Al editar se separan en sus propios campos y se vuelven a anotar al guardar.
+    const [m3Manual, setM3Manual] = useState<number | null>(null);
+    const [operadorManual, setOperadorManual] = useState('');
     const [m3Options, setM3Options] = useState<{ id: number; nombre: string; metros_cubicos: number }[]>([]);
     const [materiales, setMateriales] = useState<{ id: number; nombre: string }[]>([]);
     const [operadores, setOperadores] = useState<{id: number; nombre: string}[]>([]);
@@ -408,7 +417,7 @@ const Crud = () => {
             // id_invitado es opcional, no debe bloquear el guardado
             viaje.id_cliente !== null &&
             viaje.id_material !== null &&
-            viaje.id_m3 !== null &&
+            (viaje.id_m3 !== null || (m3Manual !== null && m3Manual > 0)) &&
             viaje.id_precio_origen_destino !== null &&
             viaje.fecha
         ) {
@@ -436,9 +445,21 @@ const Crud = () => {
                 const precioOrigenDestino = preciosOrigenDestino.find(p => p.id === viaje.id_precio_origen_destino);
                 const m3 = m3Options.find(m => m.id === viaje.id_m3);
 
-                if (precioOrigenDestino && m3) {
-                    const precio_unidad = precioOrigenDestino.precio_unidad;
-                    const metros_cubicos = m3.metros_cubicos;
+                // INC-0025: al editar un viaje sin cambiarle la ruta se conserva el precio con el que se
+                // calculó (aunque el precio de la ruta haya cambiado después). Solo si se cambia la ruta
+                // se toma el precio actual de la nueva ruta.
+                const conservarPrecio = !!viaje.id && rutaOriginalRef.current === viaje.id_precio_origen_destino && viaje.precio_unidad_viaje != null;
+
+                const metrosCubicosEfectivos = m3 ? m3.metros_cubicos : (m3Manual && m3Manual > 0 ? m3Manual : null);
+
+                if ((conservarPrecio || precioOrigenDestino) && metrosCubicosEfectivos) {
+                    // Viaje nuevo o con ruta cambiada: precio vigente de la ruta EN LA FECHA DEL VIAJE (historial).
+                    const precioVigente = conservarPrecio
+                        ? { precio_unidad: Number(viaje.precio_unidad_viaje), precio_materia: Number(viaje.precio_materia_viaje ?? 0) }
+                        : await obtenerPrecioVigente(precioOrigenDestino!.id, fechaViajeAIso(viaje.fecha), { precio_unidad: precioOrigenDestino!.precio_unidad, precio_materia: precioOrigenDestino!.precio_materia ?? 0 });
+                    const precio_unidad = precioVigente.precio_unidad;
+                    const precio_materia = precioVigente.precio_materia;
+                    const metros_cubicos = metrosCubicosEfectivos;
 
                     // Calcular caphrsviajes - MODIFICADO PARA RENTA
                     let caphrsviajes;
@@ -467,7 +488,7 @@ const Crud = () => {
                         folio: (viaje.folio || '').trim(),
                         id_precio_origen_destino: viaje.id_precio_origen_destino,
                         id_material: viaje.id_material,
-                        id_m3: viaje.id_m3,
+                        id_m3: m3 ? viaje.id_m3 : null,
                         caphrsviajes,
                         id_operador: viaje.id_operador,
                         id_invitado: viaje.id_invitado ?? null,
@@ -476,7 +497,16 @@ const Crud = () => {
                         horas_renta: viaje.en_renta ? viaje.horas_renta : null,
                         numero_viaje: viaje.numero_viaje ?? null,
                         cantidad_viajes: viaje.cantidad_viajes ?? null,
-                        observaciones: viaje.observaciones ?? null
+                        observaciones: anotarM3ManualEnObservaciones(
+                            m3 ? null : m3Manual,
+                            anotarOperadorManualEnObservaciones(viaje.id_operador ? null : operadorManual, viaje.observaciones)
+                        ),
+                        precio_unidad_viaje: precio_unidad,
+                        precio_materia_viaje: precio_materia,
+                        // INC-0024: el material también se calcula aquí (precio material × m3), igual que en Notas
+                        // y Logística. Al editar sin cambiar la ruta se usa el precio de material guardado del
+                        // viaje, así que un viaje que no cobraba material sigue sin cobrarlo.
+                        total_materia: precio_materia > 0 ? precio_materia * metros_cubicos : null
                     };
 
                     console.log('Objeto enviado a Supabase:', { ...viajeLimpio, id: viaje.id });
@@ -511,8 +541,12 @@ const Crud = () => {
         // directo de la tabla `viajes` antes de abrir el diálogo.
         setViaje(viajeFila);
         setViajeDialog(true);
+        rutaOriginalRef.current = null;
+        setM3Manual(null);
+        setOperadorManual('');
         try {
             const viajeCompleto = await fetchViajeById(viajeFila.id!);
+            rutaOriginalRef.current = normalizeId(viajeCompleto.id_precio_origen_destino) as number | null;
             setViaje({
                 ...viajeFila,
                 ...viajeCompleto,
@@ -521,8 +555,12 @@ const Crud = () => {
                 id_material: normalizeId(viajeCompleto.id_material) as number | null,
                 id_m3: normalizeId(viajeCompleto.id_m3) as number | null,
                 id_precio_origen_destino: normalizeId(viajeCompleto.id_precio_origen_destino) as number | null,
-                id_invitado: normalizeId(viajeCompleto.id_invitado) as any
+                id_invitado: normalizeId(viajeCompleto.id_invitado) as any,
+                // Observaciones sin las anotaciones de M3/operador manual (se muestran en sus campos)
+                observaciones: quitarAnotacionOperadorManual(quitarAnotacionM3Manual(viajeCompleto.observaciones))
             });
+            setM3Manual(viajeCompleto.id_m3 ? null : extraerM3ManualDeObservaciones(viajeCompleto.observaciones));
+            setOperadorManual(viajeCompleto.id_operador ? '' : extraerOperadorManualDeObservaciones(viajeCompleto.observaciones) || '');
         } catch (error) {
             console.error('Error cargando el viaje para editar:', error);
             toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar el viaje para editar', life: 3000 });
@@ -605,6 +643,8 @@ const Crud = () => {
             }
 
             const foliosVistos = new Set<string>();
+            // Historial de precios: cada fila toma el precio vigente de su ruta en la fecha del viaje.
+            const mapaPrecios = await cargarMapaHistorialPrecios();
             const procesadas: FilaCargaMasiva[] = filasExcel.map((fila, indice) => {
                 const errores: string[] = [];
 
@@ -671,14 +711,18 @@ const Crud = () => {
 
                 const cantidadViajes = parseNumeroOpcional(fila['Cantidad de Viajes']);
 
+                const precioRuta = ruta
+                    ? precioVigenteDesdeMapa(mapaPrecios, ruta.id, fechaViajeAIso(fecha), { precio_unidad: ruta.precio_unidad, precio_materia: ruta.precio_materia ?? 0 })
+                    : null;
+
                 let caphrsviajes: number | null = null;
-                if (ruta && metrosCubicosEfectivos) {
+                if (precioRuta && metrosCubicosEfectivos) {
                     if (enRenta && horasRenta) {
-                        caphrsviajes = ruta.precio_unidad * metrosCubicosEfectivos * horasRenta;
+                        caphrsviajes = precioRuta.precio_unidad * metrosCubicosEfectivos * horasRenta;
                     } else if (cantidadViajes && cantidadViajes > 0) {
-                        caphrsviajes = ruta.precio_unidad * metrosCubicosEfectivos * cantidadViajes;
+                        caphrsviajes = precioRuta.precio_unidad * metrosCubicosEfectivos * cantidadViajes;
                     } else {
-                        caphrsviajes = ruta.precio_unidad * metrosCubicosEfectivos;
+                        caphrsviajes = precioRuta.precio_unidad * metrosCubicosEfectivos;
                     }
                 }
 
@@ -710,6 +754,10 @@ const Crud = () => {
                         id_material: material ? material.id : null,
                         id_m3: m3 ? m3.id : null,
                         caphrsviajes,
+                        precio_unidad_viaje: precioRuta ? precioRuta.precio_unidad : null,
+                        // INC-0024: material = precio material × m3 (igual que en Notas y Logística)
+                        precio_materia_viaje: precioRuta ? precioRuta.precio_materia : 0,
+                        total_materia: precioRuta && metrosCubicosEfectivos && precioRuta.precio_materia > 0 ? precioRuta.precio_materia * metrosCubicosEfectivos : null,
                         id_operador: operador ? operador.id : null,
                         id_invitado: invitado ? (invitado.id as any) : null,
                         en_renta: enRenta,
@@ -855,7 +903,19 @@ const Crud = () => {
         return (
             <>
                 <span className="p-column-title">Operador</span>
-                {rowData.operador_nombre ?? '-'}
+                {(() => {
+                    // Operador del catálogo; si no hay, el que escribieron a mano (camión de invitado).
+                    if (rowData.operador_nombre) return rowData.operador_nombre;
+                    const manual = extraerOperadorManualDeObservaciones(rowData.observaciones);
+                    if (manual) {
+                        return (
+                            <>
+                                {manual} <Tag value="Invitado" severity="warning" className="ml-1" />
+                            </>
+                        );
+                    }
+                    return <span className="text-500 font-italic">Sin operador</span>;
+                })()}
             </>
         );
     };
@@ -891,7 +951,19 @@ const Crud = () => {
         return (
             <>
                 <span className="p-column-title">M3</span>
-                {rowData.m3_nombre}
+                {(() => {
+                    // M3 del catálogo; si no hay, el que capturaron a mano (camión de invitado).
+                    if (rowData.m3_nombre) return rowData.m3_nombre;
+                    const manual = extraerM3ManualDeObservaciones(rowData.observaciones);
+                    if (manual) {
+                        return (
+                            <>
+                                {manual} m³ <Tag value="Manual" severity="warning" className="ml-1" />
+                            </>
+                        );
+                    }
+                    return '-';
+                })()}
             </>
         );
     };
@@ -1283,12 +1355,35 @@ const Crud = () => {
                                 id="id_m3"
                                 value={viaje.id_m3}
                                 options={m3Options.map(m => ({ label: m.nombre, value: normalizeId(m.id) }))}
-                                onChange={(e) => setViaje({ ...viaje, id_m3: e.value })}
+                                onChange={(e) => {
+                                    setViaje({ ...viaje, id_m3: e.value });
+                                    if (e.value) setM3Manual(null);
+                                }}
                                 placeholder="Selecciona un M3"
-                                required
-                                className={submitted && !viaje.id_m3 ? 'p-invalid' : ''}
+                                showClear
+                                disabled={!!m3Manual}
+                                className={submitted && !viaje.id_m3 && !m3Manual ? 'p-invalid' : ''}
                             />
-                            {submitted && !viaje.id_m3 && <small className="p-invalid">M3 es requerido.</small>}
+                            {submitted && !viaje.id_m3 && !m3Manual && <small className="p-invalid">M3 es requerido (del catálogo o manual).</small>}
+                        </div>
+
+                        <div className="field">
+                            <label htmlFor="m3_manual">M3 (Manual)</label>
+                            <InputNumber
+                                id="m3_manual"
+                                value={m3Manual}
+                                onValueChange={(e) => {
+                                    setM3Manual(e.value ?? null);
+                                    if (e.value) setViaje({ ...viaje, id_m3: null });
+                                }}
+                                mode="decimal"
+                                min={0}
+                                minFractionDigits={0}
+                                maxFractionDigits={2}
+                                placeholder="Para camiones externos: escribe aquí los m³"
+                                disabled={!!viaje.id_m3}
+                            />
+                            <small className="text-500">Solo para camiones de invitados que no están en el catálogo.</small>
                         </div>
 
                         <div className="operador">
@@ -1297,14 +1392,33 @@ const Crud = () => {
                                 id="id_operador"
                                 value={viaje.id_operador}
                                 options={operadores.map(op => ({ label: op.nombre, value: normalizeId(op.id) }))}
-                                onChange={(e) => setViaje({ ...viaje, id_operador: e.value ?? null })}
+                                onChange={(e) => {
+                                    setViaje({ ...viaje, id_operador: e.value ?? null });
+                                    if (e.value) setOperadorManual('');
+                                }}
                                 placeholder="Selecciona un operador"
                                 showClear
                                 filter
                                 filterBy="label"
-                                className={submitted && !viaje.id_operador ? 'p-invalid' : ''}
+                                disabled={!!operadorManual.trim()}
+                                className={submitted && !viaje.id_operador && !operadorManual.trim() ? 'p-invalid' : ''}
                             />
-                            {submitted && !viaje.id_operador && <small className="p-invalid">Operador es requerido.</small>}
+                            {submitted && !viaje.id_operador && !operadorManual.trim() && <small className="p-invalid">Selecciona un operador o escribe su nombre abajo.</small>}
+                        </div>
+
+                        <div className="field mt-3">
+                            <label htmlFor="operador_manual">Operador (Manual)</label>
+                            <InputText
+                                id="operador_manual"
+                                value={operadorManual}
+                                onChange={(e) => {
+                                    setOperadorManual(e.target.value);
+                                    if (e.target.value.trim() && viaje.id_operador) setViaje({ ...viaje, id_operador: null });
+                                }}
+                                placeholder="Para camiones de invitados: nombre del operador"
+                                disabled={!!viaje.id_operador}
+                            />
+                            <small className="text-500">Solo si el operador no está en la lista (ej. camión de un invitado).</small>
                         </div>
 
                         <br />

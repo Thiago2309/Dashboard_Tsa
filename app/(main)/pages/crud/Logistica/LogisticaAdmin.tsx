@@ -17,6 +17,7 @@ import { Dialog } from 'primereact/dialog';
 import { InputText } from 'primereact/inputtext';
 import { InputNumber } from 'primereact/inputnumber';
 import { supabase } from '../../../../../Services/superbase.service';
+import { obtenerPrecioVigente } from '../../../../../Services/BD/precioHistorialService';
 import { createViaje } from '../../../../../Services/BD/viajeService';
 
 const LogisticaAdmin = () => {
@@ -187,7 +188,7 @@ const LogisticaAdmin = () => {
                 fetchM3()
             ]);
 
-            const precio = preciosData.find(p => p.id === rowData.id_precio_origen_destino);
+            let precio = preciosData.find(p => p.id === rowData.id_precio_origen_destino);
             const material = materialesData.find(m => m.id === rowData.id_material);
             const m3Item = m3Data.find(m => m.id === rowData.id_m3);
 
@@ -200,6 +201,13 @@ const LogisticaAdmin = () => {
                 });
                 return;
             }
+
+            const fechaViaje = rowData.fecha_asignacion 
+                ? new Date(rowData.fecha_asignacion).toISOString().split('T')[0] 
+                : new Date().toISOString().split('T')[0];
+
+            // INC-0025: precio vigente de la ruta en la fecha del viaje (historial de precios).
+            precio = { ...precio, ...(await obtenerPrecioVigente(precio.id, fechaViaje, { precio_unidad: precio.precio_unidad, precio_materia: precio.precio_materia ?? 0 })) };
 
             let caphrsviajes;
             let total_materia = null;
@@ -216,9 +224,6 @@ const LogisticaAdmin = () => {
                 total_materia = precio.precio_materia * m3Item.metros_cubicos;
             }
 
-            const fechaViaje = rowData.fecha_asignacion 
-                ? new Date(rowData.fecha_asignacion).toISOString().split('T')[0] 
-                : new Date().toISOString().split('T')[0];
             
             const numeroViajeNum = rowData.numero_viaje != null && rowData.numero_viaje !== ''
                 ? Number(rowData.numero_viaje)
@@ -236,6 +241,8 @@ const LogisticaAdmin = () => {
                 id_m3: rowData.id_m3,
                 caphrsviajes: caphrsviajes,
                 total_materia: total_materia,
+                precio_unidad_viaje: precio.precio_unidad,
+                precio_materia_viaje: total_materia ? precio.precio_materia ?? 0 : 0,
                 id_operador: rowData.id_operador,
                 id_invitado: idInvitado,
                 en_renta: rowData.en_renta || false,

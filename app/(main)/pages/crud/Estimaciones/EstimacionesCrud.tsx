@@ -735,7 +735,9 @@ const EstimacionesCrud = () => {
   // Calcular totales (Camión)
   const totalViajes = viajesFiltrados.length;
   const totalM3 = viajesFiltrados.reduce((sum, viaje) => sum + viaje.m3, 0);
-  const totalCobrar = viajesFiltrados.reduce((sum, viaje) => sum + viaje.total_viaje, 0);
+  const totalCobrar = viajesFiltrados.reduce((sum, viaje) => sum + viaje.total_viaje, 0); // flete + material
+  const totalFlete = viajesFiltrados.reduce((sum, viaje) => sum + (viaje.total_flete || 0), 0);
+  const totalMaterial = viajesFiltrados.reduce((sum, viaje) => sum + (viaje.total_material || 0), 0);
   const totalHorasRenta = viajesFiltrados.reduce((sum, viaje) => sum + (viaje.horas_renta || 0), 0);
 
   // Calcular totales (Maquinaria)
@@ -924,6 +926,11 @@ const EstimacionesCrud = () => {
                           <span>Total a Cobrar:</span>
                           <strong>{formatCurrency(tipoVista === 'camion' ? totalCobrar : totalCobrarMaquinaria)}</strong>
                         </div>
+                        {tipoVista === 'camion' && (
+                          <small className="block text-right text-600 mt-1">
+                            Flete {formatCurrency(totalFlete)} · Material {formatCurrency(totalMaterial)}
+                          </small>
+                        )}
                       </Card>
                     </div>
                   </div>
@@ -955,9 +962,15 @@ const EstimacionesCrud = () => {
                       <Column field="destino" header="Destino" />
                       <Column field="material" header="Material" />
                       <Column field="operador" header="Operador" />
-                      <Column field="total_horas_renta" header="Hrs Renta" body={() => totalHorasRenta} />
+                      <Column
+                        field="invitado"
+                        header="Invitado"
+                        body={(row: ViajeEstimacion) => (row.es_invitado ? <Tag severity="warning" value={row.invitado} /> : '-')}
+                      />
+                      <Column field="horas_renta" header="Hrs Renta" body={(row: ViajeEstimacion) => (row.horas_renta ? row.horas_renta : '-')} />
                       <Column field="m3" header="M3" body={(row) => row.m3.toFixed(2)} style={{ width: '100px' }} />
-                      <Column field="precio" header="Precio Unitario" body={(row) => formatCurrency(row.precio)} style={{ width: '130px' }} />
+                      <Column field="precio" header="Precio Flete" body={(row) => formatCurrency(row.precio)} style={{ width: '120px' }} />
+                      <Column field="precio_material" header="Precio Material" body={(row: ViajeEstimacion) => formatCurrency(row.precio_material || 0)} style={{ width: '120px' }} />
                       <Column
                         field="estatus"
                         header="Estatus"
@@ -969,8 +982,15 @@ const EstimacionesCrud = () => {
                       <Column
                         field="total_viaje"
                         header="Total Viaje"
-                        body={(row) => (
-                          <strong className="text-green-600">{formatCurrency(row.total_viaje)}</strong>
+                        body={(row: ViajeEstimacion) => (
+                          <div title={`Flete ${formatCurrency(row.total_flete || 0)} + Material ${formatCurrency(row.total_material || 0)}`}>
+                            <strong className="text-green-600">{formatCurrency(row.total_viaje)}</strong>
+                            {(row.total_material || 0) > 0 && (
+                              <small className="block text-600">
+                                F {formatCurrency(row.total_flete || 0)} + M {formatCurrency(row.total_material || 0)}
+                              </small>
+                            )}
+                          </div>
                         )}
                         style={{ width: '130px' }}
                       />

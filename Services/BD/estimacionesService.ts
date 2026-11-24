@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { RentaMaquinaria } from './inventario/maquinaria/rentaMaquinariaService';
 import { fetchAllRows } from './supabasePagination';
+import { extraerOperadorManualDeObservaciones } from './operadorManualUtil';
+import { extraerM3ManualDeObservaciones } from './m3ManualUtil';
 
 export interface EstimacionCliente {
   id_cliente: number;
@@ -28,9 +30,14 @@ export interface ViajeEstimacion {
   folio_bco?: string;
   material: string;
   m3: number;
-  precio: number;
-  operador: string;
-  total_viaje: number;
+  precio: number; // Precio Flete (unitario)
+  precio_material?: number; // Precio Material (unitario por m3)
+  total_flete?: number;
+  total_material?: number;
+  operador: string; // del catálogo o, si es de invitado, el nombre que se escribió a mano
+  invitado?: string; // empresa del invitado ('' si el viaje es propio)
+  es_invitado?: boolean;
+  total_viaje: number; // flete + material
   numero_viaje?: number;
   origen?: string;
   destino?: string;
@@ -148,8 +155,8 @@ export const fetchClientesConViajesUltraRapido = async (): Promise<EstimacionCli
     // en 1000 filas) y se agrupa por cliente aquí.
     const [clientesRes, viajes, rentas, m3Res] = await Promise.all([
       supabase.from('clientes').select('id, empresa, contacto, obra, etiquetas').order('empresa'),
-      fetchAllRows<{ id_cliente: number | null; caphrsviajes: number | null; id_m3: number | null }>(
-        (sb, from, to) => sb.from('viajes').select('id_cliente, caphrsviajes, id_m3').range(from, to)
+      fetchAllRows<{ id_cliente: number | null; caphrsviajes: number | null; total_materia: number | null; id_m3: number | null; observaciones: string | null }>(
+        (sb, from, to) => sb.from('viajes').select('id_cliente, caphrsviajes, total_materia, id_m3, observaciones').range(from, to)
       ),
       fetchAllRows<{ id_cliente: number | null; total: number | null; hrs: number | null }>(
         (sb, from, to) => sb.from('renta_maquinaria').select('id_cliente, total, hrs').range(from, to)
@@ -167,8 +174,10 @@ export const fetchClientesConViajesUltraRapido = async (): Promise<EstimacionCli
       if (!v.id_cliente) return;
       const acc = camionPorCliente.get(v.id_cliente) || { viajes: 0, m3: 0, total: 0 };
       acc.viajes += 1;
-      acc.m3 += v.id_m3 ? m3Map.get(v.id_m3) || 0 : 0;
-      acc.total += v.caphrsviajes || 0;
+      // M3 del catálogo o, si es camión de invitado, el M3 manual anotado en Observaciones
+      acc.m3 += v.id_m3 ? m3Map.get(v.id_m3) || 0 : extraerM3ManualDeObservaciones(v.observaciones) || 0;
+      // INC-0024: el total del viaje es flete + material
+      acc.total += (v.caphrsviajes || 0) + (v.total_materia || 0);
       camionPorCliente.set(v.id_cliente, acc);
     });
 
@@ -227,6 +236,7 @@ export const fetchViajesConFiltros = async (filtros: FiltrosEstimacion): Promise
       id_material,
       id_m3,
       id_precio_origen_destino,
+      precio_unidad_viaje,
       operador:operador!id_operador(nombre),
       material:material!id_material(nombre),
       m3:m3!id_m3(metros_cubicos),
@@ -271,7 +281,8 @@ export const fetchViajesConFiltros = async (filtros: FiltrosEstimacion): Promise
     const operadorNombre = viaje.operador?.[0]?.nombre || 'No asignado';
     const materialNombre = viaje.material?.[0]?.nombre || 'No especificado';
     const m3Value = viaje.m3?.[0]?.metros_cubicos || 0;
-    const precioValue = viaje.precio_origen_destino?.[0]?.precio_unidad || 0;
+    // INC-0025: se muestra el precio con el que se calculó el viaje, no el precio actual de la ruta.
+    const precioValue = (viaje as any).precio_unidad_viaje ?? viaje.precio_origen_destino?.[0]?.precio_unidad ?? 0;
     const origen = viaje.precio_origen_destino?.[0]?.nombreorigen || '';
     const destino = viaje.precio_origen_destino?.[0]?.nombredestino || '';
     
@@ -635,6 +646,13 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
       id_material,
       id_m3,
       id_precio_origen_destino,
+      precio_unidad_viaje,
+      precio_materia_viaje,
+      total_materia,
+      en_renta,
+      horas_renta,
+      id_invitado,
+      observaciones,
       estatus
     `);
 
@@ -671,8 +689,10 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
   const materialesIds: number[] = [];
   const m3Ids: number[] = [];
   const precioIds: number[] = [];
+  const invitadosIds: string[] = [];
 
   viajes.forEach(v => {
+    if ((v as any).id_invitado) invitadosIds.push(String((v as any).id_invitado));
     if (v.id_operador) operadoresIds.push(v.id_operador);
     if (v.id_material) materialesIds.push(v.id_material);
     if (v.id_m3) m3Ids.push(v.id_m3);
@@ -700,8 +720,22 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
   let materialesData: any[] = [];
   let m3Data: any[] = [];
   let preciosData: any[] = [];
+  let invitadosData: any[] = [];
 
   try {
+    // Consulta de invitados (dueños del camión cuando el viaje es de un externo)
+    const invitadosIdsUnicos = Array.from(new Set(invitadosIds));
+    if (invitadosIdsUnicos.length > 0) {
+      const { data, error } = await supabase
+        .from('invitados')
+        .select('id, empresa')
+        .in('id', invitadosIdsUnicos);
+
+      if (!error) {
+        invitadosData = data || [];
+      }
+    }
+
     // Consulta de operadores
     if (operadoresIdsUnicos.length > 0) {
       const { data, error } = await supabase
@@ -787,18 +821,34 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
     }
   });
 
+  const invitadosMap = new Map<string, string>(invitadosData.map((i: any) => [String(i.id), i.empresa || '']));
+
   // 5. Procesar todos los viajes usando los mapas
   return viajes.map((viaje, index) => {
-    const operadorNombre = viaje.id_operador ? operadoresMap.get(viaje.id_operador) || 'No asignado' : 'No asignado';
+    const v = viaje as any;
+    // INC-0024: si el viaje es de un invitado, el operador no está en el catálogo; se usa el nombre que
+    // se escribió a mano (guardado en Observaciones).
+    const invitadoNombre = v.id_invitado ? invitadosMap.get(String(v.id_invitado)) || 'Invitado' : '';
+    const operadorManual = extraerOperadorManualDeObservaciones(v.observaciones);
+    const operadorNombre = viaje.id_operador
+      ? operadoresMap.get(viaje.id_operador) || operadorManual || 'No asignado'
+      : operadorManual || 'No asignado';
     const materialNombre = viaje.id_material ? materialesMap.get(viaje.id_material) || 'No especificado' : 'No especificado';
-    const m3Value = viaje.id_m3 ? m3Map.get(viaje.id_m3) || 0 : 0;
+    // M3 del catálogo o, si es camión de invitado, el M3 manual anotado en Observaciones
+    const m3Value = viaje.id_m3 ? m3Map.get(viaje.id_m3) || 0 : extraerM3ManualDeObservaciones(v.observaciones) || 0;
     
     const precioInfo = viaje.id_precio_origen_destino ? preciosMap.get(viaje.id_precio_origen_destino) : null;
-    const precioValue = precioInfo?.precio_unidad || 0;
+    // INC-0025: se muestra el precio con el que se calculó el viaje, no el precio actual de la ruta.
+    const precioValue = (viaje as any).precio_unidad_viaje ?? precioInfo?.precio_unidad ?? 0;
     const origen = precioInfo?.nombreorigen || '';
     const destino = precioInfo?.nombredestino || '';
 
-    const totalViaje = viaje.caphrsviajes || (m3Value * precioValue);
+    const totalFlete = viaje.caphrsviajes || (m3Value * precioValue);
+    // INC-0024: el material se suma al total del viaje
+    const totalMaterial = Number(v.total_materia) || 0;
+    const precioMaterial = totalMaterial > 0
+      ? Number(v.precio_materia_viaje) || (m3Value > 0 ? totalMaterial / m3Value : 0)
+      : 0;
 
     return {
       id: viaje.id,
@@ -808,12 +858,18 @@ export const fetchViajesConFiltrosOptimizado = async (filtros: FiltrosEstimacion
       material: materialNombre,
       m3: m3Value,
       precio: precioValue,
+      precio_material: precioMaterial,
+      total_flete: totalFlete,
+      total_material: totalMaterial,
       operador: operadorNombre,
-      total_viaje: totalViaje,
+      invitado: invitadoNombre,
+      es_invitado: !!v.id_invitado,
+      horas_renta: v.en_renta ? Number(v.horas_renta) || 0 : 0,
+      total_viaje: totalFlete + totalMaterial,
       numero_viaje: index + 1,
       origen: origen,
       destino: destino,
-      estatus: (viaje as any).estatus ?? null
+      estatus: v.estatus ?? null
     };
   });
 };
@@ -1056,15 +1112,21 @@ const DEFINICIONES_COLUMNAS: Record<string, DefinicionColumnaExportacion> = {
   destino: { header: 'Destino', width: 20, getValue: (v) => v.destino || '' },
   material: { header: 'Material', width: 15, getValue: (v) => v.material || '' },
   operador: { header: 'Operador', width: 20, getValue: (v) => v.operador || '' },
+  invitado: { header: 'Invitado', width: 20, getValue: (v) => v.invitado || '' },
   horas_renta: { header: 'Hrs Renta', width: 12, getValue: (v) => v.horas_renta || 0 },
   m3: { header: 'M3', width: 10, getValue: (v) => Number(v.m3.toFixed(2)) },
-  precio: { header: 'Precio Unitario', width: 15, getValue: (v) => formatCurrencyForExport(v.precio) },
+  precio: { header: 'Precio Flete', width: 15, getValue: (v) => formatCurrencyForExport(v.precio) },
+  precio_material: { header: 'Precio Material', width: 15, getValue: (v) => formatCurrencyForExport(v.precio_material || 0) },
+  estatus: { header: 'Estatus', width: 12, getValue: (v) => v.estatus || '' },
+  total_flete: { header: 'Total Flete', width: 15, getValue: (v) => formatCurrencyForExport(v.total_flete || 0) },
+  total_material: { header: 'Total Material', width: 15, getValue: (v) => formatCurrencyForExport(v.total_material || 0) },
   total_viaje: { header: 'Total Viaje', width: 15, getValue: (v) => formatCurrencyForExport(v.total_viaje) }
 };
 
 // Orden y selección de columnas que se usa cuando no se personaliza la exportación
 export const COLUMNAS_EXPORTACION_ESTANDAR = [
-  'numero_viaje', 'fecha', 'folio', 'folio_bco', 'origen', 'destino', 'material', 'operador', 'm3', 'precio', 'total_viaje'
+  'numero_viaje', 'fecha', 'folio', 'folio_bco', 'origen', 'destino', 'material', 'operador', 'invitado', 'horas_renta', 'm3',
+  'precio', 'precio_material', 'estatus', 'total_flete', 'total_material', 'total_viaje'
 ];
 
 // Catálogo de columnas disponibles para que el usuario elija/ordene en el diálogo de exportación
@@ -1167,27 +1229,45 @@ export const exportarEstimacionExcel = async (
     const iva = totalCobrar * 0.16; // 16% de IVA
     const totalConIva = totalCobrar + iva;
 
-    // Agrupar viajes por material (se usa en Resumen y Resumen por Material)
-    const materialesMap = new Map<string, { viajes: number, m3: number, precioPromedio: number, total: number }>();
+    // Agrupar viajes por material (se usa en Resumen y Resumen por Material). INC-0024: el flete y el
+    // material se acumulan por separado; el total del material es la suma de ambos.
+    const materialesMap = new Map<string, { viajes: number, m3: number, m3ConMaterial: number, totalFlete: number, totalMaterial: number, total: number }>();
     viajes.forEach(viaje => {
       const material = viaje.material || 'No especificado';
-      if (materialesMap.has(material)) {
-        const current = materialesMap.get(material)!;
-        materialesMap.set(material, {
-          viajes: current.viajes + 1,
-          m3: current.m3 + viaje.m3,
-          precioPromedio: ((current.precioPromedio * current.viajes) + viaje.precio) / (current.viajes + 1),
-          total: current.total + viaje.total_viaje
-        });
-      } else {
-        materialesMap.set(material, {
-          viajes: 1,
-          m3: viaje.m3,
-          precioPromedio: viaje.precio,
-          total: viaje.total_viaje
-        });
-      }
+      const current = materialesMap.get(material) || { viajes: 0, m3: 0, m3ConMaterial: 0, totalFlete: 0, totalMaterial: 0, total: 0 };
+      const totalMaterialViaje = viaje.total_material || 0;
+      materialesMap.set(material, {
+        viajes: current.viajes + 1,
+        m3: current.m3 + viaje.m3,
+        m3ConMaterial: current.m3ConMaterial + (totalMaterialViaje > 0 ? viaje.m3 : 0),
+        totalFlete: current.totalFlete + (viaje.total_flete ?? viaje.total_viaje),
+        totalMaterial: current.totalMaterial + totalMaterialViaje,
+        total: current.total + viaje.total_viaje
+      });
     });
+    const totalFleteGeneral = viajes.reduce((sum, v) => sum + (v.total_flete ?? v.total_viaje), 0);
+    const totalMaterialGeneral = viajes.reduce((sum, v) => sum + (v.total_material || 0), 0);
+
+    // Conceptos de la carátula: un renglón por ORIGEN → DESTINO y su precio (como en el detalle de viajes):
+    // cuántos viajes fueron, cuántos M3, el P.U. y cuánto se cobró. El P.U. es COMBINADO: precio flete +
+    // precio material (ej. 200 + 100 = 300), y el importe es flete + material. Si en el periodo una ruta
+    // tuvo combinaciones de precio distintas (cambio de precio, o unos viajes con material y otros sin),
+    // sale en renglones separados, cada uno con su P.U.
+    const rutasMap = new Map<string, { ruta: string; precio: number; viajes: number; m3: number; importe: number }>();
+    viajes.forEach(v => {
+      const ruta = `${v.origen || 'Sin origen'} → ${v.destino || 'Sin destino'}`;
+      const precioCombinado = Math.round(((Number(v.precio) || 0) + (Number(v.precio_material) || 0)) * 100) / 100;
+      const clave = `${ruta}|${precioCombinado}`;
+      const acc = rutasMap.get(clave) || { ruta, precio: precioCombinado, viajes: 0, m3: 0, importe: 0 };
+      acc.viajes += 1;
+      acc.m3 += v.m3 || 0;
+      acc.importe += v.total_viaje; // flete + material
+      rutasMap.set(clave, acc);
+    });
+
+    const conceptosCaratula: { concepto: string; viajes: number; m3: number; precio: number; importe: number }[] = Array.from(rutasMap.values())
+      .sort((a, b) => a.ruta.localeCompare(b.ruta, 'es') || a.precio - b.precio)
+      .map(r => ({ concepto: r.ruta, viajes: r.viajes, m3: r.m3, precio: r.precio, importe: r.importe }));
 
     // ===== HOJA 1: RESUMEN PROFESIONAL =====
     if (incluirResumen) {
@@ -1295,7 +1375,7 @@ export const exportarEstimacionExcel = async (
     // CONCEPTO
     const rowConc = worksheet.getRow(infoStartRow + 3);
     rowConc.getCell(1).value = 'CONCEPTO:';
-    rowConc.getCell(2).value = 'RESUMEN DE MATERIALES POR TIPO';
+    rowConc.getCell(2).value = 'RESUMEN DE VIAJES POR ORIGEN - DESTINO';
     rowConc.getCell(1).font = { bold: true };
     worksheet.mergeCells(infoStartRow + 3, 2, infoStartRow + 3, 8); // Concepto combinado
     
@@ -1304,7 +1384,7 @@ export const exportarEstimacionExcel = async (
     
     // Encabezados de la tabla - MODIFICADO: Sin X HORA
     const headersRow = worksheet.getRow(tableStartRow);
-    const headers = ['No', 'CONCEPTO', 'UNIDAD', 'CANTIDAD', '$ P.U', 'IMPORTE', '']; // Quitamos X HORA
+    const headers = ['No', 'ORIGEN - DESTINO', 'VIAJES', 'M3', '$ P.U', 'IMPORTE', ''];
     headers.forEach((header, index) => {
       const cell = headersRow.getCell(index + 1);
       cell.value = header;
@@ -1317,33 +1397,34 @@ export const exportarEstimacionExcel = async (
       };
     });
     
-    // Datos del resumen por material
+    // Datos del resumen: un renglón por ORIGEN → DESTINO y su P.U. combinado (flete + material)
     let rowIndex = 0;
-    Array.from(materialesMap.entries()).forEach(([material, datos], index) => {
+    conceptosCaratula.forEach((concepto, index) => {
       const dataRow = worksheet.getRow(tableStartRow + index + 1);
-      
+
       // No (consecutivo)
       dataRow.getCell(1).value = index + 1;
       dataRow.getCell(1).alignment = { horizontal: 'center' };
-      
-      // CONCEPTO (nombre del material)
-      dataRow.getCell(2).value = material;
-      
-      // UNIDAD (siempre M3)
-      dataRow.getCell(3).value = 'M3';
+
+      // ORIGEN → DESTINO
+      dataRow.getCell(2).value = concepto.concepto;
+      dataRow.getCell(2).alignment = { wrapText: true, vertical: 'middle' };
+
+      // VIAJES (cuántos viajes de esa ruta con ese precio)
+      dataRow.getCell(3).value = concepto.viajes;
       dataRow.getCell(3).alignment = { horizontal: 'center' };
-      
-      // CANTIDAD (total M3 de ese material)
-      dataRow.getCell(4).value = datos.m3;
+
+      // M3 (incluye el M3 manual de los camiones de invitados)
+      dataRow.getCell(4).value = concepto.m3;
       dataRow.getCell(4).numFmt = '#,##0.00';
       dataRow.getCell(4).alignment = { horizontal: 'center' };
-      
-      // $ P.U (precio promedio)
-      dataRow.getCell(5).value = datos.precioPromedio;
+
+      // $ P.U combinado: precio flete + precio material
+      dataRow.getCell(5).value = concepto.precio;
       dataRow.getCell(5).numFmt = '"$"#,##0.00';
-      
-      // IMPORTE (total de ese material)
-      dataRow.getCell(6).value = datos.total;
+
+      // IMPORTE
+      dataRow.getCell(6).value = concepto.importe;
       dataRow.getCell(6).numFmt = '"$"#,##0.00';
       
       // Espacio
@@ -1364,7 +1445,7 @@ export const exportarEstimacionExcel = async (
     totalGeneralRow.getCell(2).font = { bold: true };
     
     // UNIDAD (M3)
-    totalGeneralRow.getCell(3).value = 'M3';
+    totalGeneralRow.getCell(3).value = totalViajes;
     totalGeneralRow.getCell(3).alignment = { horizontal: 'center' };
     totalGeneralRow.getCell(3).font = { bold: true };
     
@@ -1450,9 +1531,9 @@ export const exportarEstimacionExcel = async (
     // 8. AJUSTAR ANCHOS DE COLUMNA (ahora 7 columnas)
     worksheet.columns = [
       { width: 8 },   // A: No (más estrecho)
-      { width: 25 },  // B: CONCEPTO
-      { width: 10 },  // C: UNIDAD
-      { width: 12 },  // D: CANTIDAD (M3)
+      { width: 40 },  // B: ORIGEN → DESTINO
+      { width: 10 },  // C: VIAJES
+      { width: 12 },  // D: M3
       { width: 12 },  // E: $ P.U
       { width: 15 },  // F: IMPORTE
       { width: 2 }    // G: Agregar otro en el futuro si es necesario
@@ -1487,6 +1568,9 @@ export const exportarEstimacionExcel = async (
     // Totales (solo se llenan las columnas de M3 y Total Viaje, si están presentes)
     const totalesPorColumna: Record<string, string> = {
       m3: totalM3.toFixed(2),
+      horas_renta: viajes.reduce((sum, v) => sum + (v.horas_renta || 0), 0).toFixed(2),
+      total_flete: formatCurrencyForExport(viajes.reduce((sum, v) => sum + (v.total_flete || 0), 0)),
+      total_material: formatCurrencyForExport(viajes.reduce((sum, v) => sum + (v.total_material || 0), 0)),
       total_viaje: formatCurrencyForExport(totalCobrar)
     };
     const totalRowViajes = wsViajes.addRow(columnasHoja2.map((key, idx) => {
@@ -1521,13 +1605,16 @@ export const exportarEstimacionExcel = async (
 
     // Título
     wsMateriales.addRow(['RESUMEN POR MATERIAL']);
-    wsMateriales.mergeCells('A1:E1');
+    wsMateriales.mergeCells('A1:C1');
+    // wsMateriales.mergeCells('A1:F1'); // con las columnas de importes (ver abajo)
     const titleRow = wsMateriales.getRow(1);
     titleRow.getCell(1).font = { bold: true, size: 14 };
     titleRow.getCell(1).alignment = { horizontal: 'center' };
 
-    // Encabezados mejorados
-    wsMateriales.addRow(['Material', 'Viajes', 'Total M3', 'Precio Promedio', 'Total a Cobrar']);
+    // Encabezados. Las columnas de importes (Total Flete, Total Material, Total a Cobrar) se quitaron a
+    // pedido del cliente; se dejan comentadas por si se vuelven a usar.
+    wsMateriales.addRow(['Material', 'Viajes', 'Total M3']);
+    // wsMateriales.addRow(['Material', 'Viajes', 'Total M3', 'Total Flete', 'Total Material', 'Total a Cobrar']);
     const headerRowMat = wsMateriales.getRow(2);
     headerRowMat.font = { bold: true };
     headerRowMat.fill = {
@@ -1541,9 +1628,10 @@ export const exportarEstimacionExcel = async (
       wsMateriales.addRow([
         material,
         datos.viajes,
-        datos.m3.toFixed(2),
-        formatCurrencyForExport(datos.precioPromedio),
-        formatCurrencyForExport(datos.total)
+        datos.m3.toFixed(2)
+        // formatCurrencyForExport(datos.totalFlete),
+        // formatCurrencyForExport(datos.totalMaterial),
+        // formatCurrencyForExport(datos.total)
       ]);
     });
 
@@ -1551,16 +1639,18 @@ export const exportarEstimacionExcel = async (
     const totalRowMat = wsMateriales.addRow([
       'TOTAL GENERAL',
       totalViajes,
-      totalM3.toFixed(2),
-      formatCurrencyForExport(totalCobrar / totalViajes), // Precio promedio general
-      formatCurrencyForExport(totalCobrar)
+      totalM3.toFixed(2)
+      // formatCurrencyForExport(totalFleteGeneral),
+      // formatCurrencyForExport(totalMaterialGeneral),
+      // formatCurrencyForExport(totalCobrar)
     ]);
     totalRowMat.font = { bold: true };
 
     // Aplicar bordes
+    const columnasHojaMateriales = 3; // 6 con las columnas de importes
     for (let i = 1; i <= wsMateriales.rowCount; i++) {
       const row = wsMateriales.getRow(i);
-      for (let j = 1; j <= 5; j++) {
+      for (let j = 1; j <= columnasHojaMateriales; j++) {
         const cell = row.getCell(j);
         cell.border = {
           top: { style: 'thin', color: { argb: '000000' } },
@@ -1573,7 +1663,8 @@ export const exportarEstimacionExcel = async (
 
     // Ajustar anchos
     wsMateriales.columns = [
-      { width: 25 }, { width: 10 }, { width: 15 }, { width: 18 }, { width: 20 }
+      { width: 25 }, { width: 10 }, { width: 15 }
+      // , { width: 18 }, { width: 18 }, { width: 20 } // columnas de importes
     ];
     } // fin if (incluirResumenPorMaterial)
 

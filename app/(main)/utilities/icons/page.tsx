@@ -9,6 +9,7 @@ import { fetchViajes, fetchProveedores, createGasto, Gasto } from '../../../../S
 import { TabPanel, TabView } from 'primereact/tabview';
 import { fetchCombustible, createCombustible, updateCombustible, deleteCombustible, fetchOperadores, Combustible } from '../../../../Services/BD/combustibleService';
 import { fetchClientesNotes, createCliente, updateCliente, Cliente } from '../../../../Services/BD/clientesService';
+import { fechaViajeAIso, obtenerPrecioVigente } from '../../../../Services/BD/precioHistorialService';
 import {createViaje, updateViaje, fetchPreciosOrigenDestino, fetchMateriales, fetchM3, Viaje, checkFolioExists, fetchInvitados } from '../../../../Services/BD/viajeService';
 import { getUserRoleIdFromLocalStorage } from '@/Services/BD/userService';
 import { RadioButton } from 'primereact/radiobutton';
@@ -178,9 +179,14 @@ const FormularioNotaViaje = () => {
             const metrosCubicosEfectivos = m3Seleccionado ? m3Seleccionado.metros_cubicos : (m3Manual && m3Manual > 0 ? m3Manual : null);
 
             if (precioOrigenDestino && metrosCubicosEfectivos) {
-            const precio_unidad = precioOrigenDestino.precio_unidad;
+            // INC-0025: precio vigente de la ruta en la fecha del viaje (historial de precios).
+            const precioVigente = await obtenerPrecioVigente(precioOrigenDestino.id, fechaViajeAIso(viaje.fecha), {
+                precio_unidad: precioOrigenDestino.precio_unidad,
+                precio_materia: precioOrigenDestino.precio_materia ?? 0
+            });
+            const precio_unidad = precioVigente.precio_unidad;
             const metros_cubicos = metrosCubicosEfectivos;
-            const precio_materia = precioOrigenDestino.precio_materia ?? 0; // Precio material, si existe
+            const precio_materia = precioVigente.precio_materia; // Precio material, si existe
 
             // Precio_unidad = precio Flete
 
@@ -221,6 +227,8 @@ const FormularioNotaViaje = () => {
                 id_operador: viaje.id_operador ?? null,
                 caphrsviajes,
                 total_materia,
+                precio_unidad_viaje: precio_unidad,
+                precio_materia_viaje: total_materia ? precio_materia : 0,
                 observaciones: anotarM3ManualEnObservaciones(
                     m3Manual,
                     anotarOperadorManualEnObservaciones(viaje.id_operador ? null : operadorManual, observaciones)
