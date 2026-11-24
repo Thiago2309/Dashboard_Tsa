@@ -8,7 +8,8 @@ const AppFooter = () => {
 
     return (
         <div className="layout-footer">
-            <img src={`/layout/images/logo-${layoutConfig.colorScheme === 'light' ? 'dark' : 'white'}.svg`} alt="Logo" height="20" className="mr-2" />
+            {/* Mismo logo de "Sistema TSA" que se usa en el topbar y en el login. */}
+            <img src="/demo/images/blocks/logos/hyper.svg" alt="Sistema TSA" height="20" className="mr-2" />
             by
             <span className="font-medium ml-2">Dashboard</span>
         </div>
