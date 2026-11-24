@@ -107,8 +107,8 @@ export const PresupuestoFrenteEditor: React.FC<PresupuestoFrenteEditorProps> = (
     const idIva = `iva-${frente.id ?? frente.nombre}`;
 
     // En los renglones manuales, clave/descripción/unidad/P. Unitario se pueden corregir directo en la tabla.
-    const textoEditable = (campo: 'concepto_clave' | 'concepto_descripcion' | 'concepto_unidad') => (row: PresupuestoConceptoApu, opts: { rowIndex: number }) =>
-        row.es_manual ? <InputText value={row[campo] || ''} onChange={(e) => onActualizarConcepto(opts.rowIndex, { [campo]: e.target.value })} className="p-inputtext-sm w-full" /> : row[campo];
+    const renderTextoEditable = (campo: 'concepto_clave' | 'concepto_descripcion' | 'concepto_unidad', row: PresupuestoConceptoApu, rowIndex: number) =>
+        row.es_manual ? <InputText value={row[campo] || ''} onChange={(e) => onActualizarConcepto(rowIndex, { [campo]: e.target.value })} className="p-inputtext-sm w-full" /> : row[campo];
 
     return (
         <div className="surface-card border-1 surface-border border-round p-3 mb-3">
@@ -119,17 +119,17 @@ export const PresupuestoFrenteEditor: React.FC<PresupuestoFrenteEditorProps> = (
             </div>
 
             <DataTable value={frente.conceptos} emptyMessage="Agrega conceptos a este Frente." className="mb-3">
-                <Column header="Clave" style={{ width: '110px' }} body={textoEditable('concepto_clave')}></Column>
+                <Column header="Clave" style={{ width: '110px' }} body={(row: PresupuestoConceptoApu, opts: { rowIndex: number }) => renderTextoEditable('concepto_clave', row, opts.rowIndex)}></Column>
                 <Column
                     header="Concepto"
                     body={(row: PresupuestoConceptoApu, opts: { rowIndex: number }) => (
                         <div className="flex align-items-center gap-2">
                             {row.es_manual && <Tag value="Manual" severity="warning" />}
-                            <div className="flex-grow-1">{textoEditable('concepto_descripcion')(row, opts)}</div>
+                            <div className="flex-grow-1">{renderTextoEditable('concepto_descripcion', row, opts.rowIndex)}</div>
                         </div>
                     )}
                 ></Column>
-                <Column header="Unidad" style={{ width: '90px' }} body={textoEditable('concepto_unidad')}></Column>
+                <Column header="Unidad" style={{ width: '90px' }} body={(row: PresupuestoConceptoApu, opts: { rowIndex: number }) => renderTextoEditable('concepto_unidad', row, opts.rowIndex)}></Column>
                 <Column
                     header="Cantidad"
                     style={{ width: '130px' }}
