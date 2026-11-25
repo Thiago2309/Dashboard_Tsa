@@ -506,10 +506,21 @@ const Crud = () => {
                         // INC-0024: el material también se calcula aquí (precio material × m3), igual que en Notas
                         // y Logística. Al editar sin cambiar la ruta se usa el precio de material guardado del
                         // viaje, así que un viaje que no cobraba material sigue sin cobrarlo.
-                        total_materia: precio_materia > 0 ? precio_materia * metros_cubicos : null
+                        // total_materia es NOT NULL en la base de datos: sin material se guarda 0 (INC-0029)
+                        total_materia: precio_materia > 0 ? precio_materia * metros_cubicos : 0
                     };
 
                     console.log('Objeto enviado a Supabase:', { ...viajeLimpio, id: viaje.id });
+
+                    // INC-0029: se recomienda capturar el operador, pero se permite guardar sin él.
+                    if (!viaje.id_operador && !operadorManual.trim()) {
+                        toast.current?.show({
+                            severity: 'warn',
+                            summary: 'Viaje sin operador',
+                            detail: 'Se guardó sin operador. Se recomienda seleccionarlo o escribirlo en "Operador (Manual)".',
+                            life: 5000
+                        });
+                    }
 
                     if (viaje.id) {
                         const updatedViaje = await updateViaje({ ...viajeLimpio, id: viaje.id });
@@ -757,7 +768,7 @@ const Crud = () => {
                         precio_unidad_viaje: precioRuta ? precioRuta.precio_unidad : null,
                         // INC-0024: material = precio material × m3 (igual que en Notas y Logística)
                         precio_materia_viaje: precioRuta ? precioRuta.precio_materia : 0,
-                        total_materia: precioRuta && metrosCubicosEfectivos && precioRuta.precio_materia > 0 ? precioRuta.precio_materia * metrosCubicosEfectivos : null,
+                        total_materia: precioRuta && metrosCubicosEfectivos && precioRuta.precio_materia > 0 ? precioRuta.precio_materia * metrosCubicosEfectivos : 0, // NOT NULL en la BD
                         id_operador: operador ? operador.id : null,
                         id_invitado: invitado ? (invitado.id as any) : null,
                         en_renta: enRenta,
@@ -1401,9 +1412,13 @@ const Crud = () => {
                                 filter
                                 filterBy="label"
                                 disabled={!!operadorManual.trim()}
-                                className={submitted && !viaje.id_operador && !operadorManual.trim() ? 'p-invalid' : ''}
                             />
-                            {submitted && !viaje.id_operador && !operadorManual.trim() && <small className="p-invalid">Selecciona un operador o escribe su nombre abajo.</small>}
+                            {!viaje.id_operador && !operadorManual.trim() && (
+                                <small className="block text-orange-500">
+                                    <i className="pi pi-exclamation-triangle mr-1" />
+                                    Escribe o selecciona el operador para no dejarlo vacío. Si no se sabe, puedes guardar así.
+                                </small>
+                            )}
                         </div>
 
                         <div className="field mt-3">

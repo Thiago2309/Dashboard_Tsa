@@ -230,7 +230,7 @@ export const actualizarPrecioOrigenDestinoDesdeFecha = async (
         if ((v.total_materia || 0) > 0 && Number(v.precio_materia_viaje ?? -1) !== nuevoPrecioMateria) {
             cambio.precio_materia_viaje = nuevoPrecioMateria;
             if (metrosCubicos > 0) {
-                cambio.total_materia = nuevoPrecioMateria > 0 ? nuevoPrecioMateria * metrosCubicos : null;
+                cambio.total_materia = nuevoPrecioMateria > 0 ? nuevoPrecioMateria * metrosCubicos : 0; // NOT NULL en la BD
             } else if (v.total_materia && v.precio_materia_viaje) {
                 cambio.total_materia = (v.total_materia * nuevoPrecioMateria) / v.precio_materia_viaje;
             }

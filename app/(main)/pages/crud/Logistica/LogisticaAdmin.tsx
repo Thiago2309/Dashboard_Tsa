@@ -210,7 +210,7 @@ const LogisticaAdmin = () => {
             precio = { ...precio, ...(await obtenerPrecioVigente(precio.id, fechaViaje, { precio_unidad: precio.precio_unidad, precio_materia: precio.precio_materia ?? 0 })) };
 
             let caphrsviajes;
-            let total_materia = null;
+            let total_materia = 0; // NOT NULL en la BD: sin material se guarda 0 (INC-0029)
 
             if (rowData.en_renta && rowData.horas_renta) {
                 caphrsviajes = precio.precio_unidad * m3Item.metros_cubicos * rowData.horas_renta;
